@@ -2,7 +2,7 @@
 
 ZIKARON Desk is a desktop application for your own machine. It records your works or files in an append-only ledger, anchors that ledger to Ethereum (or the layer-2 network you choose), and lets you issue grants from it. Whoever receives a grant can verify it independently, on any machine.
 
-This manual describes version 0.1.1. Words that appear in the interface are quoted exactly as the window shows them.
+This manual describes version 0.1.2. Words that appear in the interface are quoted exactly as the window shows them.
 
 ---
 
@@ -25,12 +25,12 @@ A recovery-phrase identity derives its two keys at `m/44'/60'/0'/0/0` (Recorder)
 | Type | What it is |
 |---|---|
 | Create the ledger | The root of the ledger |
-| Anchored record | The content fingerprint of one record |
+| Record | The content fingerprint of one record |
 | Grant | Lets an address use a record for a period of time |
 | Revocation | Revokes a grant |
 | Note on entry | Adds a note to an earlier entry |
 | Adoption | Brings anchors this key put on chain earlier into the ledger |
-| Key change or handover | Hands the ledger to a new key |
+| Key handover | Hands the ledger to a new key |
 | Deletion | Marks a record as deleted (see Appendix C) |
 
 **Putting on chain (anchoring).** New entries wait in the "Pending" queue until a transaction on the identity's network (Ethereum mainnet, or Arbitrum One, OP Mainnet and so on) carries them; after that they are on chain. The whole queue can go out at once for the cost of a single transaction. Once an entry is on chain, anyone can check against the chain that the ledger held it at that moment.
@@ -52,18 +52,20 @@ A User can also write a **sublicense** in their own ledger, passing an upstream 
 
 ## 2 · Installation
 
-Version 0.1.1 comes as packages for macOS with Apple silicon and for x86_64 Linux, and as a zip for x86_64 Windows. Every package carries the third-party licences (on macOS in `ZIKARON.app/Contents/Resources/THIRD-PARTY-LICENSES.txt`, on Linux in `/usr/share/doc/zikaron-desk/THIRD-PARTY-LICENSES.txt`, on Windows in the unpacked folder); in the app they are under "About".
+Version 0.1.2 comes as packages for macOS with Apple silicon and for x86_64 Linux, and as a zip for x86_64 Windows. Every package carries the third-party licences (on macOS in `ZIKARON.app/Contents/Resources/THIRD-PARTY-LICENSES.txt`, on Linux in `/usr/share/doc/zikaron-desk/THIRD-PARTY-LICENSES.txt`, on Windows in the unpacked folder); in the app they are under "About".
+
+**Upgrading from 0.1.1.** Install the new version; existing data folders and the machine folder open as before. Encrypted local files written by 0.1.2 cannot be read by 0.1.1, so do not open the same data with 0.1.1 after upgrading.
 
 **macOS**
 
-- `ZIKARON-0.1.1-macos-arm64.dmg`: open it and drag `ZIKARON.app` to Applications. The `zikaron` command line is inside the app bundle at `ZIKARON.app/Contents/MacOS/zikaron`.
-- `ZIKARON-0.1.1-macos-arm64.pkg`: an installer that puts the app in `/Applications` and the command line at `/usr/local/bin/zikaron`.
+- `ZIKARON-0.1.2-macos-arm64.dmg`: open it and drag `ZIKARON.app` to Applications. The `zikaron` command line is inside the app bundle at `ZIKARON.app/Contents/MacOS/zikaron`; to type `zikaron` in a terminal, turn on "Enable command line" in Settings > Local data (see "Data folders").
+- `ZIKARON-0.1.2-macos-arm64.pkg`: an installer that puts the app in `/Applications` and the command line at `/usr/local/bin/zikaron`.
 - The app is signed with a self-signed certificate (Kaptonia) and is not notarized by Apple. Files downloaded in a browser carry macOS's quarantine flag, and macOS refuses to open them; on recent macOS, "Open Anyway" in System Settings > Privacy & Security does not always work either. Check the SHA-256 with `shasum -a 256 <file>` first, then remove the quarantine flag in Terminal:
 
   - With the dmg: before opening the dmg, run the command below, then open the dmg and drag `ZIKARON.app` to Applications:
 
     ```
-    xattr -d com.apple.quarantine ~/Downloads/ZIKARON-0.1.1-macos-arm64.dmg
+    xattr -d com.apple.quarantine ~/Downloads/ZIKARON-0.1.2-macos-arm64.dmg
     ```
 
     If you have already dragged the app in, run this instead:
@@ -75,15 +77,15 @@ Version 0.1.1 comes as packages for macOS with Apple silicon and for x86_64 Linu
   - With the pkg: run the command below, then double-click the pkg to install:
 
     ```
-    xattr -d com.apple.quarantine ~/Downloads/ZIKARON-0.1.1-macos-arm64.pkg
+    xattr -d com.apple.quarantine ~/Downloads/ZIKARON-0.1.2-macos-arm64.pkg
     ```
 
   Change the paths to wherever you downloaded the files.
 
 **Linux**
 
-- `zikaron-desk_0.1.1_amd64.deb`: for Debian, Ubuntu and their derivatives. Install it with `sudo apt install ./zikaron-desk_0.1.1_amd64.deb`; the window program is `zikaron-desk` (also in the applications menu) and the command line is `zikaron`.
-- `ZIKARON-0.1.1-x86_64.AppImage`: no installation; make it executable with `chmod +x` and run it. Running it opens the window program; the `zikaron` command line inside is not exposed, so install the `.deb` for the command line. It uses FUSE; on a system without FUSE, run it with `--appimage-extract-and-run`.
+- `zikaron-desk_0.1.2_amd64.deb`: for Debian, Ubuntu and their derivatives. Install it with `sudo apt install ./zikaron-desk_0.1.2_amd64.deb`; the window program is `zikaron-desk` (also in the applications menu) and the command line is `zikaron`.
+- `ZIKARON-0.1.2-x86_64.AppImage`: no installation; make it executable with `chmod +x` and run it. Running it opens the window program; the `zikaron` command line inside is not exposed, so install the `.deb` for the command line. It uses FUSE; on a system without FUSE, run it with `--appimage-extract-and-run`.
 - Both need glibc 2.31 or later (Ubuntu 20.04, Debian 11 and later). The packages are not signed; check the SHA-256 with `sha256sum <file>` first.
 - For other architectures or distributions, build from source as described under "Build from source" in the repository's README; on Linux, `packaging/linux/build.sh` makes a `.deb` and an AppImage.
 - File dialogs go through the desktop portal, so install `xdg-desktop-portal` and a backend such as `xdg-desktop-portal-gtk`. Without a portal, clicking to choose a file says "The system file dialog can't open on this machine."; drag the file into the window instead.
@@ -91,12 +93,12 @@ Version 0.1.1 comes as packages for macOS with Apple silicon and for x86_64 Linu
 
 **Windows**
 
-- `ZIKARON-0.1.1-windows-x86_64.zip`: for Windows 10 and 11 on x86_64. Nothing to install: unpack it into any folder and double-click `zikaron-desk.exe`; the command line is `zikaron.exe` in the same folder. The programs carry their own runtime; nothing else is needed.
+- `ZIKARON-0.1.2-windows-x86_64.zip`: for Windows 10 and 11 on x86_64. Nothing to install: unpack it into any folder and double-click `zikaron-desk.exe`; the command line is `zikaron.exe` in the same folder. The programs carry their own runtime; nothing else is needed.
 - `zikaron.exe` is a command line and runs in a terminal: in its folder, hold Shift, right-click an empty spot and choose "Open in Terminal" ("Open PowerShell window here" on Windows 10), then type `.\zikaron.exe` with a verb and its flags. Double-clicked in Explorer, it opens a window, prints its usage and closes at once, which looks like a crash but is not one.
 - Check the SHA-256 first in PowerShell with `Get-FileHash <file> -Algorithm SHA256`.
 - The programs are not signed. On first start Windows says "Windows protected your PC"; click "More info", then "Run anyway". On Windows 11 with Smart App Control on, unsigned programs are blocked outright: there is no "Run anyway" and no way to allow this one program; to use it, first turn Smart App Control off in Windows Security › App & browser control › Smart App Control settings.
 - To upgrade, replace the folder with the new version's. Machine data is not in the unpacked folder but in `%LOCALAPPDATA%\ZIKARON\` (see Appendix B); deleting the unpacked folder does not delete it.
-- No Start menu entry, desktop shortcut or `PATH` entry is added; add them yourself if you want them.
+- No Start menu entry or desktop shortcut is added. To type `zikaron` in any terminal, turn on "Enable command line" in Settings > Local data, which adds the command line's folder to this user's `PATH`.
 - On Windows, as on Linux, a drop zone that takes either a file or a folder opens a dialog that picks files only; to give a folder, drag the folder in.
 
 The window program takes no arguments: started with any, it opens no window and only says why. To work with a file, open the window and drop the file on it; for the command line, use `zikaron`. If the window cannot open (usually the graphics driver does not support the OpenGL it needs, or it runs in a virtual machine or remote desktop without 3D acceleration), it says why as well; on Windows, started by double-clicking in Explorer, it says so in a system dialog.
@@ -229,7 +231,7 @@ The sidebar is on the left and the page is on the right. Across the top of the p
    | Recorder | User |
    |---|---|
    | Home | Home |
-   | **Record**: Records, Grant | **Grant**: My grants |
+   | **Entries**: Records, Grant | **Grant**: My grants |
    | **Look up**: Verify, Ledger, Alerts | **Look up**: Verify, Alerts |
 
    - The number next to "Alerts" counts the amber and red rows on the Alerts page.
@@ -290,6 +292,8 @@ In these cases a bar appears at the top of the page, one at a time:
 | "Ledger chain broken; read-only" | The ledger check found a broken chain. "Go to Restore" opens Settings > Local data, where you can restore from a whole-machine backup or reconcile under "Advanced options" |
 | "Ledger handed over to a new key; read-only" | This ledger has been handed over |
 | "Read-only: …" or "Read-only: No lock" | Another ZIKARON window holds this data folder, so this window can only read |
+| "Another machine is writing to this data; read-only here" | The data folder is on a synced or removable drive and another machine is writing it. "Write from this machine" on the bar moves writing to this machine, and the other machine becomes read-only |
+| "Writer mark unreadable by this version; read-only here" | This data's writer mark was written by a newer version or is damaged; nothing is changed. Once nothing else writes this data, "Write from this machine" takes it over |
 | "Old data · date · view only" | You are viewing data that was set aside; "Return" goes back to the current data |
 
 #### 4.4 Buttons and confirmation cards
@@ -509,7 +513,7 @@ For each file signed (a single file, or each file of a batch), this machine reme
 
 #### Record detail
 
-Click a row in the record table. The title is the record's name, with "#N · Anchored record" and the on-chain state below it.
+Click a row in the record table. The title is the record's name, with "#N · Record" and the on-chain state below it.
 
 **"Basic information"**
 
@@ -560,11 +564,12 @@ For the entry's format and how it is read, see Appendix C.
 
 All entries in a batch travel in one transaction.
 
-**The gas cap** is worked out from the chain's actual fees: (base fee × 2 + tip) × the gas limit this transaction carries. The limit is one and a half times the gas the nodes estimate (rounded up), at most 200,000; an estimate above 200,000 is refused and nothing is sent. The base fee is read at the block every node has reached (the lowest height when nodes differ), and nodes are compared on the base fee alone. The tip is the median, over the 20 blocks up to that block, of each block's median paid tip, at most 1 gwei; when the nodes give no answer, refuse, disagree or answer in another shape, it is 1 gwei. If the base fee cannot be read, the whole pair falls back (a 3 gwei cap and a 1 gwei tip; the limit still follows the estimate, so at most 0.0006 ETH): the cap on the confirmation card is then the fallback's, the card does not say that the fallback was used, and the chain is asked again the next time the card opens. The gas estimate takes its block by the same rule (the lowest block every node has reached). Only this chain's nodes are asked. On the layer-two networks Arbitrum One and OP Mainnet the tip is likewise what the chain actually paid, usually far below 1 gwei, so what is set aside and what is paid are a small fraction of mainnet's.
+**The gas cap** is worked out from the chain's actual fees: (base fee × 2 + tip) × the gas limit this transaction carries. The limit is one and a half times the gas the nodes estimate (rounded up), at most 200,000; an estimate above 200,000 is refused and nothing is sent. The base fee is read at the block every node has reached (the lowest height when nodes differ), and nodes are compared on the base fee alone. The tip is the median, over the 20 blocks up to that block, of each block's median paid tip, at most 1 gwei; when the nodes give no answer, refuse, disagree or answer in another shape, it is 1 gwei. If the base fee cannot be read, the whole pair falls back (a 3 gwei cap and a 1 gwei tip; the limit still follows the estimate, so at most 0.0006 ETH): the cap on the confirmation card is then the fallback's, the card says "No base fee from the nodes; cap at the fallback", and the chain is asked again the next time the card opens. Nodes serving another chain are not read for fees, and the card names them. The gas estimate takes its block by the same rule (the lowest block every node has reached). Only this chain's nodes are asked. On the layer-two networks Arbitrum One and OP Mainnet the tip is likewise what the chain actually paid, usually far below 1 gwei, so what is set aside and what is paid are a small fraction of mainnet's.
 
 **Checks before sending**
 
 - If the balance cannot cover the cap, nothing is sent. The message is "Insufficient balance." and "Needs N ETH, have N ETH.", with "Copy address" so you can top it up.
+- The balance is asked of every node at the lowest block they have all reached; if the balances differ or the nodes' heights are too far apart, nothing is sent and the message is "Nodes returned different results.". A node that gives no balance is never read as zero.
 - If the estimate fails, the card becomes "Cannot estimate gas" and gives the reason; "Retry" tries again.
 - Nothing can be sent while the ledger is locked or its chain is broken. Before sending, the chain is read again; if it holds records this machine lacks, sending is refused: "Ledger is not up to date" and "N records on chain are not on this machine".
 
@@ -574,6 +579,9 @@ All entries in a batch travel in one transaction.
 - Not yet in a block after that: the toast reads "Submitted N, waiting for confirmation", and the app asks for the receipt again every 15 seconds.
 - If you quit and reopen the app, it keeps waiting for that transaction's receipt and never sends it twice.
 - If the receipt shows the transaction failed: "The transaction was sent but failed on chain." The entries stay in the queue and can be sent again.
+- When a batch sits in the nodes' pools without being included, **"Resend with higher fees"** appears beside it in the pending section: the card lists "Cap it went out with", "Price now" and "Cap of the resend", and confirming signs it again at the same nonce at the price now; the old and the new transaction are both watched and the first included counts. A batch is resent at most 3 times; after that it reads "Resent 3 times; no further raises" and the app keeps waiting for it.
+- When no node holds the batch any more (most likely dropped from the pools) and its nonce is still unused, it reads "No node holds this batch; its nonce is unused. Resend at the price now", and **"Send again at the price now"** sends it once more at the same nonce.
+- When no node holds the batch and its nonce has been used by another transaction, the batch lapses: "This batch lapsed: its nonce was used by another transaction; none was included". Its entries go back to the queue and can be sent again.
 
 **When a node refuses**
 
@@ -1310,22 +1318,27 @@ New and imported identities are secondary. The exception is a machine with no id
   - "N nodes agree"
   - "Only 1 node responded; no cross-check"
   - "Not read"
+  - When some nodes give no answer, the reading ends with "N node(s) did not answer", and what each node said is under "What each said".
 - Nodes, registry contract, chain ID and start block are under "Details".
 
 **"Auto put on chain"**: a switch, off by default, kept separately for each data folder (see "Pending queue").
+
+**"Putting on chain from the command line"**: what happens when the command line puts records on chain through the desktop with `--home` (see section 12), one setting for every data folder on this machine: "Send automatically" (the default) sends at once, as "Put all on chain" does; "Queue only" leaves the request in the pending queue for you to send from the desktop, with the toast "N records from the command line are queued".
 
 **Buttons**
 
 - **"Edit nodes…"** opens the editor. A data folder with no network is filled in here and only here.
   - "Preset": pick a preset network of Appendix A and the nodes, chain ID, registry contract and start block are filled in; "Custom" keeps what is typed. A preset only fills the cells: the two save keys below still make it take effect. The read-only networks' "Preset" is the same table.
   - Write nodes as `chain-id=node-url`, separated by spaces, and press "Save nodes".
-  - Fill in "Chain ID", "Registry contract" and "Start block" and press "Save chain settings".
+  - Fill in "Chain ID", "Registry contract" and "Start block" and press "Save chain settings". Saving first asks the nodes for that registry's code: if it is not the build ZIKARON pins, nothing is saved and the message is "The registry … is not the pinned build; the chain settings were not saved". With no nodes yet the settings are saved unchecked, and the same check runs once nodes are set.
   - Once you have saved your own values, "Network" reads "Custom"; if the chain ID, registry contract, start block and nodes (in any order) saved equal a row of Appendix A as it is today, it reads that row's name.
   - Saving other nodes or other chain settings voids the gas estimate and fees in hand; the "Put on chain" card estimates again the next time it opens.
   - When this identity chose "Custom", the chain ID, registry and nodes, once complete in one role's data folder, are recorded on this identity: the other role's data folder takes them when it opens, so you do not configure them twice. Other identities do not take them.
 - **"Read chain"**: reads the signing key's balance once.
 
-**Node connections.** A node address starts with `https://` or `http://`. For https nodes, the certificate and host name are checked on every connection; if the certificate fails, the chain cannot be read. When a node refuses or a connection fails, the message names the cause (rate limit, credentials needed, wrong network, certificate, timeout and so on), with the node's own words under details.
+**Node connections.** A node address starts with `https://` or `http://`. For https nodes, the certificate and host name are checked on every connection; if the certificate fails, the chain cannot be read. When a node refuses or a connection fails, the message names the cause (rate limit, credentials needed, wrong network, certificate, timeout and so on), with the node's own words under details. When a node's address resolves to several IP addresses, each is tried; every question has one overall deadline that covers connecting, sending and reading; a rate-limited node is asked again after waits from one table. An access key inside a node address (in its path or query) never appears in any message, detail or log.
+
+**"Proxy"**: how connections to nodes go out, one setting for every identity on this machine. "System" (the default) follows the system's proxy settings; a system set to an automatic configuration script (PAC) is not supported and connections go direct. "Off" always connects directly. "Custom proxy" takes `http://host:port` or `socks5://host:port`; press "Save". A proxy that needs a user name and password is not supported. Nodes on this machine (`localhost`, `127.0.0.1` and the like) are never reached through a proxy. With a VPN: a VPN that tunnels all traffic needs nothing here; one that only sets a system proxy works with "System"; if nodes still cannot be reached, enter the proxy address the VPN gives under "Custom proxy".
 
 **Publish address.** The https address where you intend to put record kits online:
 
@@ -1345,7 +1358,7 @@ New and imported identities are secondary. The exception is a machine with no id
 - A row with the same chain and registry contract as one already listed, or as the main network, is refused: "This network is already listed."
 - Each row shows only its name and its reading; opening it shows the cells and three buttons, "Save", "Read the chain" and "Remove". "Remove" asks "Remove this network?" first; press "Remove" again.
 - "Read the chain" gives "Agreed" (every node that answered gave the code of the pinned registry build), "Single source" (one node answered), "Unreachable" (no node answered) or "Fingerprint mismatch" (the registry's code is not the build ZIKARON pins).
-- Before a read-only network is read, the code at its registry is checked every time. A row with "Fingerprint mismatch" is not used that time, and not one anchor on it counts. The main network is not checked this way.
+- Before a read-only network is read, the code at its registry is checked every time. A row with "Fingerprint mismatch" is not used that time, and not one anchor on it counts. The main network is checked when "Save chain settings" is pressed (see above).
 - Rows on the same chain are read as one window: every registry contract, from the earliest start block. A row that could not be read this time is named in the result, and the others are checked as usual.
 
 #### 11.5 Notifications
@@ -1371,7 +1384,7 @@ Settings > Local data.
 
 One backup file restores everything: every identity and key on this machine, all local data and all settings. It does not contain the master key, the passcode or the wrong-try count, nor the record of checked facts (asked again after restoring), the read-only networks, or exported record kits with their index and verification results.
 
-- "Last backup": the time, or "Never".
+- "Last backup": the time, or "Never". When the last export was not written or did not read back, Alerts shows "The last whole-machine backup failed; back up again" and the "Whole-machine backup" lamp in the setup check turns red until an export succeeds. The lamp is green when up to date, amber when entries were added since, grey when there has never been a backup, and red after a failed one.
 - "Not backed up": how many entries have been added since.
 - "Export backup…":
   1. Enter this machine's passcode.
@@ -1425,6 +1438,7 @@ Each role of each identity has its own data folder.
   - Any other folder (a ledger folder made by the command line, a folder of documents) is refused: "This folder is neither a data folder nor empty.". Nothing is written there and the current data folder stays open. To take over a ledger made by the command line, use "Adopt in place" under "Advanced options" below.
 - "Measure usage": counts the space used and the number of entries.
 - "Hide entries deleted on this machine" (Recorder): when on, the Records and Ledger lists leave out entries deleted before they went on chain, and their deletion entries (see "Deleting a record" under "Record on chain"); entries deleted after going on chain are still listed. It changes only what the lists show, is off by default, and is kept in this data folder.
+- **"Enable command line"**: when on, typing `zikaron` in any terminal runs the command line installed with the app: on macOS a link in `/usr/local/bin` (the system asks for an administrator password), on Linux a link in `~/.local/bin`, on Windows the command line's folder added to this user's `PATH`. Turning it off removes it. An install from the `.deb` already has the command line on the command path and shows "Provided by the installed package"; anything else already in that place is never overwritten and shows "Taken by another install: …" (after a `.pkg` install `/usr/local/bin/zikaron` is the installed command line, so this is what it shows and nothing needs turning on); an app opened straight from its disk image or AppImage cannot be put in the terminal and shows "Not supported for this install", with the reason under details.
 - "Import grants folder…" (User): choose a folder and press "Import folder"; every file in the folder (grant files and grant entry files, whatever they are called) is verified and imported one by one; a file that is not a grant is refused by name and the rest are taken.
   - Side files the system leaves do not count. A folder with no file at all says "This folder has no files in it."
 - The empty role of a local-key identity has no data folder, so these buttons are unavailable.
@@ -1448,7 +1462,7 @@ Only one window can write to a data folder. A window opened later can only read,
 
 ### About
 
-- **"Version"**: `ZIKARON Desk 0.1.1`.
+- **"Version"**: `ZIKARON Desk 0.1.2`.
 - **"Third-party licences"** (folded): every third-party component the app uses, with its version and licence, then each licence text; made at build time from the components this platform actually uses and carried in the app, scrollable.
 - **"Setup check"**: a light for each item, with unfinished ones marked "To set up".
   - Recorder: "Signing key", "Passcode", "Gas", "Create the ledger", "Whole-machine backup".
@@ -1463,7 +1477,7 @@ The "Details" fold below "Run wizard again" on the About page: "Cores and signin
 
 ## 12 · Command line (`zikaron`)
 
-The command line reads and writes the ledger folder you give it.
+The command line reads and writes the ledger folder you give it; with `--home`, the running desktop app does the work in its own data folder instead (see "Through the desktop" below).
 
 A ledger in ZIKARON Desk's own data folder is encrypted, and the command line has no passcode, so it refuses to read one: `E_UNREADABLE` followed by the ledger's path, and on the next line "已锁定:这是 ZIKARON Desk 封存的本机数据,命令行不读" ("locked: this is ZIKARON Desk's sealed local data; the command line does not read it"), exit code 2. To work with the command line, export a "Ledger mirror" or a record kit: the `--ledger` of `audit` (and through it `check-grant`, `chain-check` and `depth`) and of `show --entry` can point straight at a mirror folder (the level holding `mirror.json`) or a record kit folder. A record kit is checked by the kit law first and refused with `E_KIT` if it fails. The verbs that write entries, and `init`, take ledger folders only.
 
@@ -1471,7 +1485,11 @@ A ledger in ZIKARON Desk's own data folder is encrypted, and the command line ha
 
 **Node addresses** can be `http://` or `https://`, in any case; https verifies the certificate chain and host name, the same way the app connects. While `anchor` waits for a receipt, a round the node refuses is not an answer: it asks again after a pause until `--wait-secs` runs out, and says `E_UNREACHABLE` only when the node never answered in that time.
 
-**`anchor` estimates before it sends.** After reading the fees it asks the node for a gas estimate of this very transaction (the app's own rule), and the transaction carries one and a half times the estimate, rounded up, at most 200,000. If the node refuses the estimate with an error (a revert, or a rate limit and the like; its words are in `detail`), or the estimate is above 200,000, it is refused with `E_GAS_REFUSED` (exit 1) and nothing is sent; if the node does not answer that question, it says `E_UNREACHABLE` (exit 4) and nothing is sent either.
+**`anchor` estimates before it sends.** After reading the fees it asks the node for a gas estimate of this very transaction (the app's own rule), and the transaction carries one and a half times the estimate, rounded up, at most 200,000. If the node refuses the estimate for a reason about this transaction (it would revert; the node's words are in `detail`), or the estimate is above 200,000, it is refused with `E_GAS_REFUSED` (exit 1) and nothing is sent; if the node refuses for its own reasons (a rate limit, an unsupported method, credentials needed, a wrong chain and the like) or does not answer, it says `E_UNREACHABLE` (exit 4) and nothing is sent either.
+
+**A rerun of `anchor` asks first.** Without `--home`, `anchor` keeps the nonce and hash of every transaction it signs for one anchoring (the same chain, key, recipient and data) in `cli-sent/` in the machine folder; it keeps no key and no node. When the same command runs again, it first asks the node where those transactions stand, by their hashes: one already included is answered as included and nothing is sent; one still in the node's pool is waited on; if none is held and their nonce is unused, it signs again at that same nonce, so at most one can ever be included; if their nonce was used by another transaction, it answers `E_TX_VOID` (exit 1) and sends nothing, and the next run starts afresh. Running the same command again after it succeeded therefore answers the earlier transaction and never pays twice.
+
+**Through the desktop (`--home`).** With `--home <the desktop's data folder>`, ten verbs (`init`, `history`, `grant`, `revoke`, `attest`, `succeed`, `annotate`, `retract`, `anchor`, `kit-export`) are done by the running ZIKARON Desk, unlocked and holding that data folder as its writer: the entry is written into the desktop's ledger with the desktop's identity and shows in its window at once; the command line holds no key and needs no passcode on this path. When the desktop is locked, has not opened that data folder or has quit, the answer is `E_DESKTOP` (exit 4). `anchor` follows "Putting on chain from the command line" in Settings > Network: "Send automatically" sends as the queue page's "Put all on chain" does; "Queue only" queues the records and answers `E_QUEUED` (exit 3). Which flags each verb takes with `--home` is in section 11 of `CLI-SCHEMA.md`.
 
 **Grant files.** `check-grant --grant` takes a grant entry file or a grant file exported by the app (`.zkgrant`): the command line opens it by the app's own reading (the bundle's shape, the kit law over the kit inside, the grant code, and every hop of the code carried in the bundle) and checks the grant the file is for; one that does not open is refused with `E_GRANT_FILE`.
 
@@ -1504,6 +1522,7 @@ A ledger in ZIKARON Desk's own data folder is encrypted, and the command line ha
 | `badge` | Encode or decode a credential (exactly one of `--encode` and `--decode`) |
 | `kit-export` | Export a record kit (written only if it passes its self-check) |
 | `show` | Show an entry's author, ID, type, previous entry, sequence and content |
+| `contract` | Print the command line's own contract (verbs, each verb's flags, exit codes, refusal reasons), made from the same tables in the code |
 
 **Exit codes**
 
@@ -1554,7 +1573,7 @@ The mainnet node shipped with 0.1.0, `https://rpc.flashbots.net`, keeps only the
 
 **The data folders**, one for each role of each identity, hold the ledger, settings, pending queue, received grants and so on.
 
-**Local encryption.** Ledger entries, settings, the pending queue, the identity registry, the record index, hand-filled record kit links, the record of checked facts (`checked/facts.json` in the machine folder), and received grants and terms files are all encrypted with a local data key derived from the master key (XChaCha20-Poly1305). While the app is locked none of it can be read, and someone who copies this machine's files cannot read it without the passcode.
+**Local encryption.** Ledger entries, settings, the pending queue, the identity registry, the record index, hand-filled record kit links, the record of checked facts (`checked/facts.json` in the machine folder), and received grants and terms files are all encrypted with a local data key derived from the master key (XChaCha20-Poly1305). While the app is locked none of it can be read, and someone who copies this machine's files cannot read it without the passcode. File names, and the part of each file's header that says which file it is, are computed with this machine's key, so someone holding the disk cannot tell from entry or grant numbers which entries or grants this machine keeps.
 
 **Files that are not encrypted this way**
 
