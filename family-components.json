@@ -1021,10 +1021,10 @@
   },
   {
    "id": "os-platform",
-   "familyVersion": 1,
+   "familyVersion": 2,
    "origin": {
     "by": "ZIKARON",
-    "previous": null
+    "previous": 1
    },
    "home": [
     "crates/zikaron-os/src/lib.rs",

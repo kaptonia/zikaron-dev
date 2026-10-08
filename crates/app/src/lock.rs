@@ -225,18 +225,11 @@ pub fn holds_writer(held: Option<&Lock>, home: &Home) -> bool {
     crate::home::same_place(l.path(), &path_of(home))
 }
 
-/// The lock file's descriptor. It is closed (releasing the kernel lock) only while no child process is being
-/// spawned: a child being spawned holds copies of all descriptors until it execs, and a lock closed in that
-/// window would stay held by the copy, making the next attempt on this machine a reader
-/// (`zikaron_os::letting_go`). Every close goes through `Drop` here, including after a failed grab.
-struct Held(Option<std::fs::File>);
-
-impl Drop for Held {
-    fn drop(&mut self) {
-        let _turn = zikaron_os::letting_go();
-        drop(self.0.take());
-    }
-}
+/// The lock file's descriptor, listed with the OS layer while open (`zikaron_os::LockFile`): a child process
+/// starting meanwhile closes its copy before it runs, so a lock let go here is free at once and the next attempt
+/// on this machine is never a reader held off by a child's copy. Closing it, including after a failed grab, goes
+/// through that one type.
+struct Held(zikaron_os::LockFile);
 
 /// Take the lock: obtained means writer (or [`Mode::OtherMachine`] per the writer mark), not obtained means
 /// reader. Either way a `Lock` is returned.
@@ -252,8 +245,8 @@ pub fn take(home: &Home) -> Result<Lock, Fault> {
     let mut o = zikaron_os::Options::new();
     o.create(true).read(true).write(true);
     zikaron_os::owner_only(&mut o);
-    let held = Held(Some(o.open(&path).map_err(|e| classify(&e, &path.display().to_string()))?));
-    let got = held.0.as_ref().map(grab).unwrap_or(false);
+    let held = Held(zikaron_os::LockFile::open(&o, &path).map_err(|e| classify(&e, &path.display().to_string()))?);
+    let got = grab(held.0.file());
     // The kernel lock covers this machine; the writer mark says whether another machine writes this home.
     if got {
         let me = this_machine()?;
@@ -276,12 +269,11 @@ pub fn take(home: &Home) -> Result<Lock, Fault> {
         let me = format!("pid {}", std::process::id());
         // Holder text for display only; a failed write does not affect the lock.
         use std::io::{Seek, Write};
-        if let Some(mut h) = held.0.as_ref() {
-            let _ = h.set_len(0);
-            let _ = h.rewind();
-            let _ = h.write_all(me.as_bytes());
-            let _ = h.flush();
-        }
+        let mut h = held.0.file();
+        let _ = h.set_len(0);
+        let _ = h.rewind();
+        let _ = h.write_all(me.as_bytes());
+        let _ = h.flush();
         Ok(Lock { _file: held, mode: Mode::Writer, path, holder: me, trouble: None })
     } else {
         let holder = std::fs::read_to_string(&path).unwrap_or_default();

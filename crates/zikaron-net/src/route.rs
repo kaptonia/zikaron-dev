@@ -565,12 +565,16 @@ fn io(e: std::io::Error, clock: &Clock) -> Fail {
     Fail::Stream(e.to_string())
 }
 
-/// Read exactly `buf.len()` bytes within the time left.
+/// Read exactly `buf.len()` bytes within the time left; shutting down cuts it within a slice.
 fn read_exact(tcp: &mut TcpStream, buf: &mut [u8], clock: &Clock) -> Result<(), Fail> {
     let mut at = 0;
     while at < buf.len() {
         clock.bound(tcp)?;
-        match tcp.read(&mut buf[at..]) {
+        let got = tcp.read(&mut buf[at..]);
+        if keep::closing() {
+            return Err(Fail::Closed);
+        }
+        match got {
             Ok(0) => return Err(Fail::Stream("the proxy closed the connection".into())),
             Ok(n) => at += n,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}

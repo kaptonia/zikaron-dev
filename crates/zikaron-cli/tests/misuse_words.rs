@@ -17,7 +17,7 @@ struct Ran {
 
 fn run(args: &[&str], env: &[(&str, &str)]) -> Ran {
     let mut c = Command::new(BIN);
-    c.args(args).env("HOME", own_home());
+    c.args(args).env(zikaron_os::HOME_VAR, own_home());
     for k in ["LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"] {
         c.env_remove(k);
     }

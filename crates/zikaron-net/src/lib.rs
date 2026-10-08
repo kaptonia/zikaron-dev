@@ -7,9 +7,11 @@
 //! verified; there is no way to skip them.
 //!
 //! Each exchange has one deadline, fixed when it starts: resolving, connecting, the handshake, writing and
-//! every read get only the time left, and running out anywhere is a deadline failure. Every resolved address
-//! is tried (`dial`). A connection whose response ended cleanly and whose peer left it open is kept for the
-//! next request to the same place (`keep`); an idempotent request ([`Ask::Read`]) is retried once on a new
+//! every read get only the time left, and running out anywhere is a deadline failure. No wait lasts longer than
+//! one [`SLICE`] before it looks whether the transport is shutting down, so shutting down cuts an exchange in
+//! flight within a slice on every system, without relying on the system waking a blocked read. Every resolved
+//! address is tried (`dial`). A connection whose response ended cleanly and whose peer left it open is kept for
+//! the next request to the same place (`keep`); an idempotent request ([`Ask::Read`]) is retried once on a new
 //! connection if the connection breaks before any response byte arrives.
 
 use std::io::{Read, Write};
@@ -39,6 +41,11 @@ pub(crate) fn request_head(method: &str, target: &str, host: &str, lines: &str) 
 }
 
 // ───────────────────────── Limits ─────────────────────────
+
+/// The longest any wait in an exchange (resolving, connecting, a socket read) goes before it looks again
+/// whether the transport is shutting down ([`close_down`]): the most a cut waits. The deadline is kept to the
+/// instant regardless; a slice only bounds how long each wait sleeps.
+pub const SLICE: Duration = Duration::from_millis(250);
 
 /// Environment variables that override the limits; node queries, remote fetches and tests use only these
 /// names.
@@ -116,10 +123,13 @@ impl Clock {
         Ok(self.left()?.map(|l| l.min(route::SYSTEM_READ_CAP)).unwrap_or(route::SYSTEM_READ_CAP))
     }
 
-    /// Limit the socket's reads and writes to the time left.
+    /// Limit the socket's writes to the time left and each read to one [`SLICE`] within it, so every read loop
+    /// looks at shutdown after a slice at most (with no deadline, too) and still runs out exactly at the
+    /// deadline.
     fn bound(&self, tcp: &std::net::TcpStream) -> Result<(), Fail> {
         let left = self.left()?;
-        tcp.set_read_timeout(left).and_then(|_| tcp.set_write_timeout(left)).map_err(|e| Fail::Stream(e.to_string()))
+        let read = Some(left.map_or(SLICE, |l| l.min(SLICE)));
+        tcp.set_read_timeout(read).and_then(|_| tcp.set_write_timeout(left)).map_err(|e| Fail::Stream(e.to_string()))
     }
 }
 
@@ -383,7 +393,7 @@ fn tls_connect(
             Ok((0, 0)) if conn.is_handshaking() => return Err(Fail::Handshake("the peer closed the connection during the handshake".to_string())),
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-            // Socket timeout: back to the loop head, where the deadline is checked.
+            // A slice passed: back to the loop head, where shutdown and the deadline are checked.
             Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
             Err(e) => return Err(tls_fail(&e)),
         }
@@ -523,7 +533,7 @@ fn round(stream: &mut Stream, request: &[u8], limits: &Limits, clock: &Clock) ->
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             // A peer that disconnects without a TLS close alert: judge what arrived as is.
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return peer_closed(reader),
-            // Socket timeout: the deadline is checked at the loop head.
+            // A slice passed with nothing read: shutdown was checked above, the deadline is below.
             Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
             Err(e) if breaks(&e) && reader.raw().is_empty() => return Err(Round::Broke(e.to_string())),
             Err(e) => return Err(Round::Failed(stream.fail(e))),
@@ -630,6 +640,115 @@ pub fn get(t: &Target, limits: &Limits) -> Result<Answer, Fail> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// A local peer that takes every connection, reads once (the request, or a handshake's first flight), writes
+    /// `then` and stays silent; counts the connections whose first read arrived.
+    fn silent_peer(then: &'static [u8]) -> (u16, Arc<AtomicUsize>) {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = l.local_addr().expect("addr").port();
+        let heard = Arc::new(AtomicUsize::new(0));
+        let h = heard.clone();
+        std::thread::spawn(move || {
+            for s in l.incoming().flatten() {
+                let h = h.clone();
+                std::thread::spawn(move || {
+                    let mut s = s;
+                    let mut buf = [0u8; 4096];
+                    let _ = s.read(&mut buf);
+                    let _ = s.write_all(then);
+                    h.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_secs(30));
+                });
+            }
+        });
+        (port, heard)
+    }
+
+    /// Run `ask` on its own thread; once the peer has heard it, raise the shutdown flag alone (no socket shut,
+    /// so no system wakes the blocked read) and return what the exchange said and how long the cut took.
+    fn cut_by_the_flag_alone(heard: &Arc<AtomicUsize>, ask: impl FnOnce() -> Option<Fail> + Send + 'static) -> (Option<Fail>, Duration) {
+        let asking = std::thread::spawn(ask);
+        while heard.load(Ordering::SeqCst) == 0 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+        let raised = Instant::now();
+        keep::raise_flag_only();
+        let said = asking.join().expect("the asking thread");
+        let took = raised.elapsed();
+        keep::open_up();
+        (said, took)
+    }
+
+    /// The cut rests on the flag, not on the system waking a blocked read: with only the flag raised, an
+    /// exchange waiting after its request, one with half an answer in, one with no deadline at all, a handshake
+    /// and a proxy tunnel each end as closed within a few slices, far inside their 20 s deadline.
+    #[test]
+    fn a_cut_rests_on_the_flag_and_lands_within_a_slice() {
+        let _turn = keep::turn();
+        let limits = Limits { deadline: Duration::from_secs(20), max_answer: 0 };
+        let none = Limits { deadline: Duration::ZERO, max_answer: 0 };
+        for (form, then, limits) in [
+            ("asked, nothing back", &b""[..], limits),
+            ("half an answer in", &b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nab"[..], limits),
+            ("no deadline at all", &b""[..], none),
+        ] {
+            let (port, heard) = silent_peer(then);
+            let t = parse(&format!("http://127.0.0.1:{port}/")).expect("address");
+            let (said, took) = cut_by_the_flag_alone(&heard, move || post_json(&t, b"{}", &limits, Ask::Once).err());
+            assert_eq!(said, Some(Fail::Closed), "{form}");
+            assert!(took < SLICE * 4, "{form}: cut within a slice or so, not at the deadline: {took:?}");
+        }
+        let (port, heard) = silent_peer(b"");
+        let t = parse(&format!("https://127.0.0.1:{port}/")).expect("address");
+        let (said, took) = cut_by_the_flag_alone(&heard, move || open(&t, &Way::Direct, &Clock::start(limits.deadline)).err());
+        assert_eq!(said, Some(Fail::Closed), "a handshake in flight");
+        assert!(took < SLICE * 4, "a handshake in flight: {took:?}");
+        let (port, heard) = silent_peer(b"");
+        let p = Proxy { kind: Kind::Http, host: "127.0.0.1".into(), port };
+        let t = parse("http://node.invalid:8545/").expect("address");
+        let (said, took) = cut_by_the_flag_alone(&heard, move || route::tunnel(&t, &p, &Clock::start(limits.deadline)).err());
+        assert_eq!(said, Some(Fail::Closed), "a tunnel in flight");
+        assert!(took < SLICE * 4, "a tunnel in flight: {took:?}");
+    }
+
+    /// A deadline shorter than a slice runs out at the deadline, not at the slice: reads are sliced, the
+    /// deadline is not rounded up to them.
+    #[test]
+    fn the_deadline_is_kept_to_the_instant_not_to_a_slice() {
+        let _turn = keep::turn();
+        let (port, heard) = silent_peer(b"");
+        let t = parse(&format!("http://127.0.0.1:{port}/")).expect("address");
+        let limits = Limits { deadline: Duration::from_millis(60), max_answer: 0 };
+        let began = Instant::now();
+        assert_eq!(post_json(&t, b"{}", &limits, Ask::Once).err(), Some(Fail::Late(Duration::from_millis(60))));
+        let took = began.elapsed();
+        assert!(heard.load(Ordering::SeqCst) == 1, "the request went out");
+        assert!(took >= Duration::from_millis(60) && took < SLICE, "late at the deadline: {took:?}");
+    }
+
+    /// A cut and the deadline in the same slice: the exchange ends as one of the two, named, within that slice.
+    #[test]
+    fn a_cut_and_the_deadline_in_one_slice_end_as_either() {
+        let _turn = keep::turn();
+        let (port, heard) = silent_peer(b"");
+        let t = parse(&format!("http://127.0.0.1:{port}/")).expect("address");
+        let limits = Limits { deadline: Duration::from_millis(300), max_answer: 0 };
+        let began = Instant::now();
+        let asking = std::thread::spawn(move || post_json(&t, b"{}", &limits, Ask::Once).err());
+        while heard.load(Ordering::SeqCst) == 0 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(300).saturating_sub(began.elapsed()).saturating_sub(Duration::from_millis(20)));
+        keep::raise_flag_only();
+        let said = asking.join().expect("the asking thread");
+        let took = began.elapsed();
+        keep::open_up();
+        assert!(matches!(said, Some(Fail::Closed) | Some(Fail::Late(_))), "{said:?}");
+        assert!(took < Duration::from_millis(300) + SLICE, "{took:?}");
+    }
 
     /// A displayed address is scheme, host and port only: a key in the path, query or fragment never appears;
     /// the default port is omitted as in `Host`; an IPv6 literal keeps its brackets; text that does not parse

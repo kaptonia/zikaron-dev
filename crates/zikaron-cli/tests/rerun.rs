@@ -142,12 +142,20 @@ fn home(tag: &str) -> PathBuf {
     h
 }
 
+/// `anchor` handed `home` through the system's own home variable (`zikaron_os::HOME_VAR`), so each run's
+/// record lives under its own home on every system.
 fn anchor(home: &Path, n: &Node) -> Ran {
-    let o = Command::new(BIN)
-        .args(["anchor", "--endpoint", &format!("31337={}", n.url), "--key", KEY, "--form", "bare", "--hash", &zikaron::hexfmt::encode(&HASH), "--wait-secs", "0"])
-        .env("HOME", home)
-        .output()
-        .expect("zikaron runs");
+    anchor_where(n, |c| {
+        c.env(zikaron_os::HOME_VAR, home);
+    })
+}
+
+/// `anchor` with the home variable as `set` leaves it.
+fn anchor_where(n: &Node, set: impl FnOnce(&mut Command)) -> Ran {
+    let mut c = Command::new(BIN);
+    c.args(["anchor", "--endpoint", &format!("31337={}", n.url), "--key", KEY, "--form", "bare", "--hash", &zikaron::hexfmt::encode(&HASH), "--wait-secs", "0"]);
+    set(&mut c);
+    let o = c.output().expect("zikaron runs");
     Ran { code: o.status.code().unwrap_or(-1), out: zikaron::json::parse(&o.stdout).unwrap_or(zikaron::json::Value::Null), err: String::from_utf8_lossy(&o.stderr).to_string() }
 }
 
@@ -355,4 +363,62 @@ fn a_hidden_file_beside_the_record_is_not_a_record() {
     assert_eq!(n.broadcasts(), 1, "signed and sent: {}", r.err);
     assert_eq!(zikaron_cli::sent::read(&at).expect("the record reads").len(), 1);
     let _ = std::fs::remove_dir_all(&h);
+}
+
+/// A home handed through the system's own variable keeps its record to itself: one not there yet is made and
+/// holds the record; a home beside it holds none, and its own run starts from nothing.
+#[test]
+fn a_home_handed_through_the_systems_variable_keeps_its_record_apart() {
+    let h = home("apart");
+    let fresh = h.join("not-there-yet");
+    let n = node();
+    n.set(Scene { refuse: true, ..Scene::default() });
+    let r = anchor(&fresh, &n);
+    assert_eq!(n.broadcasts(), 1, "signed and sent: {}", r.err);
+    assert_eq!(zikaron_cli::sent::read(&record(&fresh)).expect("the record reads").len(), 1, "recorded under the home it was handed");
+    let other = home("apart-other");
+    assert!(!record(&other).exists(), "nothing under another home");
+    let r = anchor(&other, &n);
+    assert_eq!(n.broadcasts(), 2, "the other home starts from nothing and sends: {}", r.err);
+    assert_eq!(n.asked("eth_getTransactionByHash"), 0, "and asks about nothing it did not send");
+    let _ = std::fs::remove_dir_all(&h);
+    let _ = std::fs::remove_dir_all(&other);
+}
+
+/// A home that cannot be written (a read-only folder) records nothing and so sends nothing.
+#[cfg(unix)]
+#[allow(clippy::permissions_set_readonly_false)]
+#[test]
+fn a_home_that_cannot_be_written_sends_nothing() {
+    let h = home("unwritable");
+    let n = node();
+    let mut p = std::fs::metadata(&h).expect("meta").permissions();
+    p.set_readonly(true);
+    std::fs::set_permissions(&h, p.clone()).expect("read-only");
+    let r = anchor(&h, &n);
+    p.set_readonly(false);
+    std::fs::set_permissions(&h, p).expect("back");
+    assert_eq!((r.code, r.text("reason"), r.text("tx")), (4, "E_UNREACHABLE".to_string(), String::new()), "{}", r.err);
+    assert_eq!(n.broadcasts(), 0, "nothing broadcast");
+    let _ = std::fs::remove_dir_all(&h);
+}
+
+/// No home at all (the variable unset, or set empty, and unix has nothing beyond it): nothing can be recorded,
+/// so nothing is signed or sent. Unix only: on Windows the profile known folder answers, which is the user's
+/// real one.
+#[cfg(unix)]
+#[test]
+fn no_home_sends_nothing() {
+    let n = node();
+    for (form, r) in [
+        ("unset", anchor_where(&n, |c| {
+            c.env_remove(zikaron_os::HOME_VAR);
+        })),
+        ("empty", anchor_where(&n, |c| {
+            c.env(zikaron_os::HOME_VAR, "");
+        })),
+    ] {
+        assert_eq!((r.code, r.text("reason"), r.text("tx")), (4, "E_UNREACHABLE".to_string(), String::new()), "{form}: {}", r.err);
+    }
+    assert_eq!(n.broadcasts(), 0, "nothing broadcast");
 }

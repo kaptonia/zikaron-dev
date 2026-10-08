@@ -379,13 +379,18 @@ fn known_folder(id: &Guid) -> Option<std::path::PathBuf> {
 /// This app's folder in the local application data folder.
 const APP_FOLDER: &str = "ZIKARON";
 
-/// The user's home directory: the profile known folder.
+/// The variable that names the user's home (set by Windows from the profile at logon).
+pub const HOME_VAR: &str = "USERPROFILE";
+
+/// The user's home beyond [`HOME_VAR`]: the profile known folder.
 pub fn home_dir() -> Option<std::path::PathBuf> {
     known_folder(&FOLDER_PROFILE)
 }
 
-/// This app's folder in the local application data folder (`%LOCALAPPDATA%`, which does not roam). A stand-in
-/// home (test hooks) uses the same layout under itself, so tests never touch the user's real folder.
+/// This app's folder in the local application data folder (`%LOCALAPPDATA%`, which does not roam) when the home
+/// is the profile known folder, as it is for a user's own logon (`USERPROFILE` names it). Any other home (a test
+/// that hands a child its own `USERPROFILE`, a stand-in from the test hooks) uses the same layout under itself,
+/// so tests never touch the user's real folder.
 pub fn app_data_dir(user_home: &Path) -> std::path::PathBuf {
     if home_dir().as_deref() == Some(user_home) {
         if let Some(local) = known_folder(&FOLDER_LOCAL_APP_DATA) {
@@ -410,6 +415,7 @@ const ERROR_FILE_NOT_FOUND: i32 = 2;
 const ERROR_ACCESS_DENIED: i32 = 5;
 const ERROR_BROKEN_PIPE: i32 = 109;
 const ERROR_PIPE_BUSY: i32 = 231;
+const ERROR_NO_DATA: i32 = 232;
 const ERROR_PIPE_CONNECTED: i32 = 535;
 const PIPE_ACCESS_DUPLEX: u32 = 0x3;
 const FILE_FLAG_FIRST_PIPE_INSTANCE: u32 = 0x0008_0000;
@@ -417,7 +423,9 @@ const PIPE_REJECT_REMOTE_CLIENTS: u32 = 0x8;
 const PIPE_UNLIMITED_INSTANCES: u32 = 255;
 const SECURITY_SQOS_PRESENT: u32 = 0x0010_0000;
 const SECURITY_IDENTIFICATION: u32 = 0x0001_0000;
-const NMPWAIT_WAIT_FOREVER: u32 = 0xFFFF_FFFF;
+const ERROR_SEM_TIMEOUT: i32 = 121;
+/// How long one wait for a busy pipe lasts before the pipe is tried again.
+const BUSY_WAIT_MS: u32 = 250;
 
 /// One pipe end, closed on drop (a server end disconnects its client first).
 pub struct DoorStream {
@@ -441,9 +449,18 @@ impl Drop for DoorStream {
 }
 
 /// The listening side: the pipe instance the next client connects to.
+///
+/// A pipe has no path to remove: it exists while an instance does. So closing ([`door_close`]) closes the
+/// waiting instance on the spot and marks it gone (`INVALID_HANDLE_VALUE`), and an accept woken by the close
+/// makes no next instance; once the close returns there is no instance, and a connect finds nothing
+/// (`NotFound`), as on unix after the socket file is removed.
 pub struct DoorListener {
     name: Vec<u16>,
+    /// The instance the next client connects to, or `INVALID_HANDLE_VALUE` once closed. Held across
+    /// `ConnectNamedPipe`, so a close waits for an accept in progress to finish its round.
     next: std::sync::Mutex<Handle>,
+    /// Set by [`door_close`] before it wakes the waiting accept.
+    closing: std::sync::atomic::AtomicBool,
 }
 
 unsafe impl Send for DoorListener {}
@@ -483,34 +500,48 @@ fn same_user(pid: std::io::Result<u32>) -> std::io::Result<()> {
 pub fn door_listen(place: &Path) -> std::io::Result<DoorListener> {
     let name = pipe_name(place);
     let first = instance(&name, true)?;
-    Ok(DoorListener { name, next: std::sync::Mutex::new(first) })
+    Ok(DoorListener { name, next: std::sync::Mutex::new(first), closing: std::sync::atomic::AtomicBool::new(false) })
+}
+
+fn door_gone() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::NotFound, "the door is closed")
 }
 
 impl DoorListener {
-    /// The next client; refused (`PermissionDenied`) if it runs as another user.
+    /// The next client, not yet judged ([`DoorStream::same_user`]). A client that connected and already hung up
+    /// (`ERROR_NO_DATA`) is taken like any other: its stream reads as ended, and the instance is not left
+    /// half-used for the next accept.
     pub fn accept(&self) -> std::io::Result<DoorStream> {
         let mut next = self.next.lock().unwrap_or_else(|e| e.into_inner());
         let h = *next;
-        if unsafe { ConnectNamedPipe(h, std::ptr::null_mut()) } == 0 {
+        if h == INVALID_HANDLE_VALUE {
+            return Err(door_gone());
+        }
+        let closing = || self.closing.load(std::sync::atomic::Ordering::SeqCst);
+        if !closing() && unsafe { ConnectNamedPipe(h, std::ptr::null_mut()) } == 0 {
             let e = std::io::Error::last_os_error();
-            if e.raw_os_error() != Some(ERROR_PIPE_CONNECTED) {
+            if !matches!(e.raw_os_error(), Some(ERROR_PIPE_CONNECTED) | Some(ERROR_NO_DATA)) {
                 return Err(e);
             }
         }
+        // Woken by the close (or a client came at that moment): no next instance, and this one is closed now.
+        if closing() {
+            unsafe { CloseHandle(h) };
+            *next = INVALID_HANDLE_VALUE;
+            return Err(door_gone());
+        }
         // The next client connects to a fresh instance; this one now belongs to the stream.
         *next = instance(&self.name, false)?;
-        let s = DoorStream { h, server: true, deadline: std::cell::Cell::new(None) };
-        let mut pid = 0u32;
-        let got = if unsafe { GetNamedPipeClientProcessId(h, &mut pid) } == 0 { Err(std::io::Error::last_os_error()) } else { Ok(pid) };
-        same_user(got)?;
-        Ok(s)
+        Ok(DoorStream { h, server: true, deadline: std::cell::Cell::new(None) })
     }
 }
 
 impl Drop for DoorListener {
     fn drop(&mut self) {
         let h = *self.next.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { CloseHandle(h) };
+        if h != INVALID_HANDLE_VALUE {
+            unsafe { CloseHandle(h) };
+        }
     }
 }
 
@@ -526,10 +557,14 @@ fn open_pipe(name: &[u16]) -> std::io::Result<Handle> {
         match e.raw_os_error() {
             Some(ERROR_FILE_NOT_FOUND) => return Err(std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string())),
             Some(ERROR_ACCESS_DENIED) => return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.to_string())),
-            // All instances are busy: wait for one to free up (the endpoint serves one at a time).
+            // All instances are busy: wait for one to free up (the endpoint serves one at a time), a while at a
+            // time, trying again after each, so a door closed meanwhile is found gone (`NotFound`).
             Some(ERROR_PIPE_BUSY) => {
-                if unsafe { WaitNamedPipeW(name.as_ptr(), NMPWAIT_WAIT_FOREVER) } == 0 {
-                    return Err(std::io::Error::last_os_error());
+                if unsafe { WaitNamedPipeW(name.as_ptr(), BUSY_WAIT_MS) } == 0 {
+                    let e = std::io::Error::last_os_error();
+                    if !matches!(e.raw_os_error(), Some(ERROR_SEM_TIMEOUT) | Some(ERROR_FILE_NOT_FOUND)) {
+                        return Err(e);
+                    }
                 }
             }
             _ => return Err(e),
@@ -537,26 +572,40 @@ fn open_pipe(name: &[u16]) -> std::io::Result<Handle> {
     }
 }
 
-/// Connect and disconnect at once, to wake a [`DoorListener::accept`] that is waiting.
-pub fn door_knock(place: &Path) {
-    if let Ok(h) = open_pipe(&pipe_name(place)) {
+/// Close the endpoint (see [`DoorListener`]): mark it closing, wake an accept waiting on the instance by
+/// connecting once (never waiting for a busy pipe: a busy pipe has nobody waiting on it), then close the
+/// instance under the lock the accept holds. A listener already let go closed its instance itself.
+pub fn door_close(_place: &Path, listener: Option<&DoorListener>) {
+    let Some(l) = listener else { return };
+    l.closing.store(true, std::sync::atomic::Ordering::SeqCst);
+    let h = unsafe {
+        CreateFileW(l.name.as_ptr(), GENERIC_READ | GENERIC_WRITE, 0, std::ptr::null_mut(), OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, std::ptr::null_mut())
+    };
+    if h != INVALID_HANDLE_VALUE {
         unsafe { CloseHandle(h) };
+    }
+    let mut next = l.next.lock().unwrap_or_else(|e| e.into_inner());
+    if *next != INVALID_HANDLE_VALUE {
+        unsafe { CloseHandle(*next) };
+        *next = INVALID_HANDLE_VALUE;
     }
 }
 
-/// A pipe disappears with its last handle; there is nothing to remove.
-pub fn door_remove(_place: &Path) {}
-
+/// Connect to the endpoint at `place`, not yet judged ([`DoorStream::same_user`]).
 pub fn door_connect(place: &Path) -> std::io::Result<DoorStream> {
     let h = open_pipe(&pipe_name(place))?;
-    let s = DoorStream { h, server: false, deadline: std::cell::Cell::new(None) };
-    let mut pid = 0u32;
-    let got = if unsafe { GetNamedPipeServerProcessId(h, &mut pid) } == 0 { Err(std::io::Error::last_os_error()) } else { Ok(pid) };
-    same_user(got)?;
-    Ok(s)
+    Ok(DoorStream { h, server: false, deadline: std::cell::Cell::new(None) })
 }
 
 impl DoorStream {
+    /// Whether the other end runs as this process's user (the server asks for the client's process, the client
+    /// for the server's); anyone else is refused (`PermissionDenied`).
+    pub fn same_user(&self) -> std::io::Result<()> {
+        let mut pid = 0u32;
+        let asked = unsafe { if self.server { GetNamedPipeClientProcessId(self.h, &mut pid) } else { GetNamedPipeServerProcessId(self.h, &mut pid) } };
+        same_user(if asked == 0 { Err(std::io::Error::last_os_error()) } else { Ok(pid) })
+    }
+
     pub fn set_read_deadline(&self, d: Option<std::time::Duration>) -> std::io::Result<()> {
         self.deadline.set(d);
         Ok(())
@@ -611,6 +660,21 @@ impl std::io::Write for DoorStream {
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
+}
+
+// ───────────────────────── Children and lock descriptors ─────────────────────────
+
+/// A lock file's handle, as listed (`crate::LISTED`).
+pub fn listed_id(file: &std::fs::File) -> i64 {
+    use std::os::windows::io::AsRawHandle;
+    file.as_raw_handle() as isize as i64
+}
+
+/// Start the child. No child holds a copy of a lock: `open` here creates handles with `bInheritHandle` false (the
+/// standard library's files are not inheritable either), and `CreateProcess` passes only inheritable handles; the
+/// listed handles need nothing done.
+pub fn spawn(cmd: &mut std::process::Command) -> std::io::Result<std::process::Child> {
+    cmd.spawn()
 }
 
 // ───────────────────────── "Enable command line": the user's `Path` ─────────────────────────

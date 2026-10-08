@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Start a child and collect its output like `Command::output` (stdin closed, both streams captured), via
-/// `zikaron_os::spawn`, which serializes child starts with kernel lock releases so a lock a test releases is
-/// never inherited by a child started on another thread (`zikaron_os::letting_go`). All children go through here.
+/// `zikaron_os::spawn`, where the child closes every listed kernel lock before it runs, so a lock a test releases
+/// is never held by a child started on another thread (`zikaron_os::LockFile`). All children go through here.
 fn output_of(cmd: &mut Command) -> std::io::Result<std::process::Output> {
     cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
     zikaron_os::spawn(cmd)?.wait_with_output()

@@ -81,9 +81,12 @@ pub fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The user's home directory: `$HOME` (`None` when unset or empty).
+/// The variable that names the user's home.
+pub const HOME_VAR: &str = "HOME";
+
+/// The user's home beyond [`HOME_VAR`]: none (unix names the home only there).
 pub fn home_dir() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME").filter(|h| !h.is_empty()).map(std::path::PathBuf::from)
+    None
 }
 
 /// The home directory itself (the default machine directory is a dot-folder there).
@@ -202,29 +205,35 @@ pub fn door_listen(place: &Path) -> std::io::Result<DoorListener> {
 }
 
 impl DoorListener {
-    /// The next client; refused (`PermissionDenied`) if it runs as another user.
+    /// The next client, not yet judged ([`DoorStream::same_user`]).
     pub fn accept(&self) -> std::io::Result<DoorStream> {
         let (s, _) = self.0.accept()?;
-        same_user(&s)?;
         Ok(DoorStream(s))
     }
 }
 
+/// Close the endpoint: wake a waiting [`DoorListener::accept`], then remove the socket file, after which a
+/// connect finds nothing (`NotFound`), whether or not the listening socket is still open.
+pub fn door_close(place: &Path, _listener: Option<&DoorListener>) {
+    door_knock(place);
+    door_remove(place);
+}
+
 /// Connect and disconnect at once, to wake a [`DoorListener::accept`] that is waiting.
-pub fn door_knock(place: &Path) {
+fn door_knock(place: &Path) {
     let _ = UnixStream::connect(place);
 }
 
 /// Remove the endpoint's socket file (only if it is a socket).
-pub fn door_remove(place: &Path) {
+fn door_remove(place: &Path) {
     use std::os::unix::fs::FileTypeExt;
     if std::fs::symlink_metadata(place).map(|m| m.file_type().is_socket()).unwrap_or(false) {
         let _ = std::fs::remove_file(place);
     }
 }
 
-/// Connect to the endpoint at `place`: none there, or a stale one, is `NotFound`; one owned by another user is
-/// `PermissionDenied`.
+/// Connect to the endpoint at `place` (not yet judged, [`DoorStream::same_user`]): none there, or a stale one,
+/// is `NotFound`.
 pub fn door_connect(place: &Path) -> std::io::Result<DoorStream> {
     if too_long(place) {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("longer than a local socket's {DOOR_PATH_MAX} bytes")));
@@ -234,11 +243,16 @@ pub fn door_connect(place: &Path) -> std::io::Result<DoorStream> {
         Err(e) if matches!(e.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused) => return Err(not_open(&e.to_string())),
         Err(e) => return Err(e),
     };
-    same_user(&s)?;
     Ok(DoorStream(s))
 }
 
 impl DoorStream {
+    /// Whether the other end runs as this process's user, per the kernel; anyone else is refused
+    /// (`PermissionDenied`).
+    pub fn same_user(&self) -> std::io::Result<()> {
+        same_user(&self.0)
+    }
+
     pub fn set_read_deadline(&self, d: Option<std::time::Duration>) -> std::io::Result<()> {
         self.0.set_read_timeout(d)
     }
@@ -271,11 +285,45 @@ pub fn cli_default_dir() -> Option<std::path::PathBuf> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn cli_default_dir() -> Option<std::path::PathBuf> {
-    home_dir().map(|h| h.join(".local").join("bin"))
+    crate::user_home().map(|h| h.join(".local").join("bin"))
 }
 
 unsafe extern "C" {
     fn access(path: *const std::ffi::c_char, mode: i32) -> i32;
+}
+
+// ───────────────────────── Children and lock descriptors ─────────────────────────
+
+unsafe extern "C" {
+    fn close(fd: i32) -> i32;
+}
+
+/// A lock file's descriptor, as listed (`crate::LISTED`).
+pub fn listed_id(file: &std::fs::File) -> i64 {
+    use std::os::fd::AsRawFd;
+    i64::from(file.as_raw_fd())
+}
+
+/// Start the child; between fork and exec it closes every listed lock descriptor, so it never holds a copy
+/// when its program runs, whatever order the kernel closes the rest in. The three standard descriptors are left
+/// alone: by then they are the child's own streams. Giving the command a closure makes the standard library fork
+/// and wait for the exec, so this returns only after the listed descriptors are closed in the child.
+pub fn spawn(cmd: &mut std::process::Command) -> std::io::Result<std::process::Child> {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: the closure runs in the child between fork and exec; it only reads atomics and calls `close`,
+    // both async-signal-safe, and allocates nothing.
+    unsafe {
+        cmd.pre_exec(|| {
+            for slot in &crate::LISTED {
+                let fd = slot.load(std::sync::atomic::Ordering::SeqCst);
+                if fd > 2 {
+                    close(fd as i32);
+                }
+            }
+            Ok(())
+        });
+    }
+    cmd.spawn()
 }
 
 /// A CLI running from a location that will disappear: a read-only volume (an app opened inside its disk

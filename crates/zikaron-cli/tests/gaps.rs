@@ -25,7 +25,7 @@ impl Ran {
 /// Run in `dir` with the locale variables cleared, then `env` set.
 fn run(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Ran {
     let mut c = Command::new(BIN);
-    c.args(args).current_dir(dir).env("HOME", own_home());
+    c.args(args).current_dir(dir).env(zikaron_os::HOME_VAR, own_home());
     for k in ["LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"] {
         c.env_remove(k);
     }

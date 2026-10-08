@@ -134,7 +134,7 @@ fn scan(dir: &std::path::Path, node: u16, proxy: Option<&str>, env: &[(&str, Str
         args.extend(["--proxy", p]);
     }
     let mut c = Command::new(BIN);
-    c.args(&args).current_dir(dir).env("HOME", own_home()).env_remove("https_proxy").env_remove("HTTPS_PROXY").env_remove("http_proxy").env_remove("HTTP_PROXY").env_remove("all_proxy").env_remove("ALL_PROXY");
+    c.args(&args).current_dir(dir).env(zikaron_os::HOME_VAR, own_home()).env_remove("https_proxy").env_remove("HTTPS_PROXY").env_remove("http_proxy").env_remove("HTTP_PROXY").env_remove("all_proxy").env_remove("ALL_PROXY");
     for (k, v) in env {
         c.env(k, v);
     }
@@ -213,7 +213,7 @@ fn any_other_proxy_is_misuse() {
         assert_eq!((r.code, r.out.is_empty()), (2, true), "{bad:?}: {}", r.err);
         assert!(r.err.lines().next().unwrap_or("").contains("--proxy"), "{bad:?}: {}", r.err);
     }
-    let r = Command::new(BIN).args(["anchor", "--endpoint", "31337=http://127.0.0.1:1", "--key", "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", "--form", "bare", "--hash", &format!("0x{}", "11".repeat(32)), "--proxy", "proxy.example:8080"]).current_dir(&dir).env("HOME", own_home()).output().expect("zikaron runs");
+    let r = Command::new(BIN).args(["anchor", "--endpoint", "31337=http://127.0.0.1:1", "--key", "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", "--form", "bare", "--hash", &format!("0x{}", "11".repeat(32)), "--proxy", "proxy.example:8080"]).current_dir(&dir).env(zikaron_os::HOME_VAR, own_home()).output().expect("zikaron runs");
     assert_eq!((r.status.code(), r.stdout.is_empty()), (Some(2), true), "anchor takes the same flag");
     let _ = std::fs::remove_dir_all(&dir);
 }

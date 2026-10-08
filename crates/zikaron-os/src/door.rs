@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 /// Prefix of every endpoint name (the token follows).
 pub const NAME_HEAD: &str = "zikaron-door-";
@@ -31,7 +31,8 @@ pub fn too_long(place: &Path) -> bool {
 static STRANGER: AtomicBool = AtomicBool::new(false);
 
 /// Treat every peer as another user from now on in this process (`false`: ask the OS). For tests of both
-/// refusals; production never calls it.
+/// refusals; production never calls it. It is asked before the OS on both sides, so a pretended stranger is
+/// refused the same way on every system, whatever the other end does meanwhile.
 pub fn pretend_stranger(on: bool) {
     STRANGER.store(on, Ordering::SeqCst);
 }
@@ -45,7 +46,7 @@ fn stranger() -> std::io::Result<()> {
 
 /// An open endpoint; [`Listener::accept`] waits for the next client.
 pub struct Listener {
-    door: crate::imp::DoorListener,
+    door: Arc<crate::imp::DoorListener>,
     shut: Arc<AtomicBool>,
 }
 
@@ -54,6 +55,8 @@ pub struct Listener {
 pub struct Closer {
     place: PathBuf,
     shut: Arc<AtomicBool>,
+    /// The listening side while it lives, so closing ends it on the spot rather than when its thread lets go.
+    door: Weak<crate::imp::DoorListener>,
 }
 
 /// One connection, on either side: a bidirectional byte stream.
@@ -66,14 +69,16 @@ pub fn listen(place: &Path) -> std::io::Result<(Listener, Closer)> {
     if too_long(place) {
         return Err(crate::named("door", place.display(), std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("longer than {PLACE_MAX} bytes"))));
     }
-    let door = crate::imp::door_listen(place).map_err(|e| crate::named("door", place.display(), e))?;
+    let door = Arc::new(crate::imp::door_listen(place).map_err(|e| crate::named("door", place.display(), e))?);
     let shut = Arc::new(AtomicBool::new(false));
-    Ok((Listener { door, shut: shut.clone() }, Closer { place: place.to_path_buf(), shut }))
+    Ok((Listener { door: door.clone(), shut: shut.clone() }, Closer { place: place.to_path_buf(), shut, door: Arc::downgrade(&door) }))
 }
 
 impl Listener {
     /// The next client, or `None` once the endpoint is closed ([`Closer::close`]). A client running as another
-    /// user is refused (`PermissionDenied`) and the endpoint stays open.
+    /// user is refused (`PermissionDenied`) and the endpoint stays open. Taking the connection and judging who
+    /// is at the other end are two steps; the test hook ([`pretend_stranger`]) is asked between them, before
+    /// the OS, so a client that hangs up meanwhile does not change the answer.
     pub fn accept(&self) -> std::io::Result<Option<Stream>> {
         let got = self.door.accept();
         if self.shut.load(Ordering::SeqCst) {
@@ -81,17 +86,18 @@ impl Listener {
         }
         let s = got?;
         stranger()?;
+        s.same_user()?;
         Ok(Some(Stream(s)))
     }
 }
 
 impl Closer {
-    /// Close the endpoint: a waiting `accept` wakes and returns `None`, and the path is removed. Connections
-    /// accepted earlier remain the caller's to finish.
+    /// Close the endpoint: a waiting `accept` wakes and returns `None`, and once this returns nobody can reach
+    /// the endpoint any more (a connect finds nothing there: `NotFound`), on every system. Connections accepted
+    /// earlier remain the caller's to finish. Closing twice does nothing more.
     pub fn close(&self) {
         if !self.shut.swap(true, Ordering::SeqCst) {
-            crate::imp::door_knock(&self.place);
-            crate::imp::door_remove(&self.place);
+            crate::imp::door_close(&self.place, self.door.upgrade().as_deref());
         }
     }
 
@@ -109,6 +115,7 @@ pub fn connect(place: &Path) -> std::io::Result<Stream> {
     }
     let s = crate::imp::door_connect(place).map_err(|e| crate::named("door", place.display(), e))?;
     stranger().map_err(|e| crate::named("door", place.display(), e))?;
+    s.same_user().map_err(|e| crate::named("door", place.display(), e))?;
     Ok(Stream(s))
 }
 
@@ -242,6 +249,133 @@ mod tests {
         assert_eq!(first, Err(std::io::ErrorKind::PermissionDenied), "the door refused the stranger");
         closer.close();
         assert_eq!(server.join().expect("server"), Ok(false), "and was still open after it");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Closed while a waiter is at the door (or about to be): once `close` returns, a connect finds nothing,
+    /// at once and every time, and the waiter returns `None`. Repeated, since a window between the close and
+    /// the waiter's end would show only some of the time.
+    #[test]
+    fn once_closed_nobody_reaches_the_door() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let d = scratch("gone");
+        let at = place(&d, "t6");
+        for round in 0..20 {
+            let (l, closer) = listen(&at).expect("open");
+            let server = std::thread::spawn(move || l.accept().map(|s| s.is_some()).map_err(|e| e.kind()));
+            if round % 2 == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            closer.close();
+            assert_eq!(connect(&at).err().map(|e| e.kind()), Some(std::io::ErrorKind::NotFound), "round {round}: nobody at a closed door");
+            assert_eq!(server.join().expect("server"), Ok(false), "round {round}: the waiter is told the door closed");
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A client already in the doorway (connected, not yet taken) when the door closes is never served: no
+    /// byte reaches it, and the door gives `None` rather than taking it.
+    #[test]
+    fn a_client_in_the_doorway_when_it_closes_is_not_served() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let d = scratch("doorway");
+        let at = place(&d, "t7");
+        let (l, closer) = listen(&at).expect("open");
+        let mut c = connect(&at).expect("in the doorway");
+        closer.close();
+        assert!(l.accept().expect("closed").is_none(), "not taken after the close");
+        drop(l);
+        // macOS refuses a read deadline on a socket its peer has already reset: that is the no-byte answer too.
+        if c.set_read_deadline(Some(std::time::Duration::from_millis(500))).is_ok() {
+            let mut b = [0u8; 1];
+            assert!(matches!(c.read(&mut b), Ok(0) | Err(_)), "no byte for a client the closed door never took");
+        }
+        assert_eq!(connect(&at).err().map(|e| e.kind()), Some(std::io::ErrorKind::NotFound));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A conversation already under way when the door closes is the caller's to finish: bytes still flow both
+    /// ways, while nobody new gets in.
+    #[test]
+    fn a_conversation_under_way_finishes_after_the_door_closes() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let d = scratch("talk");
+        let at = place(&d, "t8");
+        let (l, closer) = listen(&at).expect("open");
+        let server = std::thread::spawn(move || l.accept().expect("accept").expect("open still"));
+        let mut c = connect(&at).expect("in");
+        let mut s = server.join().expect("server");
+        closer.close();
+        assert_eq!(connect(&at).err().map(|e| e.kind()), Some(std::io::ErrorKind::NotFound), "nobody new");
+        c.write_all(&[7]).expect("write");
+        let mut b = [0u8; 1];
+        s.read_exact(&mut b).expect("read");
+        s.write_all(&[b[0] + 1]).expect("answer");
+        c.read_exact(&mut b).expect("read the answer");
+        assert_eq!(b, [8]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Closing twice does nothing more: no hang, the door stays closed, the waiter gets `None` once.
+    #[test]
+    fn closing_twice_does_nothing_more() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let d = scratch("twice");
+        let at = place(&d, "t9");
+        let (l, closer) = listen(&at).expect("open");
+        let other = closer.clone();
+        closer.close();
+        other.close();
+        assert!(closer.closed() && other.closed());
+        assert!(l.accept().expect("closed").is_none());
+        assert_eq!(connect(&at).err().map(|e| e.kind()), Some(std::io::ErrorKind::NotFound));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A door closed can be opened again at the same place at once, even while the closed one's listener has not
+    /// been let go yet; clients reach the new one.
+    #[test]
+    fn a_closed_door_opens_again_at_the_same_place() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let d = scratch("again");
+        let at = place(&d, "t10");
+        let (old, closer) = listen(&at).expect("open");
+        closer.close();
+        let (l, again) = listen(&at).expect("open again at once");
+        let server = std::thread::spawn(move || {
+            let mut s = l.accept().expect("accept").expect("the new door");
+            let mut b = [0u8; 1];
+            s.read_exact(&mut b).expect("read");
+            b[0]
+        });
+        connect(&at).expect("reaches the new door").write_all(&[5]).expect("write");
+        assert_eq!(server.join().expect("server"), 5);
+        assert!(old.accept().expect("closed").is_none(), "the old one stays closed");
+        again.close();
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A client that hangs up before the door judges it: never called a stranger (the door just goes on to the
+    /// next client); with strangers pretended, refused as one, whatever the client did meanwhile, the same on
+    /// every system.
+    #[test]
+    fn a_client_gone_before_it_is_judged() {
+        let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let d = scratch("gone-early");
+        let at = place(&d, "t11");
+        let (l, closer) = listen(&at).expect("open");
+        drop(crate::imp::door_connect(&at).expect("in and out"));
+        let first = l.accept().map(|s| s.is_some()).map_err(|e| e.kind());
+        assert_ne!(first, Err(std::io::ErrorKind::PermissionDenied), "a client of this user that left is not a stranger");
+        pretend_stranger(true);
+        drop(crate::imp::door_connect(&at).expect("in and out"));
+        let pretended = l.accept().map(|s| s.is_some()).map_err(|e| e.kind());
+        pretend_stranger(false);
+        assert_eq!(pretended, Err(std::io::ErrorKind::PermissionDenied), "the hook is asked before the system");
+        let server = std::thread::spawn(move || l.accept().map(|s| s.is_some()).map_err(|e| e.kind()));
+        let _c = connect(&at).expect("the next one comes in");
+        assert_eq!(server.join().expect("server"), Ok(true), "and is taken");
+        closer.close();
         let _ = std::fs::remove_dir_all(&d);
     }
 

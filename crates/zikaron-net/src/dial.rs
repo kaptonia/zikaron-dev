@@ -6,7 +6,7 @@
 //! address has failed or the connect cap has passed; the error names every address tried. The address that last
 //! connected for a host and port is tried first next time.
 
-use crate::{keep, Clock, Fail, Target};
+use crate::{keep, Clock, Fail, Target, SLICE};
 use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::sync::mpsc;
@@ -19,9 +19,6 @@ pub const CONNECT_CAP: Duration = Duration::from_secs(10);
 
 /// Delay before the next address is tried in parallel.
 pub const STAGGER: Duration = Duration::from_millis(250);
-
-/// How often a wait checks whether the transport is shutting down.
-const SLICE: Duration = Duration::from_millis(50);
 
 /// For each host and port, the address that last connected.
 static LAST: Mutex<BTreeMap<(String, u16), SocketAddr>> = Mutex::new(BTreeMap::new());
@@ -278,8 +275,9 @@ mod tests {
         assert!(took < Duration::from_secs(1), "at once, not at the resolver's pace: {took:?}");
     }
 
-    /// The connect cap running out before the deadline (two dropping addresses, a 300 ms cap under a 5 s
-    /// deadline): a connection failure at the cap, saying no address connected within it and naming each one.
+    /// The connect cap running out before the deadline (two dropping addresses, a cap of three staggers under a
+    /// 5 s deadline, so the second address is tried a whole stagger or more before the cap even on a slow
+    /// machine): a connection failure at the cap, saying no address connected within it and naming each one.
     #[test]
     fn the_connect_cap_running_out_names_every_address_tried() {
         let _turn = keep::turn();
@@ -287,15 +285,38 @@ mod tests {
             std::thread::sleep(Duration::from_secs(2));
             Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "swallowed"))
         }
-        let cap = Duration::from_millis(300);
+        let cap = STAGGER * 3;
         let clock = Clock::start(Duration::from_secs(5));
         let began = Instant::now();
         match race_capped(&[a("127.0.0.2:9"), a("127.0.0.3:9")], &clock, swallow, cap) {
-            Err(Fail::Connect(s)) => assert_eq!(s, "127.0.0.2:9 127.0.0.3:9 did not connect within 300 ms"),
+            Err(Fail::Connect(s)) => assert_eq!(s, format!("127.0.0.2:9 127.0.0.3:9 did not connect within {} ms", cap.as_millis())),
             other => panic!("{:?}", other.map(|x| x.0)),
         }
         let took = began.elapsed();
         assert!(took >= cap && took < cap + Duration::from_millis(1500), "took {took:?}");
+    }
+
+    /// Closing down while every address is still connecting fails at once as closed, not at the cap.
+    #[test]
+    fn closing_down_while_connecting_is_closed() {
+        let _turn = keep::turn();
+        fn swallow(_: &SocketAddr, _: Duration) -> std::io::Result<TcpStream> {
+            std::thread::sleep(Duration::from_secs(5));
+            Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "swallowed"))
+        }
+        let clock = Clock::start(Duration::from_secs(30));
+        let asking = std::thread::spawn(move || {
+            let began = Instant::now();
+            (race(&[a("127.0.0.2:9"), a("127.0.0.3:9")], &clock, swallow).err().map(|f| f == Fail::Closed), began.elapsed())
+        });
+        std::thread::sleep(STAGGER + Duration::from_millis(50));
+        let raised = Instant::now();
+        keep::raise_flag_only();
+        let (closed, _) = asking.join().expect("the connecting thread");
+        let took = raised.elapsed();
+        keep::open_up();
+        assert_eq!(closed, Some(true));
+        assert!(took < SLICE * 4, "within a slice or so, not at the cap: {took:?}");
     }
 
     /// The two families alternate from the system's first, duplicates are dropped, and the address that last

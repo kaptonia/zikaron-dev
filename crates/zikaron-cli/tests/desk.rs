@@ -1,9 +1,9 @@
 //! `--home`: the real CLI against a stand-in desktop in the test process. The stand-in listens on the desktop's
-//! socket (`zikaron_glue::door::place`, in the machine folder found through `HOME` and the pointer file), reads
-//! one request and answers with each reply the desktop can give; stdout, exit code and the human-readable line
-//! are checked in both languages. Misuse must be refused before any request, so the stand-in counts
-//! connections. Each test has its own machine folder and home (unix only: Windows finds the machine folder
-//! under the profile known folder, which a test cannot move).
+//! socket (`zikaron_glue::door::place`, in the machine folder found through the home variable and the pointer
+//! file), reads one request and answers with each reply the desktop can give; stdout, exit code and the
+//! human-readable line are checked in both languages. Misuse must be refused before any request, so the stand-in counts
+//! connections. Each test has its own machine folder and home (unix only: the stand-in's machine folder sits at
+//! a short `/tmp` path for a socket path's length limit, and paths are compared as unix resolves them).
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -39,10 +39,10 @@ impl Bench {
         zikaron_glue::door::place(&self.machine, &self.home)
     }
 
-    /// Run the real command line with this bench's `HOME` and the given language.
+    /// Run the real command line with this bench's home (`zikaron_os::HOME_VAR`) and the given language.
     fn run(&self, args: &[&str], lang: &str) -> (i32, Vec<u8>, String) {
         let mut c = Command::new(BIN);
-        c.args(args).env("HOME", &self.user).env_remove("LC_ALL").env_remove("LC_MESSAGES").env_remove("LANGUAGE").env("LANG", lang);
+        c.args(args).env(zikaron_os::HOME_VAR, &self.user).env_remove("LC_ALL").env_remove("LC_MESSAGES").env_remove("LANGUAGE").env("LANG", lang);
         let out = zikaron_os::spawn(c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()))
             .expect("runs")
             .wait_with_output()

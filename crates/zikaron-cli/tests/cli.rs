@@ -74,7 +74,7 @@ fn run_in(dir: &Path, args: &[&str]) -> Ran {
     let o = Command::new(BIN)
         .args(args)
         .current_dir(dir)
-        .env("HOME", own_home())
+        .env(zikaron_os::HOME_VAR, own_home())
         .output()
         .expect("起不动 zikaron");
     Ran {

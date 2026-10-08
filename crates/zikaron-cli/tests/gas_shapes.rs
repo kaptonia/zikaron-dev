@@ -94,7 +94,7 @@ fn anchor_with(head: Reply, estimate: Reply) -> (i32, String, bool) {
     let hash = format!("0x{}", "77".repeat(32));
     let o = Command::new(BIN)
         .args(["anchor", "--endpoint", &format!("31337={url}"), "--key", KEY, "--form", "bare", "--hash", &hash, "--wait-secs", "0"])
-        .env("HOME", own_home())
+        .env(zikaron_os::HOME_VAR, own_home())
         .output()
         .expect("zikaron runs");
     let out = String::from_utf8_lossy(&o.stdout).to_string();

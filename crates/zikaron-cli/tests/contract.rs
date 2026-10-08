@@ -10,14 +10,18 @@ use zikaron_cli::codes::{Contract, Exit, Key, Reason};
 
 const BIN: &str = env!("CARGO_BIN_EXE_zikaron");
 
+/// A working folder of its own for each call: tests run on parallel threads, and two calls sharing one would
+/// remove each other's folder while a child runs in it (a child started in a removed folder does not start).
 fn scratch(tag: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!("zk-cli-contract-{tag}-{}", std::process::id()));
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let p = std::env::temp_dir().join(format!("zk-cli-contract-{tag}-{}-{}", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).expect("建不出草稿地");
     p
 }
 
-/// Exit code, stdout, stderr, in English (the second stderr line is compared).
+/// Exit code, stdout, stderr, in English (the second stderr line is compared). A child that does not start
+/// is said with its verb and flags, the working folder and whether it is there, and the system's error.
 fn run(dir: &Path, args: &[&str]) -> (i32, Vec<u8>, String) {
     let o = Command::new(BIN)
         .args(args)
@@ -27,7 +31,7 @@ fn run(dir: &Path, args: &[&str]) -> (i32, Vec<u8>, String) {
         .env_remove("LANG")
         .env_remove("LANGUAGE")
         .output()
-        .expect("起不动 zikaron");
+        .unwrap_or_else(|e| panic!("起不动 zikaron {args:?}:在 {}(此处{}):{e}", dir.display(), if dir.is_dir() { "在" } else { "不在" }));
     (o.status.code().unwrap_or(-1), o.stdout, String::from_utf8_lossy(&o.stderr).into_owned())
 }
 

@@ -2,8 +2,8 @@
 //!
 //! An idle connection is kept per [`Place`] (scheme, host, port, proxy) for a short while and handed to the
 //! next request to the same place; one that had an error, timed out, or whose peer asked to close is never
-//! kept. Every connection in use is tracked, so shutting down (the app quitting) cuts them at once and refuses
-//! any exchange that starts afterwards.
+//! kept. Every connection in use is tracked, so shutting down (the app quitting) cuts them within a slice and
+//! refuses any exchange that starts afterwards.
 
 use crate::{Fail, Scheme, Stream};
 use std::collections::BTreeMap;
@@ -56,6 +56,14 @@ fn idle() -> std::sync::MutexGuard<'static, BTreeMap<Place, Vec<(Instant, Conn)>
 pub(crate) fn turn() -> std::sync::MutexGuard<'static, ()> {
     static TURN: Mutex<()> = Mutex::new(());
     TURN.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Raise the shutdown flag alone, touching no socket: shows a cut rests on the flag, not on the system waking
+/// a blocked read. [`open_up`] lowers it.
+#[cfg(test)]
+pub(crate) fn raise_flag_only() {
+    let _f = flying();
+    CLOSING.store(true, Ordering::SeqCst);
 }
 
 /// A connection's entry in the in-use list; removed when dropped.
@@ -130,9 +138,12 @@ pub(crate) fn put(live: Live) {
     }
 }
 
-/// Shut down: every exchange in flight is cut at once and fails with a named error, idle connections are
-/// dropped, and any exchange started afterwards fails before opening anything. The app calls this when it
-/// quits, before waiting for its tasks; the CLI never does.
+/// Shut down: every exchange in flight is cut within one [`crate::SLICE`] and fails with a named error, idle
+/// connections are dropped, and any exchange started afterwards fails before opening anything. The app calls
+/// this when it quits, before waiting for its tasks; the CLI never does.
+///
+/// The cut rests on the flag: every wait in an exchange looks at it after a slice at most. Shutting the sockets
+/// in flight only wakes a blocked read sooner where the system does so; nothing depends on it.
 pub fn close_down() {
     {
         let mut f = flying();

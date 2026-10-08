@@ -15,7 +15,7 @@ const KEY: &str = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b7
 const ORDER: &str = "0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141";
 
 fn run(dir: &Path, args: &[&str]) -> (i32, String, String) {
-    let o = Command::new(BIN).args(args).current_dir(dir).env("HOME", own_home()).output().expect("runs");
+    let o = Command::new(BIN).args(args).current_dir(dir).env(zikaron_os::HOME_VAR, own_home()).output().expect("runs");
     (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr).into_owned())
 }
 
