@@ -60,6 +60,9 @@ fn read_args(a: &Args) -> Vec<(String, String)> {
         let values: Vec<String> = match (a.verb(), flag) {
             (_, "window-from" | "window-to" | "effective") => a.within_ceiling(flag).map(|n| n.to_string()).into_iter().collect(),
             ("history", "file") => vec![whole_file(&a.need(flag))],
+            // The anchors file read as without `--home` (a file that does not read, or is not the law's JSON, is
+            // misuse here), handed over as that JSON.
+            ("adopt", "anchors") => a.one(flag).map(|p| String::from_utf8_lossy(&zikaron::json::canon_bytes(&crate::args::slurp_json(&p))).into_owned()).into_iter().collect(),
             ("kit-export", "out") => vec![whole_place(&a.need(flag))],
             ("kit-export", "entry") => a.many(flag).iter().map(|x| verbs::entry_id_form(x)).collect(),
             _ => a.one(flag).into_iter().collect(),

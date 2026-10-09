@@ -132,7 +132,7 @@ fn b3_a_typed_registry_with_the_start_block_empty_checks_from_block_zero() {
             file: String::new(),
             terms: String::new(),
         };
-        assert!(matches!(apply(&mut shell, a), Applied::Started(app::task::Kind::Check)), "{form}");
+        answers!(apply(&mut shell, a), Applied::Started(app::task::Kind::Check), "{form}");
         settled(&mut shell, app::task::Kind::Check);
         let checked = shell.checked.clone().unwrap_or_else(|| panic!("{form}: the check landed"));
         let basis = checked.basis.clone().unwrap_or_else(|e| panic!("{form}: the basis was read: {e}"));

@@ -6,7 +6,7 @@
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::time::{Duration, Instant};
-use zikaron_net::{close_down, open_up, parse, post_json, set_choice, Ask, Choice, Fail, Kind, Limits, Proxy, SLICE};
+use zikaron_net::{close_down, cuts, open_up, parse, post_json, set_choice, Ask, Choice, Fail, Kind, Limits, Proxy, SLICE};
 
 /// How long a cut may take: a few slices (the slice is the longest any wait goes before it looks at the flag).
 const CUT_WITHIN: Duration = Duration::from_millis(SLICE.as_millis() as u64 * 4);
@@ -39,14 +39,17 @@ fn closing_down_cuts_what_is_in_flight_and_refuses_what_comes_after() {
     while held.load(std::sync::atomic::Ordering::SeqCst) == 0 {
         std::thread::sleep(Duration::from_millis(5));
     }
+    let cut_before = cuts();
     close_down();
     let (said, took) = asking.join().expect("the asking thread");
     assert_eq!(said, Some(Fail::Closed));
     assert!(took < CUT_WITHIN, "cut within a slice, not at the deadline: {took:?}");
+    assert_eq!(cuts(), cut_before + 1, "the cut leaves its trace: one exchange cut");
     // Not retried after the cut: the peer saw one request.
     assert_eq!(held.load(std::sync::atomic::Ordering::SeqCst), 1);
     let t = parse(&format!("http://127.0.0.1:{port}/")).expect("address");
     assert_eq!(post_json(&t, b"{}", &limits, Ask::Read).err(), Some(Fail::Closed), "an exchange after closing down never opens");
+    assert_eq!(cuts(), cut_before + 1, "refused before it began: not a cut");
     assert_eq!(held.load(std::sync::atomic::Ordering::SeqCst), 1);
     open_up();
     let closed = TcpListener::bind("127.0.0.1:0").expect("bind").local_addr().expect("addr").port();
@@ -171,7 +174,9 @@ fn closing_down_cuts_what_is_in_flight_and_refuses_what_comes_after() {
     let t = parse(&format!("http://127.0.0.1:{port}/")).expect("address");
     let before = post_json(&t, b"{}", &limits, Ask::Read).map(|a| (a.status, a.body));
     assert_eq!(before, Ok((200, b"ok".to_vec())), "answered before the cut");
+    let cut_before = cuts();
     close_down();
+    assert_eq!(cuts(), cut_before, "an exchange already over is not cut");
     assert_eq!(before, Ok((200, b"ok".to_vec())), "and kept as answered");
     open_up();
     assert_eq!(post_json(&t, b"{}", &limits, Ask::Read).map(|a| a.body), Ok(b"ok".to_vec()));

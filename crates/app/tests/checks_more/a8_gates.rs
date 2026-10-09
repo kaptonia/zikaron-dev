@@ -334,7 +334,7 @@ fn every_ledger_write_is_refused_as_read_only_in_both_reader_modes() {
     let boot = || Shell::boot(zikaron_ui::skin::dress(&ctx));
     // The writer: a ledger with a first entry, a record and a grant.
     let mut w = boot();
-    assert!(matches!(apply(&mut w, Action::MakeAnchorKey), Applied::AnchorKey(_)));
+    answers!(apply(&mut w, Action::MakeAnchorKey), Applied::AnchorKey(_));
     let opened = apply(&mut w, Action::OpenHome { root: root.display().to_string() });
     assert!(matches!(opened, Applied::Homed { mode: app::lock::Mode::Writer, .. }), "{opened:?}");
     let genesis = match apply_settled(&mut w, Action::Genesis { statement: "a8".into() }) {
@@ -572,8 +572,8 @@ fn each_seal_authenticates_its_parameters_and_salt() {
 fn machine_with_a_ledger(base: &Path) -> Shell {
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_)));
-    assert!(matches!(apply(&mut shell, Action::OpenHome { root: base.join("home").display().to_string() }), Applied::Homed { .. }));
+    answers!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_));
+    answers!(apply(&mut shell, Action::OpenHome { root: base.join("home").display().to_string() }), Applied::Homed { .. });
     let made = apply_settled(&mut shell, Action::Genesis { statement: "a8 backup".into() });
     assert!(matches!(made, Applied::Genesised { .. }), "{made:?}");
     settle(&mut shell);

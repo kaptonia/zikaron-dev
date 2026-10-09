@@ -354,6 +354,13 @@ fn home_from(var: Option<std::ffi::OsString>, otherwise: impl FnOnce() -> Option
     var.filter(|h| !h.is_empty()).map(std::path::PathBuf::from).or_else(otherwise)
 }
 
+/// Whether two paths name the same folder: as written, or once both are resolved by the system (case, short
+/// names, links, a trailing separator and `.` steps do not make another folder). A path that does not resolve
+/// (not there, not readable) is the same only as itself as written.
+pub fn same_folder(a: &Path, b: &Path) -> bool {
+    a == b || matches!((std::fs::canonicalize(a), std::fs::canonicalize(b)), (Ok(x), Ok(y)) if x == y)
+}
+
 /// Default location of the app's machine data, given the user's home directory (or a stand-in): macOS and Linux
 /// under the home directory; Windows in the user's local application data folder. The pointer to the machine
 /// directory lives there too ([`machine`]).
@@ -389,6 +396,22 @@ mod tests {
         assert_eq!(home_from(Some("".into()), os), Some("from-the-os".into()), "empty: the OS");
         assert_eq!(home_from(None, none), None, "neither: none");
         assert_eq!(home_from(Some("".into()), none), None);
+    }
+
+    /// A folder is itself however it is spelled (a trailing separator, a `.` step, a link to it); another folder,
+    /// and a path that is not there spelled otherwise, are not.
+    #[test]
+    fn a_folder_is_the_same_however_it_is_spelled() {
+        let d = scratch("same");
+        let other = d.join("other");
+        std::fs::create_dir_all(&other).expect("other");
+        let trailing = std::path::PathBuf::from(format!("{}{}", d.display(), std::path::MAIN_SEPARATOR));
+        assert!(same_folder(&d, &d) && same_folder(&d, &trailing) && same_folder(&d, &d.join(".")) && same_folder(&d, &other.join("..")));
+        assert!(!same_folder(&d, &other), "another folder");
+        let gone = d.join("gone");
+        assert!(same_folder(&gone, &gone), "not there: itself as written");
+        assert!(!same_folder(&gone, &gone.join("x").join("..")), "not there, spelled otherwise: not resolved, not the same");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// The lock list, and a child, are process-wide: these tests run one at a time.

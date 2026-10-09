@@ -549,8 +549,12 @@ pub(crate) fn tunnel(t: &Target, p: &Proxy, clock: &Clock) -> Result<(TcpStream,
         Kind::Http => connect_tunnel(&mut tcp, t, clock),
         Kind::Socks5 => socks_tunnel(&mut tcp, t, clock),
     };
+    // Shut down meanwhile: closed, counted once (a wait inside that found the flag already counted its cut).
     if keep::closing() {
-        return Err(Fail::Closed);
+        return Err(match opened {
+            Err(Fail::Closed) => Fail::Closed,
+            _ => keep::cut(),
+        });
     }
     opened.map_err(|f| through(p, f))?;
     Ok((tcp, ticket))
@@ -572,7 +576,7 @@ fn read_exact(tcp: &mut TcpStream, buf: &mut [u8], clock: &Clock) -> Result<(), 
         clock.bound(tcp)?;
         let got = tcp.read(&mut buf[at..]);
         if keep::closing() {
-            return Err(Fail::Closed);
+            return Err(keep::cut());
         }
         match got {
             Ok(0) => return Err(Fail::Stream("the proxy closed the connection".into())),

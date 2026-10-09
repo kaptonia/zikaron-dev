@@ -30,6 +30,10 @@ impl Endpoint for Node {
     fn name(&self) -> String {
         "http://127.0.0.1:1".into()
     }
+    /// No address: the place is the name.
+    fn place(&self) -> String {
+        self.name()
+    }
 }
 
 /// The fee history as a whole is outside the law's value domain (a fraction). Judged through the judging table

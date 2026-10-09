@@ -149,12 +149,16 @@ fn the_request_carries_each_flag_as_read() {
     let b = Bench::new("args");
     let file = b.root.join("f.txt");
     std::fs::write(&file, b"bytes").expect("file");
+    let anchors = b.root.join("anchors.json");
+    std::fs::write(&anchors, br#"[ {"tx": "0xt", "chainId": 1, "payloadKind": "bare", "content": "0xc"} ]"#).expect("anchors");
     let wrote = Reply::Wrote { entry_id: "0xe".into(), ledger: "/l".into(), seq: 1 }.to_bytes();
     let cases: Vec<(Vec<String>, Vec<(&str, String)>)> = vec![
         (vec!["grant".into(), "--grantee".into(), "0xg".into(), "--window-from".into(), "+5".into(), "--window-to".into(), "9".into(), "--scope".into(), "s".into()], vec![("grantee", "0xg".into()), ("window-from", "5".into()), ("window-to", "9".into()), ("scope", "s".into())]),
         (vec!["history".into(), "--file".into(), file.display().to_string(), "--note".into(), "n".into()], vec![("file", std::fs::canonicalize(&file).unwrap().display().to_string()), ("note", "n".into())]),
         (vec!["kit-export".into(), "--entry".into(), "ab".repeat(32), "--entry".into(), format!("0x{}", "cd".repeat(32)), "--out".into(), "rel/out".into()], vec![("entry", format!("0x{}", "ab".repeat(32))), ("entry", format!("0x{}", "cd".repeat(32))), ("out", std::path::absolute("rel/out").unwrap().display().to_string())]),
         (vec!["succeed".into(), "--to".into(), "0xt".into(), "--effective".into(), "12".into()], vec![("to", "0xt".into()), ("effective", "12".into())]),
+        // The anchors file goes as the JSON it holds, read as the law reads it (canonical bytes).
+        (vec!["adopt".into(), "--anchors".into(), anchors.display().to_string(), "--attestor".into(), "0xa".into()], vec![("anchors", r#"[{"chainId":1,"content":"0xc","payloadKind":"bare","tx":"0xt"}]"#.into()), ("attestor", "0xa".into())]),
     ];
     for (args, want) in cases {
         let w = wrote.clone();
@@ -181,6 +185,9 @@ fn misuse_is_judged_before_the_desktop_is_asked() {
     let (closer, rx) = desktop(&b.place(), |_| Some(Reply::Closed.to_bytes()));
     let home = b.home.to_str().unwrap().to_string();
     let file = b.root.join("not-there.txt").display().to_string();
+    let not_json = b.root.join("anchors.txt");
+    std::fs::write(&not_json, b"[1,").expect("a file that is not JSON");
+    let not_json = not_json.display().to_string();
     let cases: Vec<(Vec<&str>, &str, &str)> = vec![
         (vec!["annotate", "--home", "/nowhere/at/all"], "E_UNREADABLE #3 (15 bytes)", "cannot be read"),
         (vec!["annotate", "--home", &home, "--key", "x"], "E_ARGS --key", "not taken together with --home (the desktop uses its own identity and ledger)"),
@@ -192,7 +199,10 @@ fn misuse_is_judged_before_the_desktop_is_asked() {
         (vec!["kit-export", "--home", &home, "--out", "/o", "--entry", "zz"], "E_ARGS #7 (2 bytes)", "not 64 lowercase hex digits"),
         (vec!["grant", "--home", &home, "--window-from", "9007199254740992"], "E_ARGS --window-from", "past the whole-number ceiling 9007199254740991"),
         (vec!["keygen", "--home", &home], "E_ARGS --home", "not among this verb's flags"),
-        (vec!["adopt", "--home", &home], "E_ARGS --home", "not among this verb's flags"),
+        (vec!["show", "--home", &home], "E_ARGS --home", "not among this verb's flags"),
+        (vec!["adopt", "--home", &home, "--anchors", &file], "", "cannot be read"),
+        (vec!["adopt", "--home", &home, "--anchors", &not_json], "", "not JSON the law takes (§3.5)"),
+        (vec!["adopt", "--home", &home, "--key", "x"], "E_ARGS --key", "not taken together with --home (the desktop uses its own identity and ledger)"),
         (vec!["scan", "--home", &home], "E_ARGS --home", "not among this verb's flags"),
         (vec!["annotate", "--home", &home, "--home", &home], "E_ARGS --home", "given more than once"),
     ];

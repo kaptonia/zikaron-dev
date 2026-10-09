@@ -388,11 +388,12 @@ pub fn home_dir() -> Option<std::path::PathBuf> {
 }
 
 /// This app's folder in the local application data folder (`%LOCALAPPDATA%`, which does not roam) when the home
-/// is the profile known folder, as it is for a user's own logon (`USERPROFILE` names it). Any other home (a test
-/// that hands a child its own `USERPROFILE`, a stand-in from the test hooks) uses the same layout under itself,
-/// so tests never touch the user's real folder.
+/// is the profile known folder, as it is for a user's own logon (`USERPROFILE` names it), however it is spelled
+/// (case, a short name, a trailing separator: [`crate::same_folder`]). Any other home (a test that hands a child
+/// its own `USERPROFILE`, a stand-in from the test hooks) uses the same layout under itself, so tests never
+/// touch the user's real folder.
 pub fn app_data_dir(user_home: &Path) -> std::path::PathBuf {
-    if home_dir().as_deref() == Some(user_home) {
+    if home_dir().is_some_and(|profile| crate::same_folder(&profile, user_home)) {
         if let Some(local) = known_folder(&FOLDER_LOCAL_APP_DATA) {
             return local.join(APP_FOLDER);
         }
@@ -852,6 +853,19 @@ mod tests {
     fn a_stand_in_home_keeps_the_app_folder_under_it() {
         let stand_in = Path::new(r"C:\stand-in\home");
         assert_eq!(app_data_dir(stand_in), stand_in.join("AppData").join("Local").join(APP_FOLDER));
+    }
+
+    /// The profile folder spelled otherwise (other case, a trailing separator) is still the profile: the app's
+    /// folder stays in the local application data folder, where an upgraded user's data is.
+    #[test]
+    fn the_profile_spelled_otherwise_is_still_the_profile() {
+        let (Some(profile), Some(local)) = (home_dir(), known_folder(&FOLDER_LOCAL_APP_DATA)) else { return };
+        let real = local.join(APP_FOLDER);
+        let upper = std::path::PathBuf::from(profile.as_os_str().to_string_lossy().to_uppercase());
+        let trailing = std::path::PathBuf::from(format!("{}\\", profile.display()));
+        for spelled in [profile.clone(), upper, trailing] {
+            assert_eq!(app_data_dir(&spelled), real, "{}", spelled.display());
+        }
     }
 
     /// A file created in the temp folder without owner-only inherits the folder's DACL (SYSTEM and

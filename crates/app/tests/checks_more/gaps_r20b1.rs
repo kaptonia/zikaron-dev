@@ -53,7 +53,7 @@ fn a_home_copied_from_another_machine_is_refused_and_not_written() {
     let ctx = zikaron_ui::egui::Context::default();
     {
         let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-        assert!(matches!(apply(&mut shell, Action::OpenHome { root: mine.display().to_string() }), Applied::Homed { .. }));
+        answers!(apply(&mut shell, Action::OpenHome { root: mine.display().to_string() }), Applied::Homed { .. });
     }
     copy_tree(&mine, &theirs);
     let label = app::local::label_path(&theirs);
@@ -146,9 +146,9 @@ fn an_empty_entry_file_is_named_by_the_strict_read() {
     let _ = std::fs::remove_dir_all(&base);
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_)));
-    assert!(matches!(apply(&mut shell, Action::OpenHome { root: base.display().to_string() }), Applied::Homed { .. }));
-    assert!(matches!(apply(&mut shell, Action::Genesis { statement: "a ledger".into() }), Applied::Genesised { .. }));
+    answers!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_));
+    answers!(apply(&mut shell, Action::OpenHome { root: base.display().to_string() }), Applied::Homed { .. });
+    answers!(apply(&mut shell, Action::Genesis { statement: "a ledger".into() }), Applied::Genesised { .. });
     let home = shell.home.as_ref().expect("a home");
     // Whole entries: both reads go through.
     assert_eq!(home.ledger().and_then(|l| l.pile()).expect("the strict read").items.len(), 1, "whole");

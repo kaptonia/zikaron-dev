@@ -295,7 +295,9 @@ mod tests {
     }
 
     /// A conversation already under way when the door closes is the caller's to finish: bytes still flow both
-    /// ways, while nobody new gets in.
+    /// ways. Someone new coming meanwhile is never taken, and knows the door is gone once that conversation is
+    /// over (at once where the door has a path to remove; where it is a pipe, the one instance still talking
+    /// keeps the name busy, so the newcomer waits for it, then finds nothing).
     #[test]
     fn a_conversation_under_way_finishes_after_the_door_closes() {
         let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
@@ -306,13 +308,17 @@ mod tests {
         let mut c = connect(&at).expect("in");
         let mut s = server.join().expect("server");
         closer.close();
-        assert_eq!(connect(&at).err().map(|e| e.kind()), Some(std::io::ErrorKind::NotFound), "nobody new");
+        let late_at = at.clone();
+        let late = std::thread::spawn(move || connect(&late_at).err().map(|e| e.kind()));
         c.write_all(&[7]).expect("write");
         let mut b = [0u8; 1];
         s.read_exact(&mut b).expect("read");
         s.write_all(&[b[0] + 1]).expect("answer");
         c.read_exact(&mut b).expect("read the answer");
         assert_eq!(b, [8]);
+        drop(s);
+        drop(c);
+        assert_eq!(late.join().expect("the newcomer"), Some(std::io::ErrorKind::NotFound), "never taken; told the door is gone");
         let _ = std::fs::remove_dir_all(&d);
     }
 

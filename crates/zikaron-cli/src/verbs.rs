@@ -48,7 +48,7 @@ const ACCEPTS: [(&str, &[&str], &[&str]); 22] = [
     ("history", &WRITE, &["content", "mark", "toolchain", "note", "file", "home"]),
     ("grant", &WRITE, &["grantee", "work", "terms", "history", "window-from", "window-to", "scope", "upstream", "home"]),
     ("revoke", &WRITE, &["grant", "case", "home"]),
-    ("adopt", &WRITE, &["anchors", "attestor", "attestation"]),
+    ("adopt", &WRITE, &["anchors", "attestor", "attestation", "home"]),
     ("attest", &[], &["key", "author", "anchors", "prev", "home"]),
     ("succeed", &WRITE, &["to", "kind", "effective", "statement", "home"]),
     ("annotate", &WRITE, &["subject", "note", "home"]),
@@ -71,11 +71,12 @@ const ACCEPTS: [(&str, &[&str], &[&str]); 22] = [
 /// desktop writes with its own identity, into its own ledger: the flags that name a key, a ledger or a link are
 /// not taken). Closed: a verb not here does not take `--home` (its row in [`ACCEPTS`] does not list it).
 /// `CLI-SCHEMA.md` §11 is the readable form.
-pub const HOME: [(&str, &[&str]); 10] = [
+pub const HOME: [(&str, &[&str]); 11] = [
     ("init", &["statement"]),
     ("history", &["file", "note"]),
     ("grant", &["grantee", "work", "terms", "history", "window-from", "window-to", "scope", "upstream"]),
     ("revoke", &["grant", "case"]),
+    ("adopt", &["anchors", "attestor", "attestation"]),
     ("attest", &[]),
     ("succeed", &["to", "kind", "effective", "statement"]),
     ("annotate", &["subject", "note"]),

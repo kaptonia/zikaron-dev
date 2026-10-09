@@ -162,17 +162,52 @@ pub struct Row {
     pub label: String,
     /// When this row was created (the `keystore::utc` form). No decision reads it.
     pub created: String,
-    /// The network this identity chose when it was made: a row name of `deploy::KNOWN`, or `deploy::CUSTOM`.
-    /// `None` for rows made before identities chose one, until a writer opens a home and records this
-    /// machine's row ([`backfill_network`]). Both seats' homes take it (`action::open_home_at`).
-    pub network: Option<String>,
-    /// With `network` "custom": what one seat filled in, recorded once complete so the other seat takes the
-    /// same; `None` until then.
-    pub custom: Option<crate::deploy::Custom>,
+    /// The network this identity chose when it was made ([`Chosen`]: a row of `deploy::KNOWN`, or custom with
+    /// what one seat filled in). `None` for rows made before identities chose one, until a writer opens a home
+    /// and records this machine's row ([`backfill_network`]). Both seats' homes take it
+    /// (`action::open_home_at`).
+    pub network: Option<Chosen>,
     /// The network cell as read, when this version could not read it whole (a later version's form). Written
     /// back unchanged while the choice stands, so nothing is lost; dropped once the choice or the filled-in
     /// values change here.
     pub unread_network: Option<String>,
+}
+
+/// The network an identity chose, as one closed cell: a row of the known deployments table by its name (a name
+/// a later table has is kept as written), or custom with what one seat filled in (`None` until complete). A row
+/// carrying hand-filled values cannot be held, and choosing another network lets the filled-in values go with
+/// the old choice by construction: the writing and the reading of the choice keep no second guard for it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Chosen {
+    Row(String),
+    Custom(Option<crate::deploy::Custom>),
+}
+
+impl Chosen {
+    /// The choice a name makes: `deploy::CUSTOM` is custom, nothing filled in yet; any other name a row.
+    pub fn named(name: &str) -> Chosen {
+        if name == crate::deploy::CUSTOM {
+            Chosen::Custom(None)
+        } else {
+            Chosen::Row(name.to_string())
+        }
+    }
+
+    /// The choice's name, as the table and the network cell spell it.
+    pub fn name(&self) -> &str {
+        match self {
+            Chosen::Row(n) => n,
+            Chosen::Custom(_) => crate::deploy::CUSTOM,
+        }
+    }
+
+    /// What was filled in by hand, when the choice is custom and complete.
+    pub fn custom(&self) -> Option<&crate::deploy::Custom> {
+        match self {
+            Chosen::Custom(c) => c.as_ref(),
+            Chosen::Row(_) => None,
+        }
+    }
 }
 
 impl Row {
@@ -245,7 +280,7 @@ impl Row {
     /// The network this identity's homes take: its chosen row, or what was filled in by hand; `None` when it
     /// chose none, or chose "custom" and nothing is filled in yet.
     pub fn network_now(&self) -> Option<crate::deploy::Network<'_>> {
-        crate::deploy::resolve(self.network.as_deref(), self.custom.as_ref())
+        crate::deploy::resolve(self.network.as_ref().map(Chosen::name), self.network.as_ref().and_then(Chosen::custom))
     }
 
     /// Which of this row's seats has its home at `root`.
@@ -310,10 +345,10 @@ impl Registry {
                 // A cell this version could not read whole goes back as it came while its choice stands.
                 let raw = r.unread_network.as_deref().and_then(|t| zikaron::json::parse(t.as_bytes()).ok());
                 match (&r.network, raw) {
-                    (Some(n), Some(raw)) if raw.member("name").and_then(|x| x.as_str()) == Some(n.as_str()) && r.custom.is_none() => {
+                    (Some(n), Some(raw)) if raw.member("name").and_then(|x| x.as_str()) == Some(n.name()) && n.custom().is_none() => {
                         m.push(("network", raw));
                     }
-                    (Some(n), _) => m.push(("network", network_value(n, r.custom.as_ref()))),
+                    (Some(n), _) => m.push(("network", network_value(n))),
                     (None, _) => {}
                 }
                 obj(m)
@@ -424,25 +459,23 @@ impl Registry {
                 label: text_or(it, "label", NO_LABEL)?,
                 created: text_or(it, "created", NO_CREATED)?,
                 network: None,
-                custom: None,
                 unread_network: None,
             };
             // The network cell is read leniently and carried. A cell whose name this build lacks (a row of a
             // later table) keeps that name, so the row still has a choice: no network resolves from it, its
             // homes keep what they have, nothing overwrites it, and writing the table writes the name back. A
             // cell without a name is no choice. One cell never makes the whole table unreadable.
-            let (network, custom, unread_network) = match field(it, "network") {
+            let (network, unread_network) = match field(it, "network") {
                 Some(v) => match network_of(&v) {
-                    Some((n, c)) => (Some(n), c, None),
+                    Some(c) => (Some(c), None),
                     None => (
-                        v.member("name").and_then(|n| n.as_str()).filter(|n| !n.is_empty()).map(str::to_string),
-                        None,
+                        v.member("name").and_then(|n| n.as_str()).filter(|n| !n.is_empty()).map(Chosen::named),
                         Some(String::from_utf8_lossy(&zikaron::json::canon_bytes(&v)).to_string()),
                     ),
                 },
-                None => (None, None, None),
+                None => (None, None),
             };
-            let row = Row { network, custom, unread_network, ..row };
+            let row = Row { network, unread_network, ..row };
             // The name is the address of an occupied seat: the author seat's when both are occupied,
             // otherwise the one seat's.
             let named = match row.keys {
@@ -577,7 +610,6 @@ fn base_row() -> Result<Option<Row>, Fault> {
         label: NO_LABEL.to_string(),
         created: NO_CREATED.to_string(),
         network: None,
-        custom: None,
         unread_network: None,
     }))
 }
@@ -834,7 +866,6 @@ pub fn add_words(reg: &mut Registry, f: &Fresh, backed_words: bool, label: &str)
         label: NO_LABEL.to_string(),
         created: stamp(),
         network: None,
-        custom: None,
         unread_network: None,
     };
     crate::keybox::put(&crate::places::seed_slot(&row.id), &f.entropy)?;
@@ -886,7 +917,6 @@ pub fn add_existing(reg: &mut Registry, s: &Secret, seat: Role, backed_file: boo
         label: NO_LABEL.to_string(),
         created: stamp(),
         network: None,
-        custom: None,
         unread_network: None,
     };
     crate::key::install_at(&crate::places::key_slot(&a), s)?;
@@ -927,7 +957,7 @@ pub fn choose_network(reg: &mut Registry, id: &str, name: &str) -> Result<Row, F
         return Err(Fault::known(Known::NoIdentity, id.to_string()));
     };
     if r.network.is_none() {
-        r.network = Some(name.to_string());
+        r.network = Some(Chosen::named(name));
     }
     Ok(r.clone())
 }
@@ -942,7 +972,7 @@ pub fn backfill_network(reg: &mut Registry, d: &crate::deploy::Deployment, agree
         if !agrees(r) {
             continue;
         }
-        r.network = Some(d.name.to_string());
+        r.network = Some(Chosen::Row(d.name.to_string()));
         n += 1;
     }
     n
@@ -957,9 +987,9 @@ pub fn set_network(reg: &mut Registry, id: &str, name: &str) -> Result<Row, Faul
     let Some(r) = reg.rows.iter_mut().find(|r| r.id == id) else {
         return Err(Fault::known(Known::NoIdentity, id.to_string()));
     };
-    if r.network.as_deref() != Some(name) {
-        r.network = Some(name.to_string());
-        r.custom = None;
+    // Hand-filled values belong to the custom choice itself, so they go with it by construction.
+    if r.network.as_ref().map(Chosen::name) != Some(name) {
+        r.network = Some(Chosen::named(name));
         r.unread_network = None;
     }
     Ok(r.clone())
@@ -971,19 +1001,21 @@ pub fn remember_custom(reg: &mut Registry, id: &str, c: crate::deploy::Custom) -
     let Some(r) = reg.rows.iter_mut().find(|r| r.id == id) else {
         return Err(Fault::known(Known::NoIdentity, id.to_string()));
     };
-    if r.network.as_deref() != Some(crate::deploy::CUSTOM) || r.custom.as_ref() == Some(&c) {
-        return Ok(false);
+    match &mut r.network {
+        Some(Chosen::Custom(filled)) if filled.as_ref() != Some(&c) => {
+            *filled = Some(c);
+            r.unread_network = None;
+            Ok(true)
+        }
+        _ => Ok(false),
     }
-    r.custom = Some(c);
-    r.unread_network = None;
-    Ok(true)
 }
 
 /// The registry's network cell: `{"name":…}`, plus the hand-filled values when present:
 /// `{"chainId":…,"endpoints":["chain=url",…],"fromBlock":…,"name":"custom","registry":"0x…"}`.
-fn network_value(name: &str, custom: Option<&crate::deploy::Custom>) -> Value {
-    let mut m = vec![("name".to_string(), Value::Str(name.to_string()))];
-    if let Some(c) = custom {
+fn network_value(chosen: &Chosen) -> Value {
+    let mut m = vec![("name".to_string(), Value::Str(chosen.name().to_string()))];
+    if let Some(c) = chosen.custom() {
         m.push(("chainId".to_string(), Value::Int(c.chain_id)));
         m.push(("endpoints".to_string(), Value::Arr(c.endpoints.iter().map(|e| Value::Str(e.clone())).collect())));
         m.push(("fromBlock".to_string(), Value::Int(c.from_block)));
@@ -992,14 +1024,15 @@ fn network_value(name: &str, custom: Option<&crate::deploy::Custom>) -> Value {
     Value::Obj(m)
 }
 
-/// The network cell read strictly; `None` when any part of it does not read.
-fn network_of(v: &Value) -> Option<(String, Option<crate::deploy::Custom>)> {
+/// The network cell read strictly; `None` when any part of it does not read (hand-filled values beside a row's
+/// name among them: a row carries none).
+fn network_of(v: &Value) -> Option<Chosen> {
     let name = match v.member("name") {
         Some(Value::Str(n)) if crate::deploy::is_choice(n) => n.clone(),
         _ => return None,
     };
     if v.member("chainId").is_none() {
-        return Some((name, None));
+        return Some(Chosen::named(&name));
     }
     if name != crate::deploy::CUSTOM {
         return None;
@@ -1026,7 +1059,7 @@ fn network_of(v: &Value) -> Option<(String, Option<crate::deploy::Custom>)> {
             .collect::<Option<Vec<String>>>()?,
         _ => return None,
     };
-    Some((name, Some(crate::deploy::Custom { chain_id, registry, from_block, endpoints })))
+    Some(Chosen::Custom(Some(crate::deploy::Custom { chain_id, registry, from_block, endpoints })))
 }
 
 /// The registered row whose seat has its home at `root`, and that seat.
@@ -1233,7 +1266,6 @@ mod tests {
             backed_words: kind == Kind::Words,
             backed_file: false,
             network: None,
-            custom: None,
             unread_network: None,
         }
     }
@@ -1243,10 +1275,9 @@ mod tests {
     #[test]
     fn registry_round_trips_without_key_material() {
         let mut chose = row(9, Kind::Existing);
-        chose.network = Some(crate::deploy::CUSTOM.to_string());
-        chose.custom = Some(crate::deploy::Custom { chain_id: 31337, registry: Address([3; 20]), from_block: 7, endpoints: vec!["31337=https://n.example".into()] });
+        chose.network = Some(Chosen::Custom(Some(crate::deploy::Custom { chain_id: 31337, registry: Address([3; 20]), from_block: 7, endpoints: vec!["31337=https://n.example".into()] })));
         let mut row_named = row(11, Kind::Words);
-        row_named.network = Some(crate::deploy::DEFAULT.to_string());
+        row_named.network = Some(Chosen::named(crate::deploy::DEFAULT));
         let reg = Registry { current: Some((row(7, Kind::Words).id, Role::Grantee)), rows: vec![row(7, Kind::Words), chose, row_named], left: Vec::new() };
         let b = reg.to_bytes();
         assert_eq!(Registry::parse(&b).unwrap(), reg);
@@ -1271,13 +1302,13 @@ mod tests {
     #[test]
     fn a_network_cell_this_build_lacks_is_carried() {
         let mut r = row(7, Kind::Words);
-        r.network = Some(crate::deploy::DEFAULT.to_string());
+        r.network = Some(Chosen::named(crate::deploy::DEFAULT));
         let reg = Registry { current: None, rows: vec![r], left: Vec::new() };
         let t = String::from_utf8(reg.to_bytes()).unwrap();
         let off = t.replace(&format!("\"name\":\"{}\"", crate::deploy::DEFAULT), "\"name\":\"elsewhere\"");
         assert_ne!(off, t);
         let mut back = Registry::parse(off.as_bytes()).unwrap();
-        assert_eq!(back.rows[0].network.as_deref(), Some("elsewhere"));
+        assert_eq!(back.rows[0].network, Some(Chosen::Row("elsewhere".into())));
         assert!(back.rows[0].network_now().is_none());
         assert_eq!(backfill_network(&mut back, crate::deploy::named(crate::deploy::DEFAULT).unwrap(), |_| true), 0);
         assert_eq!(String::from_utf8(back.to_bytes()).unwrap(), off);
@@ -1291,14 +1322,14 @@ mod tests {
     #[test]
     fn a_custom_cell_this_build_cannot_read_is_written_back_whole() {
         let mut r = row(7, Kind::Words);
-        r.network = Some(crate::deploy::CUSTOM.to_string());
+        r.network = Some(Chosen::named(crate::deploy::CUSTOM));
         let reg = Registry { current: None, rows: vec![r], left: Vec::new() };
         let t = String::from_utf8(reg.to_bytes()).unwrap();
         let later = format!("{{\"chainId\":31337,\"endpoints\":[\"31337=https://n.example\"],\"fromBlock\":\"0x10\",\"name\":\"{}\",\"registry\":\"0x{}\"}}", crate::deploy::CUSTOM, "11".repeat(20));
         let off = t.replace(&format!("{{\"name\":\"{}\"}}", crate::deploy::CUSTOM), &later);
         assert_ne!(off, t);
         let mut back = Registry::parse(off.as_bytes()).unwrap();
-        assert_eq!((back.rows[0].network.as_deref(), back.rows[0].custom.is_none()), (Some(crate::deploy::CUSTOM), true));
+        assert_eq!(back.rows[0].network, Some(Chosen::Custom(None)));
         assert_eq!(String::from_utf8(back.to_bytes()).unwrap(), off, "carried whole");
         let id = back.rows[0].id.clone();
         // Values filled in here replace the carried cell too (the row still chose "custom").
@@ -1318,13 +1349,13 @@ mod tests {
     fn backfill_records_only_rows_without_a_choice() {
         let other = crate::deploy::KNOWN.iter().find(|d| d.name != crate::deploy::DEFAULT).unwrap();
         let mut named = row(11, Kind::Words);
-        named.network = Some(other.name.to_string());
+        named.network = Some(Chosen::named(other.name));
         let mut custom = row(9, Kind::Existing);
-        custom.network = Some(crate::deploy::CUSTOM.to_string());
+        custom.network = Some(Chosen::named(crate::deploy::CUSTOM));
         let mut reg = Registry { current: None, rows: vec![row(7, Kind::Words), named.clone(), custom.clone()], left: Vec::new() };
         let d = crate::deploy::named(crate::deploy::DEFAULT).unwrap();
         assert_eq!(backfill_network(&mut reg, d, |_| true), 1);
-        assert_eq!(reg.rows[0].network.as_deref(), Some(crate::deploy::DEFAULT));
+        assert_eq!(reg.rows[0].network, Some(Chosen::Row(crate::deploy::DEFAULT.into())));
         assert_eq!(reg.rows[1], named);
         assert_eq!(reg.rows[2], custom);
         let once = reg.clone();
@@ -1334,5 +1365,37 @@ mod tests {
         let mut held = Registry { current: None, rows: vec![row(7, Kind::Words)], left: Vec::new() };
         assert_eq!(backfill_network(&mut held, d, |_| false), 0);
         assert_eq!(held.rows[0].network, None);
+    }
+
+    /// The network cell reads into one choice, whatever form an older or later file wrote: a row's name alone;
+    /// custom alone, then with its values; no cell; hand-filled values with no name (no choice, carried); a
+    /// custom cell whose values do not read (custom, nothing filled in, carried); and values beside a row's
+    /// name (the row, its values not taken, carried). Choosing a row afterwards lets custom's values go.
+    #[test]
+    fn the_network_cell_reads_into_one_choice() {
+        let base = String::from_utf8(Registry { current: None, rows: vec![row(7, Kind::Words)], left: Vec::new() }.to_bytes()).unwrap();
+        let values = format!("\"chainId\":31337,\"endpoints\":[\"31337=https://n.example\"],\"fromBlock\":7,\"registry\":\"0x{}\"", "33".repeat(20));
+        let with = |cell: Option<String>| {
+            let t = match &cell {
+                Some(c) => base.replacen("\"slot\":", &format!("\"network\":{c},\"slot\":"), 1),
+                None => base.clone(),
+            };
+            let r = Registry::parse(t.as_bytes()).unwrap().rows[0].clone();
+            (r.network, r.unread_network.is_some())
+        };
+        let filled = crate::deploy::Custom { chain_id: 31337, registry: Address([0x33; 20]), from_block: 7, endpoints: vec!["31337=https://n.example".into()] };
+        let d = crate::deploy::DEFAULT;
+        assert_eq!(with(Some(format!("{{\"name\":\"{d}\"}}"))), (Some(Chosen::Row(d.into())), false), "a row alone");
+        assert_eq!(with(Some(format!("{{\"name\":\"{}\"}}", crate::deploy::CUSTOM))), (Some(Chosen::Custom(None)), false), "custom alone");
+        assert_eq!(with(Some(format!("{{{values},\"name\":\"{}\"}}", crate::deploy::CUSTOM))), (Some(Chosen::Custom(Some(filled.clone()))), false), "custom with its values");
+        assert_eq!(with(None), (None, false), "no cell");
+        assert_eq!(with(Some(format!("{{{values}}}"))), (None, true), "values with no name: no choice, carried");
+        assert_eq!(with(Some(format!("{{\"chainId\":\"x\",\"name\":\"{}\"}}", crate::deploy::CUSTOM))), (Some(Chosen::Custom(None)), true), "custom whose values do not read");
+        assert_eq!(with(Some(format!("{{{values},\"name\":\"{d}\"}}"))), (Some(Chosen::Row(d.into())), true), "values beside a row: the row");
+        let mut reg = Registry { current: None, rows: vec![row(7, Kind::Words)], left: Vec::new() };
+        reg.rows[0].network = Some(Chosen::Custom(Some(filled)));
+        let id = reg.rows[0].id.clone();
+        assert_eq!(set_network(&mut reg, &id, d).unwrap().network, Some(Chosen::Row(d.into())), "a row chosen: custom's values go with it");
+        assert_eq!(remember_custom(&mut reg, &id, crate::deploy::Custom { chain_id: 1, registry: Address([1; 20]), from_block: 0, endpoints: Vec::new() }).ok(), Some(false), "a row takes no hand-filled values");
     }
 }

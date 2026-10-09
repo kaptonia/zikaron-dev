@@ -1,9 +1,10 @@
 //! Reading grant codes and files typed or dropped by the user. Vault import and the check page both use this:
-//! pasted text starting with `zikaron-grant:` is decoded by the kit crate; anything else is a path, and a file
-//! whose content (ignoring ASCII whitespace) starts with that prefix is decoded too; otherwise the whole file
-//! is returned as one entry's bytes (validated by the caller).
+//! text that is a grant code ([`code_in`]) is decoded by the kit crate; anything else is a path, and a file
+//! whose content is a grant code by the same reading is decoded too; otherwise the whole file is returned as one
+//! entry's bytes (validated by the caller).
 //!
-//! Keeping one reader avoids two call sites disagreeing (e.g. on a payload file with a trailing newline).
+//! Keeping one reader avoids two call sites disagreeing: a code typed or in a file, with a line break after
+//! it, white space before it or inside it, or a no-break space after it, reads the same everywhere.
 //! Decoding is done only by the kit crate's `badge::decode` (kit law §6); errors carry its tokens
 //! with segment number and inner token.
 
@@ -78,14 +79,25 @@ fn written_as_code(b: &[u8]) -> bool {
     b.len() >= p.len() && b[..p.len()].eq_ignore_ascii_case(p)
 }
 
+/// The grant code that text holds, if it holds one: every white space character is dropped (a line break, a
+/// space, a tab, and a no-break space or any other a messenger or mail client adds, inside the code too) and
+/// what is left is written as a code ([`written_as_code`]). A code has no white space of its own (base64
+/// segments joined by dots), so dropping it changes no code. The one reading for typed text and a file alike;
+/// bytes that are not text hold no code.
+fn code_in(b: &[u8]) -> Option<Vec<u8>> {
+    let text = std::str::from_utf8(b).ok()?;
+    let code: Vec<u8> = text.chars().filter(|c| !c.is_whitespace()).collect::<String>().into_bytes();
+    written_as_code(&code).then_some(code)
+}
+
 /// Read the input in full: pasted code, payload file, grant file, or entry file.
 pub fn take_full(typed: &str) -> Result<Taken, Fault> {
     let t = typed.trim();
     if t.is_empty() {
         return Err(Fault::known(Known::FieldMissing, crate::lang::t(crate::lang::Key::Tail199).to_string()));
     }
-    if written_as_code(t.as_bytes()) {
-        return Ok(Taken { form: Form::Payload, hops: decode(t.as_bytes())?, file: None });
+    if let Some(code) = code_in(t.as_bytes()) {
+        return Ok(Taken { form: Form::Payload, hops: decode(&code)?, file: None });
     }
     let p = Path::new(t);
     if crate::grantfilex::is_grant_file(p) {
@@ -93,11 +105,9 @@ pub fn take_full(typed: &str) -> Result<Taken, Fault> {
         return Ok(Taken { form: Form::GrantFile, hops: o.hops.clone(), file: Some((p.to_path_buf(), o)) });
     }
     let bytes = std::fs::read(p).map_err(|e| crate::fault::classify(&e, &p.display().to_string()))?;
-    // A payload in a file: ignore ASCII whitespace (trailing newline, indentation) when checking the prefix
-    // and decoding; entry bytes are kept unchanged.
-    let trimmed: Vec<u8> = bytes.iter().copied().filter(|c| !c.is_ascii_whitespace()).collect();
-    if written_as_code(&trimmed) {
-        return Ok(Taken { form: Form::PayloadFile, hops: decode(&trimmed)?, file: None });
+    // A payload in a file is read as typed text is; entry bytes are kept unchanged.
+    if let Some(code) = code_in(&bytes) {
+        return Ok(Taken { form: Form::PayloadFile, hops: decode(&code)?, file: None });
     }
     Ok(Taken { form: Form::EntryFile, hops: vec![bytes], file: None })
 }

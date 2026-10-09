@@ -43,6 +43,10 @@ impl Endpoint for Node {
     fn name(&self) -> String {
         self.name.clone()
     }
+    /// No address: the place is the name.
+    fn place(&self) -> String {
+        self.name()
+    }
 }
 
 fn limited() -> Trouble {
@@ -284,6 +288,10 @@ fn a_question_in_flight_ends_with_its_slowest_node_and_leaves_nothing_running() 
         fn name(&self) -> String {
             "t".into()
         }
+        /// No address: the place is the name.
+        fn place(&self) -> String {
+            self.name()
+        }
     }
     let nodes: Vec<(String, Box<dyn Endpoint + Send>)> = (0..4).map(|i| (format!("http://t{i}"), Box::new(Tracked(alive.clone())) as Box<dyn Endpoint + Send>)).collect();
     let got = endpoints::ask_each(nodes, "eth_blockNumber", &no_params());
@@ -308,6 +316,10 @@ impl Endpoint for Receipts {
     }
     fn name(&self) -> String {
         self.0.into()
+    }
+    /// No address: the place is the name.
+    fn place(&self) -> String {
+        self.name()
     }
 }
 

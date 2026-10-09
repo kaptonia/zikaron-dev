@@ -460,7 +460,7 @@ Each verb's closed list, as its row in `ACCEPTS` in `verbs.rs` names it. The fiv
 | `history` | `ledger` `key` `root` `seq` `prev` `content` `mark` `toolchain` `note` `file` `home` |
 | `grant` | `ledger` `key` `root` `seq` `prev` `grantee` `work` `terms` `history` `window-from` `window-to` `scope` `upstream` `home` |
 | `revoke` | `ledger` `key` `root` `seq` `prev` `grant` `case` `home` |
-| `adopt` | `ledger` `key` `root` `seq` `prev` `anchors` `attestor` `attestation` |
+| `adopt` | `ledger` `key` `root` `seq` `prev` `anchors` `attestor` `attestation` `home` |
 | `attest` | `key` `author` `anchors` `prev` `home` |
 | `succeed` | `ledger` `key` `root` `seq` `prev` `to` `kind` `effective` `statement` `home` |
 | `annotate` | `ledger` `key` `root` `seq` `prev` `subject` `note` `home` |
@@ -523,7 +523,7 @@ beside `ok`; it reads nothing and writes nothing.
 
 ## 11 · `--home`: through the desktop
 
-With `--home <the desktop's data folder>`, ten verbs are done by the running ZIKARON Desk in that data folder,
+With `--home <the desktop's data folder>`, eleven verbs are done by the running ZIKARON Desk in that data folder,
 through its own action layer, instead of here: the entry is written into the desktop's ledger with the desktop's
 own identity, recorded in its trail, and seen in its window at once, with nothing reopened or refreshed. The
 ledger is one ledger and the state one state. The command line holds no key and no passcode on this path, and
@@ -563,10 +563,9 @@ as in section 6 with `proofs` 0. Besides those:
 The line for people on stderr says each of these in the system's language (section 3), the desktop's own
 refusals in the sentence the desktop gives them in either language.
 
-**The verbs and the flags each takes beside `--home`.** The other twelve verbs do not take `--home` (it is
+**The verbs and the flags each takes beside `--home`.** The other eleven verbs do not take `--home` (it is
 misuse with them): their answers are keys, files or readings that are not the desktop's to give (`keygen` would
-hand out a private key; `adopt`'s anchors are entered in the desktop's own form and checked against the chain
-on its adoption page, which `--anchors` is not), or they do not touch a data folder.
+hand out a private key), or they do not touch a data folder.
 
 | Verb | Flags beside `--home` |
 |---|---|
@@ -574,6 +573,7 @@ on its adoption page, which `--anchors` is not), or they do not touch a data fol
 | `history` | `file` `note` |
 | `grant` | `grantee` `work` `terms` `history` `window-from` `window-to` `scope` `upstream` |
 | `revoke` | `grant` `case` |
+| `adopt` | `anchors` `attestor` `attestation` |
 | `attest` | none |
 | `succeed` | `to` `kind` `effective` `statement` |
 | `annotate` | `subject` `note` |

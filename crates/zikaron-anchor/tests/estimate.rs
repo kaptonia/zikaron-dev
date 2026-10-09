@@ -71,6 +71,10 @@ impl Endpoint for Scripted {
     fn name(&self) -> String {
         "scripted".into()
     }
+    /// No address: the place is the name.
+    fn place(&self) -> String {
+        self.name()
+    }
 }
 
 fn send_with(estimate: Result<W, Trouble>) -> (Result<u64, NotSent>, Vec<(String, String)>) {

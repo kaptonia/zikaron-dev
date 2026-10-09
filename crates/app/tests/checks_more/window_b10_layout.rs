@@ -345,7 +345,7 @@ fn the_proxy_section_draws_no_now_line_and_still_saves() {
         let walk = |steps: Vec<(f64, Vec<Event>)>| {
             let (ctx, frames) = tapped(None);
             let mut shell = probe_shell(&ctx);
-            assert!(matches!(apply(&mut shell, Action::SetProxy { choice: proxy.into() }), Applied::ProxySet(_)), "the typed proxy is saved");
+            answers!(apply(&mut shell, Action::SetProxy { choice: proxy.into() }), Applied::ProxySet(_), "the typed proxy is saved");
             let n = steps.len();
             let (back, _) = app::window::probe_shell_input(&ctx, shell, place, steps, w, h);
             let frames = frames_of(&frames);

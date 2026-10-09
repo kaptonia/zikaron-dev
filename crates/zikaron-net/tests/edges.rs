@@ -171,9 +171,21 @@ fn writing_and_reading_share_one_deadline() {
     assert!(began.elapsed() < Duration::from_millis(600) + SLACK);
 }
 
+/// A port nobody listens on, refused outright, is a connection failure naming the address (one address refused
+/// with no timeout among the attempts is `Connect` whatever the deadline). The premise is checked first: some
+/// machines answer a closed local port only after retrying for seconds; there the premise is said and the test
+/// is skipped by name.
 #[test]
 fn a_refused_connection_is_named_as_the_connection() {
     let port = TcpListener::bind("127.0.0.1:0").expect("bind").local_addr().expect("addr").port();
+    let at: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().expect("an address");
+    match TcpStream::connect_timeout(&at, Duration::from_millis(500)) {
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {}
+        other => {
+            eprintln!("skipped: this machine does not refuse a closed local port within 500 ms ({:?})", other.map(|_| "connected").map_err(|e| e.kind()));
+            return;
+        }
+    }
     let t = parse(&format!("http://127.0.0.1:{port}/")).expect("address");
     match exchange(&t, REQUEST, &limits(2000, 0)) {
         // The failure names the address tried.

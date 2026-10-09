@@ -260,6 +260,10 @@ fn a_receipt_wait_of_zero_asks_one_round() {
         fn name(&self) -> String {
             "count".into()
         }
+        /// No address: the place is the name.
+        fn place(&self) -> String {
+            self.name()
+        }
     }
     assert!(matches!(send::confirm_each(&mut [], &[1u8; 32], Duration::ZERO, &[]), send::Confirm::Unreachable(_)));
     let mut refusing = Count(0, Err(Trouble::Node("{\"code\":-32005,\"message\":\"rate limit\"}".into())));

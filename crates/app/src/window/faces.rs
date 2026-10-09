@@ -61,7 +61,7 @@ impl Win {
     /// What the wizard's network step stands for now: the current identity's network when it has chosen one of
     /// this build's choices (the step decides that identity's network), else this machine's last choice.
     pub(super) fn wiz_network_chosen(&self) -> Option<String> {
-        let row = self.shell.identities.as_ref().and_then(|r| r.now()).and_then(|(row, _)| row.network.clone());
+        let row = self.shell.identities.as_ref().and_then(|r| r.now()).and_then(|(row, _)| row.network.as_ref().map(|c| c.name().to_string()));
         row.filter(|n| crate::deploy::is_choice(n)).or_else(|| self.shell.machine.network.clone())
     }
 }

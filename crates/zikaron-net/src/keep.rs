@@ -86,13 +86,30 @@ pub(crate) fn closing() -> bool {
     CLOSING.load(Ordering::SeqCst)
 }
 
+/// How many exchanges shutting down has cut while they were under way (resolving, connecting, in a handshake or
+/// a proxy tunnel, waiting for or reading an answer) in this process.
+static CUTS: AtomicU64 = AtomicU64::new(0);
+
+/// An exchange under way is cut by the shutdown: counted ([`cuts`]) and said as closed. Every wait that finds
+/// the flag raised ends through here; an exchange refused before it began is not a cut.
+pub(crate) fn cut() -> Fail {
+    CUTS.fetch_add(1, Ordering::SeqCst);
+    Fail::Closed
+}
+
+/// How many exchanges under way shutting down has cut in this process: the trace a cut leaves, so whoever must
+/// tell a cut from an exchange that ran out its deadline (or broke) reads a count, not a clock.
+pub fn cuts() -> u64 {
+    CUTS.load(Ordering::SeqCst)
+}
+
 /// Track a socket as in use from the moment it connects (handshake included); refused while shutting down.
 pub(crate) fn ticket(tcp: &std::net::TcpStream) -> Result<Ticket, Fail> {
     let handle = tcp.try_clone().map_err(|e| Fail::Stream(e.to_string()))?;
     let mut f = flying();
     if closing() {
         let _ = handle.shutdown(std::net::Shutdown::Both);
-        return Err(Fail::Closed);
+        return Err(cut());
     }
     let ticket = NEXT.fetch_add(1, Ordering::SeqCst);
     f.insert(ticket, handle);

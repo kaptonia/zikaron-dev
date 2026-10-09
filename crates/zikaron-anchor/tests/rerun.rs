@@ -42,6 +42,10 @@ impl Endpoint for Scripted {
     fn name(&self) -> String {
         "scripted".into()
     }
+    /// No address: the place is the name.
+    fn place(&self) -> String {
+        self.name()
+    }
 }
 
 fn count(asked: &Arc<Mutex<Vec<String>>>, method: &str) -> usize {

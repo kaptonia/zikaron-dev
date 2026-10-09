@@ -399,6 +399,10 @@ fn an_incomplete_receipt_is_an_answer_so_the_deadline_says_not_yet() {
         fn name(&self) -> String {
             "half".into()
         }
+        /// No address: the place is the name.
+        fn place(&self) -> String {
+            self.name()
+        }
     }
     let mut ep = Half;
     let got = send::confirm_each(&mut [&mut ep], &[1u8; 32], std::time::Duration::from_millis(0), &[]);
@@ -427,6 +431,10 @@ fn a_broadcast_transaction_keeps_its_hash_even_when_the_endpoint_goes_quiet() {
         }
         fn name(&self) -> String {
             "flaky".into()
+        }
+        /// No address: the place is the name.
+        fn place(&self) -> String {
+            self.name()
         }
     }
     let mut ep = Flaky { sent: false };

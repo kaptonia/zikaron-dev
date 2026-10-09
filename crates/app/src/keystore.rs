@@ -35,10 +35,16 @@ pub struct Params {
     pub p: usize,
 }
 
+/// The cost floor of an identity backup (the key file this app writes) and, in a shipped build, of the key
+/// vault's own derivation section: geth's standard scrypt level. One constant: the key file is written at it
+/// ([`Params::standard`]), and the vault's floor is this pass's parameters, which are it outside the test hooks
+/// (`keybox::params`).
+pub const BACKUP_FLOOR: Params = Params { n: 262_144, r: 8, p: 1 };
+
 impl Params {
-    /// The level the app writes (geth's standard parameters).
+    /// The level the app writes (geth's standard parameters): [`BACKUP_FLOOR`].
     pub fn standard() -> Params {
-        Params { n: 262_144, r: 8, p: 1 }
+        BACKUP_FLOOR
     }
 
     /// geth's light parameters: compliant, but much cheaper to derive.

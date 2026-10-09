@@ -130,10 +130,10 @@ fn the_door_follows_the_lock_and_the_home() {
     let (b, mut shell) = Bench::new("follows");
     let at = b.place();
     assert!(zikaron_os::door::connect(&at).is_ok(), "unlocked and writing: the door is open");
-    assert!(matches!(apply(&mut shell, Action::Lock), Applied::LockedUp));
+    answers!(apply(&mut shell, Action::Lock), Applied::LockedUp);
     assert!(shell.door.is_none());
     assert_eq!(zikaron_os::door::connect(&at).err().map(|e| e.kind()), Some(std::io::ErrorKind::NotFound), "locked: nobody at the door");
-    assert!(matches!(app::action::apply_settled(&mut shell, Action::Unlock { pin: PIN.into() }), Applied::Unlocked));
+    answers!(app::action::apply_settled(&mut shell, Action::Unlock { pin: PIN.into() }), Applied::Unlocked);
     shell.drain();
     assert!(zikaron_os::door::connect(&at).is_ok(), "unlocked again: the door is back");
     // Another home: the door belongs to that home.
@@ -335,7 +335,7 @@ fn a_request_waiting_when_the_desktop_locks_is_told_it_closed() {
     }));
     // The waker was handed to the door when it opened: open it again with this one.
     let _ = apply(&mut shell, Action::Lock);
-    assert!(matches!(app::action::apply_settled(&mut shell, Action::Unlock { pin: PIN.into() }), Applied::Unlocked));
+    answers!(app::action::apply_settled(&mut shell, Action::Unlock { pin: PIN.into() }), Applied::Unlocked);
     shell.drain();
     let before = head(&shell);
     let h = send(&b.place(), b.ask("annotate", &[("note", "late")]).to_bytes());
@@ -343,7 +343,7 @@ fn a_request_waiting_when_the_desktop_locks_is_told_it_closed() {
     let _ = apply(&mut shell, Action::Lock);
     let r = h.join().ok().flatten().and_then(|x| Reply::of_bytes(&x));
     assert_eq!(r, Some(Reply::Closed));
-    assert!(matches!(app::action::apply_settled(&mut shell, Action::Unlock { pin: PIN.into() }), Applied::Unlocked));
+    answers!(app::action::apply_settled(&mut shell, Action::Unlock { pin: PIN.into() }), Applied::Unlocked);
     assert_eq!(head(&shell), before, "nothing of it was written");
 }
 
@@ -376,14 +376,14 @@ fn anchor_goes_the_way_the_setting_says() {
     assert!(matches!(served(&mut shell, send(&b.place(), b.ask("history", &[("file", &file.display().to_string())]).to_bytes())), Some(Reply::Wrote { .. })));
     let queued = shell.queue.sendable();
     assert_eq!(queued, before + 1, "the record is queued as a click's is");
-    assert!(matches!(apply(&mut shell, Action::SetCliAnchor { to: app::machine::CliAnchor::Queue }), Applied::CliAnchorSet(app::machine::CliAnchor::Queue)));
+    answers!(apply(&mut shell, Action::SetCliAnchor { to: app::machine::CliAnchor::Queue }), Applied::CliAnchorSet(app::machine::CliAnchor::Queue));
     assert_eq!(app::machine::read().expect("reads").cli_anchor, app::machine::CliAnchor::Queue, "written to the machine settings");
     let q_before = shell.queue.clone();
     shell.door_told.clear();
     assert_eq!(served(&mut shell, send(&b.place(), b.ask("anchor", &[]).to_bytes())), Some(Reply::Queued { count: queued as u64 }));
     assert_eq!(shell.queue, q_before, "nothing sent, the queue as it was");
     assert!(matches!(shell.door_told.as_slice(), [Applied::SendAsked { count }] if *count == queued), "the request is told: {:?}", shell.door_told);
-    assert!(matches!(apply(&mut shell, Action::SetCliAnchor { to: app::machine::CliAnchor::Send }), Applied::CliAnchorSet(_)));
+    answers!(apply(&mut shell, Action::SetCliAnchor { to: app::machine::CliAnchor::Send }), Applied::CliAnchorSet(_));
     let r = served(&mut shell, send(&b.place(), b.ask("anchor", &[]).to_bytes()));
     assert_eq!(code(r), app::fault::Known::NoChainId.as_str(), "sent the send key's way: the estimate first, refused by its name");
 }
@@ -420,7 +420,7 @@ fn a_door_that_cannot_open_is_kept_by_name() {
     // Lock (the door goes), put something that is not a door at its place, unlock: the door cannot open.
     let _ = apply(&mut shell, Action::Lock);
     std::fs::write(b.place(), b"not a door").expect("taken");
-    assert!(matches!(app::action::apply_settled(&mut shell, Action::Unlock { pin: PIN.into() }), Applied::Unlocked));
+    answers!(app::action::apply_settled(&mut shell, Action::Unlock { pin: PIN.into() }), Applied::Unlocked);
     for _ in 0..5 {
         shell.drain();
     }
@@ -503,7 +503,7 @@ fn the_command_line_switch_reads_and_refuses_through_the_action_layer() {
     unsafe { std::env::set_var(zikaron_os::cli_path::ENV_DIR, &dir) };
     let beside = app::action::cli_beside().expect("beside this program");
     assert!(!beside.is_file(), "a test binary has no command line beside it");
-    assert!(matches!(apply(&mut shell, Action::ReadCliPath), Applied::CliPathRead(zikaron_os::cli_path::State::Unsupported(_))));
+    answers!(apply(&mut shell, Action::ReadCliPath), Applied::CliPathRead(zikaron_os::cli_path::State::Unsupported(_)));
     assert!(matches!(shell.cli_path, Some(zikaron_os::cli_path::State::Unsupported(_))), "the row reads the shell's reading");
     let first = apply(&mut shell, Action::SetCliPath { on: true });
     assert_eq!(first, Applied::Started(app::task::Kind::CliPath));

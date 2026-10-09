@@ -4,6 +4,19 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Assert that an action answered as `pat`; failing, the answer itself is printed (after the given words, if
+/// any), so a run on another machine says what came back instead of only that it did not match.
+macro_rules! answers {
+    ($got:expr, $pat:pat) => {{
+        let got = $got;
+        assert!(matches!(got, $pat), "expected {}, answered {:?}", stringify!($pat), got);
+    }};
+    ($got:expr, $pat:pat, $($said:tt)+) => {{
+        let got = $got;
+        assert!(matches!(got, $pat), "{}: expected {}, answered {:?}", format!($($said)+), stringify!($pat), got);
+    }};
+}
+
 /// Start a child and collect its output like `Command::output` (stdin closed, both streams captured), via
 /// `zikaron_os::spawn`, where the child closes every listed kernel lock before it runs, so a lock a test releases
 /// is never held by a child started on another thread (`zikaron_os::LockFile`). All children go through here.
@@ -2859,7 +2872,6 @@ fn one_key_sits_on_one_seat_and_the_old_shape_cannot_be_built() {
         label: app::identity::NO_LABEL.to_string(),
         created: app::identity::NO_CREATED.to_string(),
         network: None,
-        custom: None,
         unread_network: None,
     };
     assert_eq!(one.address(Role::Author), None);
@@ -4975,3 +4987,5 @@ mod a8_gates;
 mod a8_send;
 #[path = "checks_more/a8_skeleton.rs"]
 mod a8_skeleton;
+#[path = "checks_more/gaps_r21b2.rs"]
+mod gaps_r21b2;

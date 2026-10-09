@@ -437,8 +437,8 @@ fn a_grant_held_after_the_backup_is_behind_it_and_one_held_before_is_not() {
     let behind = |m: &app::machine::Machine| app::machine::backup_behind(m.backup.as_ref(), app::backup::measured(m.backup.as_ref()).ok());
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_)));
-    assert!(matches!(apply(&mut shell, Action::OpenHome { root: base.join("a").display().to_string() }), Applied::Homed { .. }));
+    answers!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_));
+    answers!(apply(&mut shell, Action::OpenHome { root: base.join("a").display().to_string() }), Applied::Homed { .. });
     let home = app::home::Home::open(shell.home.as_ref().expect("the home").root()).expect("the home");
     // Two grants of another's, signed by their own key.
     let secret = app::key::Secret::take([0x47; 32]).expect("a key");

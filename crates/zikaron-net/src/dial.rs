@@ -84,7 +84,7 @@ fn resolve_with(t: &Target, clock: &Clock, resolver: Resolver) -> Result<Vec<Soc
     });
     loop {
         if keep::closing() {
-            return Err(Fail::Closed);
+            return Err(keep::cut());
         }
         let wait = match clock.left()? {
             Some(left) => left.min(SLICE),
@@ -138,7 +138,7 @@ fn race_capped(addrs: &[SocketAddr], clock: &Clock, attempt: Attempt, cap: Durat
     let mut failed: Vec<String> = Vec::new();
     loop {
         if keep::closing() {
-            return Err(Fail::Closed);
+            return Err(keep::cut());
         }
         let now = Instant::now();
         if started < addrs.len() && now >= next_at && now < cap_at {

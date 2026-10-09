@@ -32,7 +32,7 @@ fn the_node_cell_reads_an_address_as_the_command_line_does() {
     let _ = std::fs::remove_dir_all(&base);
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::OpenHome { root: base.join("home").display().to_string() }), Applied::Homed { .. }));
+    answers!(apply(&mut shell, Action::OpenHome { root: base.join("home").display().to_string() }), Applied::Homed { .. });
     for (spec, reads) in FORMS {
         let one = zikaron_anchor::rpc::endpoint_spec(spec).map(|(_, a)| zikaron_anchor::rpc::read_address(&a).is_ok());
         assert_eq!(one, Ok(reads), "the one reader on {spec:?}");
@@ -65,7 +65,7 @@ fn the_check_page_reads_an_address_as_the_command_line_does() {
     let _ = std::fs::remove_dir_all(&base);
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::OpenHome { root: base.join("home").display().to_string() }), Applied::Homed { .. }));
+    answers!(apply(&mut shell, Action::OpenHome { root: base.join("home").display().to_string() }), Applied::Homed { .. });
     let check = |shell: &mut app::shell::Shell, endpoints: &str| {
         apply(
             shell,

@@ -23,7 +23,7 @@ mod keep;
 mod route;
 
 pub use dial::{CONNECT_CAP, STAGGER};
-pub use keep::{close_down, open_up, IDLE_KEEP, PER_PLACE};
+pub use keep::{close_down, cuts, open_up, IDLE_KEEP, PER_PLACE};
 pub use route::{excepted, is_loopback, proxy_of, read_choice, read_system_with, set_choice, way_for, way_shown, way_under, Choice, Kind, NotAProxy, Proxy, Reading, SystemProxies, Way, SYSTEM_FRESH, SYSTEM_READ_CAP};
 
 // ───────────────────────── The request head ─────────────────────────
@@ -381,13 +381,13 @@ fn tls_connect(
     let mut conn = rustls::ClientConnection::new(tls_config()?, name).map_err(|e| Fail::Handshake(e.to_string()))?;
     while conn.is_handshaking() {
         if keep::closing() {
-            return Err(Fail::Closed);
+            return Err(keep::cut());
         }
         clock.bound(&tcp)?;
         let round = conn.complete_io(&mut tcp);
         // Cut by shutdown during the handshake: reported as closed, not as a handshake failure.
         if keep::closing() {
-            return Err(Fail::Closed);
+            return Err(keep::cut());
         }
         match round {
             Ok((0, 0)) if conn.is_handshaking() => return Err(Fail::Handshake("the peer closed the connection during the handshake".to_string())),
@@ -492,7 +492,7 @@ fn breaks(e: &std::io::Error) -> bool {
 /// One round: write the request and read one whole response within the time left and the size cap (which
 /// counts every byte read, head included).
 fn round(stream: &mut Stream, request: &[u8], limits: &Limits, clock: &Clock) -> Result<answer::Reader, Round> {
-    let closed = || Round::Failed(Fail::Closed);
+    let closed = || Round::Failed(keep::cut());
     // A socket that rejects its timeout is no longer connected (macOS does this, under various error kinds,
     // for a kept connection the peer has since reset): before any response byte, treat it as broken.
     let bound = |stream: &Stream, began: bool| match clock.bound(stream.tcp()) {
@@ -674,11 +674,13 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         std::thread::sleep(Duration::from_millis(50));
+        let cut_before = keep::cuts();
         let raised = Instant::now();
         keep::raise_flag_only();
         let said = asking.join().expect("the asking thread");
         let took = raised.elapsed();
         keep::open_up();
+        assert_eq!(keep::cuts(), cut_before + 1, "the cut leaves its trace");
         (said, took)
     }
 

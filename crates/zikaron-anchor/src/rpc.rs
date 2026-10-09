@@ -183,11 +183,10 @@ pub trait Endpoint {
     fn name(&self) -> String;
     /// Which place this is, as one text: what keeps facts about an endpoint apart (a cache by node). The name is
     /// what may be said ([`zikaron_net::sayable`]: scheme, host and port), so two places on one host differing by
-    /// path share it; the place does not ([`zikaron_net::place_key`]: the path is part of it). A channel without
-    /// an address is its name.
-    fn place(&self) -> String {
-        self.name()
-    }
+    /// path share it; the place does not ([`zikaron_net::place_key`]: the path is part of it). No default: every
+    /// channel says its own, so a wrapper that forgot would not fall back to merging places by name (a channel
+    /// without an address says its name).
+    fn place(&self) -> String;
 }
 
 fn key(method: &str, params: &Value) -> String {
@@ -287,6 +286,10 @@ impl Endpoint for Replay {
     }
     fn name(&self) -> String {
         self.who.clone()
+    }
+    /// No address: the place is the name.
+    fn place(&self) -> String {
+        self.name()
     }
 }
 
@@ -445,5 +448,24 @@ impl Endpoint for Recorder {
     }
     fn place(&self) -> String {
         self.inner.place()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each channel says its own place (no default to fall back on): two nodes said alike (one host, paths
+    /// differing by network and key) are two places, so facts kept by place (a node's log range) stay apart; a
+    /// recording, which has no address, is its name.
+    #[test]
+    fn two_nodes_said_alike_are_two_places() {
+        let eth = Http::new("https://node.example/eth/k1").expect("an address");
+        let polygon = Http::new("https://node.example/polygon/k2").expect("an address");
+        assert_eq!(eth.name(), polygon.name(), "said alike: scheme, host and port only");
+        assert_ne!(eth.place(), polygon.place(), "two places");
+        assert_eq!(Http::new("HTTPS://Node.Example:443/eth/k1").expect("an address").place(), eth.place(), "one place however it is written");
+        let r = Replay::new("a recording", &[]).expect("an empty recording");
+        assert_eq!(r.place(), r.name());
     }
 }

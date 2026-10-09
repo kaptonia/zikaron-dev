@@ -115,7 +115,7 @@ fn the_words_shown_are_secrets_and_are_let_go() {
     vault_open();
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::NewIdentity), Applied::FreshWords));
+    answers!(apply(&mut shell, Action::NewIdentity), Applied::FreshWords);
     let (list, picks) = shell.new_words.as_ref().map(|f| (f.words(), f.picks)).expect("fresh words");
     let typed: &Vec<app::secret::Secret> = &list;
     assert_eq!(typed.len(), 12);
@@ -137,7 +137,7 @@ fn the_words_shown_are_secrets_and_are_let_go() {
     apply(&mut shell, Action::Unlock { pin: pin() });
     settled(&mut shell, app::task::Kind::Vault);
     assert_eq!(reveal(&mut shell), Some(12));
-    assert!(matches!(apply(&mut shell, Action::NewIdentity), Applied::FreshWords));
+    answers!(apply(&mut shell, Action::NewIdentity), Applied::FreshWords);
     apply(&mut shell, Action::Quit);
     assert!(shell.words.is_none() && shell.new_words.is_none(), "quit");
 }
@@ -155,7 +155,7 @@ fn the_bar_says_a_mark_that_does_not_read_as_such() {
     let _ = std::fs::remove_dir_all(&base);
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::OpenHome { root: base.display().to_string() }), Applied::Homed { .. }));
+    answers!(apply(&mut shell, Action::OpenHome { root: base.display().to_string() }), Applied::Homed { .. });
     let at = app::lock::mark_path(shell.home.as_ref().expect("a home"));
     for (form, bytes, bar) in [("anotherMachine", "0123456789abcdef0123456789abcdef\n", "other_machine"), ("wrongShape", "not a mark\n", "mark_unread")] {
         std::fs::write(&at, bytes).unwrap();
@@ -340,7 +340,7 @@ fn a_node_line_typed_wrong_is_refused_without_its_key() {
     // The settings' node cells.
     let base = std::env::temp_dir().join(format!("zk-r20b4-nodes-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
-    assert!(matches!(apply(&mut shell, Action::OpenHome { root: base.display().to_string() }), Applied::Homed { .. }));
+    answers!(apply(&mut shell, Action::OpenHome { root: base.display().to_string() }), Applied::Homed { .. });
     for line in &lines {
         match apply(&mut shell, Action::SetEndpoints { specs: line.clone() }) {
             Applied::Trouble(f) => assert!(!seen(&f).contains(KEY), "settings say the key: {}", seen(&f)),

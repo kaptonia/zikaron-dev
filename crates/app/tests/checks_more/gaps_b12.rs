@@ -24,14 +24,14 @@ fn bench(name: &str) -> (app::shell::Shell, PathBuf) {
     let _ = std::fs::remove_dir_all(&base);
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_)));
+    answers!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_));
     (shell, base)
 }
 
 /// A home under `base` with one entry of its own (the first entry is recorded on the spot).
 fn home(shell: &mut app::shell::Shell, base: &Path, name: &str) -> PathBuf {
     let dir = base.join(name);
-    assert!(matches!(apply(shell, Action::OpenHome { root: dir.display().to_string() }), Applied::Homed { .. }));
+    answers!(apply(shell, Action::OpenHome { root: dir.display().to_string() }), Applied::Homed { .. });
     let made = apply(shell, Action::Genesis { statement: format!("{name} genesis") });
     assert!(matches!(made, Applied::Genesised { .. }), "{made:?}");
     dir
@@ -226,7 +226,7 @@ fn a_new_master_key_seals_the_index_again() {
     let (mut shell, base) = bench("rekey");
     let mut ids = Vec::new();
     for label in ["b12-a", "b12-b"] {
-        assert!(matches!(apply(&mut shell, Action::NewIdentity), Applied::FreshWords));
+        answers!(apply(&mut shell, Action::NewIdentity), Applied::FreshWords);
         let (list, picks) = shell.new_words.as_ref().map(|f| (f.words(), f.picks)).expect("fresh words");
         let answers: Vec<(usize, app::secret::Secret)> = picks.iter().map(|i| (*i, list[*i].clone().into())).collect();
         let network = shell.machine.network.clone().unwrap_or_else(|| app::deploy::CUSTOM.to_string());
@@ -236,7 +236,7 @@ fn a_new_master_key_seals_the_index_again() {
         ids.push(after.into_iter().find(|x| !before.contains(x)).expect("an identity made"));
     }
     // The identity's own home (the one open now): its first entry, a backup, then one recorded after it.
-    assert!(matches!(apply(&mut shell, Action::Genesis { statement: "b12 rekey".into() }), Applied::Genesised { .. }));
+    answers!(apply(&mut shell, Action::Genesis { statement: "b12 rekey".into() }), Applied::Genesised { .. });
     app::backup::export(&base.join("out"), PW, 1_800_000_000).expect("a backup");
     std::fs::create_dir_all(&base).expect("base");
     let file = base.join("work.txt");

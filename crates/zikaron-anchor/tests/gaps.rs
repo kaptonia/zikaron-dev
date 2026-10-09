@@ -24,6 +24,10 @@ impl Endpoint for Says {
     fn name(&self) -> String {
         self.0.into()
     }
+    /// No address: the place is the name.
+    fn place(&self) -> String {
+        self.name()
+    }
 }
 
 /// A node whose asking panics (a worker that falls).
@@ -35,6 +39,10 @@ impl Endpoint for Falls {
     }
     fn name(&self) -> String {
         self.0.into()
+    }
+    /// No address: the place is the name.
+    fn place(&self) -> String {
+        self.name()
     }
 }
 

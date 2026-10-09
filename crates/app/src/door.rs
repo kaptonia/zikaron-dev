@@ -46,7 +46,7 @@ fn one(q: &Request, f: &str) -> String {
 /// The closed table of door verbs, in the command line's verb order. A verb not listed is not accepted through
 /// the door (the command line refuses `--home` with it), and a flag not in its row is not accepted.
 /// `CLI-SCHEMA.md` §11 documents it (checked by the tests).
-const ROWS: [Row; 10] = [
+const ROWS: [Row; 11] = [
     Row { flags: &["statement"], make: |q| Action::Genesis { statement: one(q, "statement") } },
     Row { flags: &["file", "note"], make: |q| Action::RecordWork { note_md: one(q, "note"), files: vec![one(q, "file")], for_: None } },
     Row {
@@ -67,6 +67,12 @@ const ROWS: [Row; 10] = [
         },
     },
     Row { flags: &["grant", "case"], make: |q| Action::Revoke { grant: one(q, "grant"), case: one(q, "case") } },
+    // Adopting anchors: the command line hands the `--anchors` file's JSON as it read it; the rows the adoption
+    // page takes are made from it here, and the page's own reading judges them ([`anchor_rows`]).
+    Row {
+        flags: &["anchors", "attestor", "attestation"],
+        make: |q| Action::AdoptAnchors { rows: anchor_rows(&one(q, "anchors")), attestor: one(q, "attestor"), attestation: one(q, "attestation") },
+    },
     Row { flags: &[], make: |_| Action::AttestFor { text: String::new(), pin: crate::secret::Secret::default() } },
     Row { flags: &["to", "kind", "effective", "statement"], make: |q| Action::Succeed { to: one(q, "to"), kind: one(q, "kind"), effective: one(q, "effective"), statement_md: one(q, "statement") } },
     Row { flags: &["subject", "note"], make: |q| Action::Annotate { subject: one(q, "subject"), note_md: one(q, "note") } },
@@ -75,6 +81,27 @@ const ROWS: [Row; 10] = [
     Row { flags: &[], make: |_| Action::SendBatch { count: 0 } },
     Row { flags: &["entry", "note", "out"], make: |q| Action::ExportKit { from: String::new(), to: String::new(), ids: q.many("entry").join("\n"), attach: String::new(), note: one(q, "note"), out: one(q, "out") } },
 ];
+
+/// The anchors a command hands over (the JSON array its `--anchors` file holds) as the rows the adoption page
+/// takes, one line per element: chain id, transaction, payload kind and content. Nothing is judged here: an
+/// element missing a member, or with a member of another shape, becomes a line the page's own reading refuses
+/// by its number (`adoptx::rows_of`); text that is not an array is one such line; none at all is no rows.
+fn anchor_rows(text: &str) -> String {
+    use zikaron::json::Value;
+    let Ok(Value::Arr(items)) = zikaron::json::parse(text.as_bytes()) else { return text.to_string() };
+    let cell = |v: &Value, k: &str| match v.member(k) {
+        Some(Value::Str(x)) => x.clone(),
+        Some(Value::Int(n)) => n.to_string(),
+        Some(other) => String::from_utf8_lossy(&zikaron::json::canon_bytes(other)).into_owned(),
+        None => String::new(),
+    };
+    items
+        .iter()
+        .map(|e| ["chainId", "tx", "payloadKind", "content"].iter().map(|k| cell(e, k)).filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" "))
+        .map(|l| if l.is_empty() { "-".to_string() } else { l })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 /// A row's verb: the one its action names (`Action::verb`).
 fn verb_of(r: &Row) -> &'static str {
@@ -358,6 +385,7 @@ impl Shell {
             | Applied::Recorded { id, .. }
             | Applied::Granted { id, .. }
             | Applied::Revoked { id, .. }
+            | Applied::Adopted { id, .. }
             | Applied::Succeeded { id, .. } => wrote(id),
             Applied::RecordedBatch { ids, stopped, .. } => match (ids.first(), stopped) {
                 (Some(id), _) => wrote(id),
