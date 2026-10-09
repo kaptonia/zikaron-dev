@@ -7,7 +7,9 @@
 //! - Syncing: a directory is opened with backup semantics and flushed; where the OS cannot flush a directory,
 //!   the file just named in it is flushed instead (NTFS journals in order, so the name reaches disk with it).
 //!   Which works depends on the volume; both are tried, in that order.
-//! - Replacing rename: `MoveFileExW` replacing an existing target, with write-through.
+//! - Replacing rename: `MoveFileExW` replacing an existing target, with write-through. Another handle that
+//!   holds either file for a moment (a reader of the target, the system's scanner on a file just written) makes
+//!   the move fail at once rather than wait; the move is tried again for a short while ([`MOVE_HELD_WAIT`]).
 
 use std::ffi::c_void;
 use std::os::windows::ffi::OsStrExt;
@@ -342,20 +344,44 @@ pub fn sync_file(path: &Path) -> std::io::Result<()> {
 }
 
 pub fn replace(from: &Path, to: &Path) -> std::io::Result<()> {
-    let (f, t) = (wide(from), wide(to));
-    if unsafe { MoveFileExW(f.as_ptr(), t.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) } == 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    Ok(())
+    move_file(from, to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
 }
 
 /// Without `MOVEFILE_REPLACE_EXISTING` the move refuses an existing target (`AlreadyExists`).
 pub fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
+    move_file(from, to, MOVEFILE_WRITE_THROUGH)
+}
+
+/// How long a move keeps trying while another handle holds one of its two files: a reader of the target, or the
+/// system's scanner on a file just written, holds it for a moment without sharing deletion, and the move then
+/// fails at once (`ERROR_SHARING_VIOLATION`, or `ERROR_ACCESS_DENIED` for a target held that way) where on other
+/// systems a rename never waits on a reader. Past this the move's own refusal is returned as it was.
+pub const MOVE_HELD_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The pause before the first try again; each pause doubles, up to [`MOVE_HELD_PAUSE_MAX`].
+const MOVE_HELD_PAUSE: std::time::Duration = std::time::Duration::from_millis(10);
+const MOVE_HELD_PAUSE_MAX: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// One move (`MoveFileExW` with `flags`), tried again within [`MOVE_HELD_WAIT`] while it fails as a file held
+/// by another handle fails; any other failure, or the same one past the wait, is returned at once as the OS said
+/// it. Both kinds of refusal it waits on are also how a lasting refusal reads (a read-only target, no right to
+/// the folder): those cost the wait, then are refused as before.
+fn move_file(from: &Path, to: &Path, flags: u32) -> std::io::Result<()> {
     let (f, t) = (wide(from), wide(to));
-    if unsafe { MoveFileExW(f.as_ptr(), t.as_ptr(), MOVEFILE_WRITE_THROUGH) } == 0 {
-        return Err(std::io::Error::last_os_error());
+    let began = std::time::Instant::now();
+    let mut pause = MOVE_HELD_PAUSE;
+    loop {
+        if unsafe { MoveFileExW(f.as_ptr(), t.as_ptr(), flags) } != 0 {
+            return Ok(());
+        }
+        let e = std::io::Error::last_os_error();
+        let held = matches!(e.raw_os_error(), Some(ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION));
+        if !held || began.elapsed() + pause > MOVE_HELD_WAIT {
+            return Err(e);
+        }
+        std::thread::sleep(pause);
+        pause = (pause * 2).min(MOVE_HELD_PAUSE_MAX);
     }
-    Ok(())
 }
 
 fn known_folder(id: &Guid) -> Option<std::path::PathBuf> {
@@ -414,6 +440,7 @@ pub fn door_place(_machine: &Path, name: &str) -> std::path::PathBuf {
 
 const ERROR_FILE_NOT_FOUND: i32 = 2;
 const ERROR_ACCESS_DENIED: i32 = 5;
+const ERROR_SHARING_VIOLATION: i32 = 32;
 const ERROR_BROKEN_PIPE: i32 = 109;
 const ERROR_PIPE_BUSY: i32 = 231;
 const ERROR_NO_DATA: i32 = 232;
@@ -847,6 +874,80 @@ pub fn cli_disable(cli: &Path, moved: bool) -> Result<(), crate::cli_path::Refus
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A scratch folder with `from` holding "new" and, when `target`, `to` holding "old".
+    fn move_scratch(tag: &str, target: bool) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+        let d = std::env::temp_dir().join(format!("zikaron-os-move-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("scratch");
+        let (from, to) = (d.join("from"), d.join("to"));
+        std::fs::write(&from, b"new").expect("from");
+        if target {
+            std::fs::write(&to, b"old").expect("to");
+        }
+        (d, from, to)
+    }
+
+    /// Open `at` to read, sharing reading only (not deletion, as a reader or a scanner does), and let it go after
+    /// `hold`; `None` holds it until the returned handle is dropped.
+    fn hold(at: &Path, hold: Option<std::time::Duration>) -> (Option<std::fs::File>, Option<std::thread::JoinHandle<()>>) {
+        let f = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(at).expect("held");
+        match hold {
+            Some(d) => (None, Some(std::thread::spawn(move || {
+                std::thread::sleep(d);
+                drop(f);
+            }))),
+            None => (Some(f), None),
+        }
+    }
+
+    /// A move whose target or source another handle holds for a moment is made once it is let go, within the
+    /// wait; the same for a move that never replaces. With no target, a replacing move is made at once.
+    #[test]
+    fn a_move_waits_out_a_file_held_for_a_moment() {
+        let moment = Some(MOVE_HELD_WAIT / 5);
+        let (d, from, to) = move_scratch("target-held", true);
+        let (_, gone) = hold(&to, moment);
+        replace(&from, &to).expect("made once the target is let go");
+        let _ = gone.map(|h| h.join());
+        assert_eq!(std::fs::read(&to).expect("to"), b"new");
+        assert!(!from.exists());
+        let _ = std::fs::remove_dir_all(&d);
+        let (d, from, to) = move_scratch("source-held", true);
+        let (_, gone) = hold(&from, moment);
+        replace(&from, &to).expect("made once the source is let go");
+        let _ = gone.map(|h| h.join());
+        assert_eq!(std::fs::read(&to).expect("to"), b"new");
+        let _ = std::fs::remove_dir_all(&d);
+        let (d, from, to) = move_scratch("new-source-held", false);
+        let (_, gone) = hold(&from, moment);
+        rename_new(&from, &to).expect("a move that never replaces, once the source is let go");
+        let _ = gone.map(|h| h.join());
+        assert_eq!(std::fs::read(&to).expect("to"), b"new");
+        let _ = std::fs::remove_dir_all(&d);
+        let (d, from, to) = move_scratch("no-target", false);
+        replace(&from, &to).expect("no target: made");
+        assert_eq!(std::fs::read(&to).expect("to"), b"new");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Held past the wait, the move is refused as the system refused it (a held file's code), and both files
+    /// stay as they were; a source that is not there is refused at once as not found, never waited on; a move
+    /// that never replaces still refuses a target that is there.
+    #[test]
+    fn a_move_held_past_the_wait_is_refused_as_before() {
+        let (d, from, to) = move_scratch("held-long", true);
+        let (held, _) = hold(&to, None);
+        let e = replace(&from, &to).expect_err("held throughout");
+        assert!(matches!(e.raw_os_error(), Some(ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION)), "{e:?}");
+        drop(held);
+        assert_eq!(std::fs::read(&to).expect("to"), b"old", "the target as it was");
+        assert_eq!(std::fs::read(&from).expect("from"), b"new", "the source as it was");
+        let missing = d.join("not-there");
+        assert_eq!(replace(&missing, &to).expect_err("no source").raw_os_error(), Some(ERROR_FILE_NOT_FOUND));
+        assert_eq!(rename_new(&from, &to).expect_err("a target there").kind(), std::io::ErrorKind::AlreadyExists);
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     /// The app data folder of a stand-in home stays under that home.
     #[test]
