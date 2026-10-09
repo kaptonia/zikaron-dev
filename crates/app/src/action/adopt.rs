@@ -62,9 +62,16 @@ pub(super) fn adopt_anchors(
     attestation: &str,
 ) -> Result<(String, bool, Enqueued), crate::fault::Fault> {
     let parsed = crate::adoptx::rows_of(rows)?;
-    // The co-signature is checked only when both fields are given. A failure is reported at once, and the
-    // person can still record the entry without the co-signature.
-    let both = !attestor.trim().is_empty() && !attestation.trim().is_empty();
+    // A co-signature is both halves or none, judged here alone for the page and the door alike (as the core
+    // judges the entry's body): half of one is refused by the missing half's name, never written without it.
+    // With both, it is checked; a failure is reported at once, and the person can still record the entry
+    // without the co-signature by clearing both.
+    let both = match (attestor.trim().is_empty(), attestation.trim().is_empty()) {
+        (true, true) => false,
+        (false, false) => true,
+        (false, true) => return Err(crate::fault::Fault::known(crate::fault::Known::FieldMissing, "attestation".to_string())),
+        (true, false) => return Err(crate::fault::Fault::known(crate::fault::Known::FieldMissing, "attestor".to_string())),
+    };
     if both {
         cosign(shell, rows, attestor, attestation)?;
     }

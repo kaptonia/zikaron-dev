@@ -97,7 +97,8 @@ fn a_home_laid_incomplete_is_judged_in_one_place() {
 
 /// `adopt` through the door: the request becomes the adoption page's own action, its anchors (the JSON the
 /// command line read) made into the page's rows and judged by the page's one reading, each form by name; the
-/// attestor and attestation go as given.
+/// attestor and attestation go as given (half of a co-signature is the action's to refuse:
+/// `door_b15::a_cosignature_is_both_halves_or_none_judged_once`).
 #[test]
 fn an_adoption_through_the_door_is_the_adoption_pages_action() {
     let ctx = zikaron_ui::egui::Context::default();
@@ -134,14 +135,6 @@ fn an_adoption_through_the_door_is_the_adoption_pages_action() {
     assert_eq!(turn(Some(&format!(r#"[{{"chainId":31337,"content":"{content}","note":"x","payloadKind":"bare","tx":"{tx}"}}]"#))), shape, "a member added is never dropped");
     assert_eq!(turn(Some(&format!(r#"[{{"chainId":"31337","content":"{content}","payloadKind":"bare","tx":"{tx}"}}]"#))), shape, "a chain id written as text");
     assert_eq!(turn(Some(&format!("[{good},{{\"chainId\":31337}}]"))), shape, "one bad element among good ones");
-    // Half a co-signature is refused by the missing half's name, as without the desktop; never written without it.
-    for (given, missing) in [(("attestor", "0xa"), "attestation"), (("attestation", "0xs"), "attestor")] {
-        let q = zikaron_glue::door::Request { verb: "adopt".into(), home: "/h".into(), args: vec![("anchors".to_string(), format!("[{good}]")), (given.0.to_string(), given.1.to_string())] };
-        match app::door::turn_of(&shell, &q) {
-            Err(f) => assert_eq!((f.which(), f.tail()), (Some(app::fault::Known::FieldMissing), missing), "half a co-signature"),
-            Ok(_) => panic!("half a co-signature is refused"),
-        }
-    }
     let none = Err(Some(app::fault::Known::FieldMissing));
     assert_eq!(turn(Some("[]")), none, "no anchors at all");
     assert_eq!(turn(None), none, "no --anchors");

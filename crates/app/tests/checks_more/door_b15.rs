@@ -540,3 +540,40 @@ fn a_shell_let_go_of_closes_its_door() {
     let r = served(&mut next, send(&b.place(), b.ask("annotate", &[("note", "after")]).to_bytes()));
     assert!(matches!(r, Some(Reply::Wrote { .. })), "{r:?}");
 }
+
+/// A co-signature is both halves or none, judged once, in the adoption action, for the page and the door alike:
+/// an attestor alone, or an attestation alone, is refused by the missing half's name and nothing is written;
+/// neither adopts without one; both is checked (one that does not verify is refused by its own name, nothing
+/// written). The door hands the two halves on as given and judges nothing of them.
+#[test]
+fn a_cosignature_is_both_halves_or_none_judged_once() {
+    let (b, mut shell) = Bench::new("cosign");
+    let rows = format!("31337 0x{} bare 0x{}", "11".repeat(32), "77".repeat(32));
+    let seq = |shell: &Shell| shell.home.as_ref().and_then(|h| app::ledgerx::head(h).ok().flatten()).map(|(n, _)| n);
+    let attestor = format!("0x{}", "66".repeat(20));
+    let attestation = format!("0x{}", "88".repeat(65));
+    for (who, sig, missing) in [(attestor.as_str(), "", "attestation"), ("", attestation.as_str(), "attestor")] {
+        let before = seq(&shell);
+        let got = apply(&mut shell, Action::AdoptAnchors { rows: rows.clone(), attestor: who.into(), attestation: sig.into() });
+        match got {
+            Applied::Trouble(f) => assert_eq!((f.which(), f.tail()), (Some(app::fault::Known::FieldMissing), missing), "half a co-signature"),
+            other => panic!("half a co-signature is refused, not {other:?}"),
+        }
+        assert_eq!(seq(&shell), before, "nothing written");
+        // Through the door: handed on as given, judged only by the action.
+        let q = b.ask("adopt", &[("anchors", &format!(r#"[{{"chainId":31337,"content":"0x{}","payloadKind":"bare","tx":"0x{}"}}]"#, "77".repeat(32), "11".repeat(32))), ("attestor", who), ("attestation", sig)]);
+        match app::door::turn_of(&shell, &q) {
+            Ok(app::door::Turn::Act(Action::AdoptAnchors { attestor, attestation, .. })) => assert_eq!((attestor.as_str(), attestation.as_str()), (who, sig), "as given"),
+            other => panic!("the door judges nothing of a co-signature: {:?}", other.err()),
+        }
+    }
+    let before = seq(&shell);
+    let both = apply(&mut shell, Action::AdoptAnchors { rows: rows.clone(), attestor: attestor.clone(), attestation: attestation.clone() });
+    assert!(matches!(&both, Applied::Trouble(f) if f.which() == Some(app::fault::Known::CosignRefused)), "both: checked, {both:?}");
+    assert_eq!(seq(&shell), before, "a co-signature that does not verify writes nothing");
+    let neither = apply(&mut shell, Action::AdoptAnchors { rows, attestor: String::new(), attestation: String::new() });
+    assert!(matches!(neither, Applied::Adopted { cosigned: false, .. }), "neither: adopted without one, {neither:?}");
+    assert_eq!(seq(&shell), before.map(|n| n + 1), "one entry more");
+    let door = super::code_only(&super::read_src_file("door.rs").expect("door.rs"));
+    assert!(!door.contains("attestation.trim()") && !door.contains("attestor.trim()"), "the door keeps no judge of its own");
+}

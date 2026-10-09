@@ -204,15 +204,6 @@ pub fn turn_of(shell: &Shell, q: &Request) -> Result<Turn, Fault> {
             _ => Turn::Act(Action::SendAsked { count }),
         });
     }
-    // A co-signature is both halves or none, as the command line takes it without the desktop (the core
-    // refuses half of one by the missing member's name): half of one is refused here, never written without it.
-    if let Action::AdoptAnchors { attestor, attestation, .. } = &act {
-        match (attestor.trim().is_empty(), attestation.trim().is_empty()) {
-            (false, true) => return Err(Fault::known(Known::FieldMissing, "attestation".to_string())),
-            (true, false) => return Err(Fault::known(Known::FieldMissing, "attestor".to_string())),
-            _ => {}
-        }
-    }
     Ok(Turn::Act(act))
 }
 
