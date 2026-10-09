@@ -3069,10 +3069,10 @@
   },
   {
    "id": "qr-code",
-   "familyVersion": 2,
+   "familyVersion": 1,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": null
    },
    "home": [
     "crates/app/src/qr.rs"
