@@ -2,12 +2,12 @@
 //! the returned state on one line.
 //!
 //! The shell only requires the flags it needs itself (where the ledger is, whose key, where to write).
-//! Members the law requires are refused by the law when missing: a `history` without `mode` or a `grant`
+//! Body members the `zikaron/1` spec requires are enforced by the core: a `history` without `mode` or a `grant`
 //! without `terms` has no such member in its body, and the core's thirteen steps return `E_BODY_FIELD`. A
-//! second check here would be a second copy of the law, and copies drift apart; it also means every
-//! entry-writing verb has a refusal that is the law's own token. For people, that refusal carries one stderr
-//! line naming the member the law refused (the core's `entry::body_fault`, the same table) and the flags that
-//! give it ([`body_flags`]); stdout and the exit code are the law's answer alone.
+//! second check here would be a second copy of the spec, and copies drift apart; it also means every
+//! entry-writing verb's refusal is the spec's own token. For people, that refusal carries one stderr line
+//! naming the missing member (the core's `entry::body_fault`, the same table) and the flags that give it
+//! ([`body_flags`]); stdout and the exit code are the core's answer alone.
 
 use crate::args::{self, Args};
 use crate::chain;
@@ -209,9 +209,9 @@ fn init(a: &Args) -> Answer {
     //
     // * exactly one seq 0 entry recognized: `E_ALREADY_ROOTED` (with its author);
     // * several seq 0 entries with different ids: `E_TIP_FORKED` (the ledger is already broken). Ids are
-    // counted, not authors or files: two genesis entries signed by one key are two ids and two roots (law §8
-    // records EQUIVOCATION); one genesis saved under two file names is one id, merged by the core (law §8.1),
-    // and one root;
+    // counted, not authors or files: two genesis entries signed by one key are two ids and two roots
+    // (`zikaron/1` §8 records EQUIVOCATION); one genesis saved under two file names is one id, merged by the
+    // core (§8.1), and one root;
     // * anything else non-empty: `E_NOT_EMPTY` (unreadable or skipped stray files, entry-named bytes the core
     // refuses, entries without a root).
     //
@@ -295,7 +295,7 @@ fn history(a: &Args) -> Answer {
     if let Some(x) = a.one("content") {
         body.push((Field::Content, s(&x)));
     }
-    // `mode` is a member the law requires. With both flags absent it does not appear, and the core refuses:
+    // `mode` is a member the spec requires. With both flags absent it does not appear, and the core refuses:
     // the requirement lives in the core's body table.
     let mark = a.one("mark");
     let toolchain = a.one("toolchain");
@@ -315,7 +315,7 @@ fn history(a: &Args) -> Answer {
     write_entry(a, EntryType::History, body)
 }
 
-/// Which flags give a body member the law refused (`entry::body_fault`'s path), per entry type: the words of
+/// Which flags give a body member the core refused (`entry::body_fault`'s path), per entry type: the words of
 /// the stderr line. A member no flag gives (an unlisted type has no table) says none.
 fn body_flags(kind: EntryType, member: &str) -> &'static str {
     match (kind, member) {
@@ -371,7 +371,7 @@ fn grant(a: &Args) -> Answer {
         }
         body.push((Field::Window, entry::shape(w)));
     }
-    // `upstream` is the member the kit reading adds to a grant body (parent law §6.10 treats it as data). The
+    // `upstream` is the member the kit reading adds to a grant body (`zikaron/1` §6.10 treats it as data). The
     // shell fills in the caller's bytes; how the per-hop checks read it is the kit core's business.
     if let Some(x) = a.one("upstream") {
         body.push((Field::Upstream, s(&x)));
@@ -405,7 +405,7 @@ fn adopt(a: &Args) -> Answer {
     write_entry(a, EntryType::Adoption, body)
 }
 
-/// The law §6.6 cosignature: over the canonical bytes of `{adopter, anchors, prev}`, domain
+/// The `zikaron/1` §6.6 cosignature: over the canonical bytes of `{adopter, anchors, prev}`, domain
 /// `zikaron/1-adoption`. The preimage includes `prev` and comes from the core's `adoption_preimage`.
 fn attest(a: &Args) -> Answer {
     let key = a.key("key");
@@ -430,7 +430,7 @@ fn succeed(a: &Args) -> Answer {
     if let Some(x) = a.one("to") {
         body.push((Field::To, s(&x)));
     }
-    // `kind` is free: any token is accepted; a whitelist here would be a closed table the law does not have.
+    // `kind` is free: any token is accepted; a whitelist here would be a closed table the spec does not have.
     if let Some(x) = a.one("kind") {
         body.push((Field::Kind, s(&x)));
     }
@@ -454,8 +454,8 @@ fn annotate(a: &Args) -> Answer {
     write_entry(a, EntryType::Annotation, body)
 }
 
-/// Retract a work record (the retraction convention over the open entry types of law §6.9). The type literal,
-/// body keys and writing rule live in `zikaron_glue::retraction`, shared with the app: a missing or non-hex32
+/// Retract a work record (the retraction convention over the open entry types of `zikaron/1` §6.9). The type
+/// literal, body keys and writing rule live in `zikaron_glue::retraction`, shared with the app: a missing or non-hex32
 /// subject, one not on this ledger's lineage, not a `history`, or already deleted is refused by the
 /// convention's token (`E_RETRACTION` + `token`) and the ledger is unchanged. A passing retraction goes the
 /// same way as `annotate`: the core builds, signs and checks it, the storage crate lands it.
@@ -647,8 +647,8 @@ fn anchor(a: &Args) -> Answer {
 }
 
 /// `anchor`'s answer for a transaction that went out, by where it stands: only "included with status 1" is
-/// anchored (law §9.1); the other three states are named, and the transaction hash is always present because
-/// the bytes were broadcast.
+/// anchored (`zikaron/1` §9.1); the other three states are named, and the transaction hash is always present
+/// because the bytes were broadcast.
 fn sent_answer(tx: &[u8; 32], confirm: &zikaron_anchor::send::Confirm, wait: std::time::Duration) -> Answer {
     use zikaron_anchor::send::Confirm;
     let tx = hexfmt::encode(tx);
@@ -1047,7 +1047,7 @@ fn ack_sign(a: &Args) -> Answer {
         None => return out::denied(Reason::Key, vec![]),
     };
     // The manifest an acknowledgement refers to may be given by id or as the manifest itself. Given the
-    // manifest, pairing runs here (kit law §5.3): whether the acknowledgement signs this manifest, whether
+    // manifest, pairing runs here (`zikaron.kit/1` §5.3): whether the acknowledgement signs this manifest, whether
     // the signer has a row, whether the variant matches are judged by the kit core. Pairing here lets the
     // signer learn at once that the acknowledgement does not pair, before it goes out.
     let doc_path = a.one("fpm-doc");
@@ -1264,7 +1264,7 @@ fn kit_export(a: &Args) -> Answer {
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     let mut contents: Vec<String> = Vec::new();
     for spec in a.many("file") {
-        // `<kit path>=<disk path>`: kit paths contain no `=` (kit law), so the split is at the first one.
+        // `<kit path>=<disk path>`: kit paths contain no `=` (`zikaron.kit/1`), so the split is at the first one.
         let (kit_path, src) = match spec.split_once('=') {
             Some(x) => x,
             None => out::misuse(Reason::Args, out::typed(&spec), out::Said::FileShape),
@@ -1292,7 +1292,7 @@ fn kit_export(a: &Args) -> Answer {
     let out_dir = a.need("out");
     match kitout::export(std::path::Path::new(&out_dir), bundle) {
         Ok(l) => kit_written(&l.dropped, l.entries as u64, l.files as u64, &l.kit_id, &out_dir, l.proofs as u64),
-        // When the kit core judges a kit invalid, `state` is the kit law verdict and `detail` its subject;
+        // When the kit core judges a kit invalid, `state` is the `zikaron.kit/1` verdict and `detail` its subject;
         // disk failures carry `path`. The fields are read from the kit output crate's error in one place.
         Err(t) => match (t.verdict(), t.path()) {
             (Some(v), _) => out::denied(
@@ -1489,7 +1489,7 @@ fn seal_and_append(
 ) -> Answer {
     let sealed = match entry::seal(author, entry_type, seq, prev, body.clone(), key) {
         Ok(x) => x,
-        // The law's token passes through unchanged: no translation, no regrouping. A body refusal also tells
+        // The core's token passes through unchanged: no translation, no regrouping. A body refusal also tells
         // people which member and which flags, on stderr only.
         Err(t) => {
             let answer = out::denied(Reason::Entry, vec![(Key::Token, s(t.as_str()))]);

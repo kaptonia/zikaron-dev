@@ -11,7 +11,7 @@ This list is ZIKARON's, as of release 0.1.2. Paths are relative to this reposito
 | 3 | `log-scan` | 2 | Log scanning | `crates/zikaron-anchor/src/scan.rs` |
 | 4 | `tx-send` | 2 | Sending, nonce, receipts, fees and gas | `crates/app/src/action/mod.rs`<br>`crates/app/src/action/queue.rs`<br>`crates/app/src/chainx.rs`<br>`crates/app/src/queue.rs`<br>`crates/app/src/shell.rs`<br>`crates/app/src/sign.rs`<br>`crates/app/src/task.rs`<br>`crates/app/src/window/ledger.rs`<br>`crates/app/src/window/modals.rs`<br>`crates/zikaron-anchor/src/send.rs` |
 | 5 | `node-agreement` | 2 | Multi-node agreement and chain head | `crates/app/src/auditx.rs`<br>`crates/app/src/chainx.rs`<br>`crates/app/src/shell.rs`<br>`crates/zikaron-anchor/src/endpoints.rs`<br>`crates/zikaron-anchor/src/judge.rs`<br>`crates/zikaron-anchor/src/patience.rs` |
-| 6 | `os-platform` | 1 | OS platform layer | `crates/zikaron-os/src/lib.rs`<br>`crates/zikaron-os/src/proxy.rs`<br>`crates/zikaron-os/src/unix.rs`<br>`crates/zikaron-os/src/windows.rs` |
+| 6 | `os-platform` | 2 | OS platform layer | `crates/zikaron-os/src/lib.rs`<br>`crates/zikaron-os/src/proxy.rs`<br>`crates/zikaron-os/src/unix.rs`<br>`crates/zikaron-os/src/windows.rs` |
 | 7 | `durable-write` | 2 | Durable writes and unreadable files | `crates/app/src/home.rs`<br>`crates/app/src/identity.rs`<br>`crates/app/src/lang.rs`<br>`crates/app/src/local.rs`<br>`crates/app/src/machine.rs`<br>`crates/app/src/settings.rs`<br>`crates/zikaron-glue/src/landing.rs`<br>`crates/zikaron-store/src/codes.rs`<br>`crates/zikaron-store/src/layout.rs`<br>`crates/zikaron-store/src/ledger.rs`<br>`crates/zikaron-store/src/trace.rs` |
 | 8 | `single-writer` | 2 | Single writer lock and cross-machine writer mark | `crates/app/src/action/home.rs`<br>`crates/app/src/action/mod.rs`<br>`crates/app/src/lang.rs`<br>`crates/app/src/lock.rs`<br>`crates/app/src/platform/mod.rs`<br>`crates/app/src/platform/unix.rs`<br>`crates/app/src/platform/windows.rs`<br>`crates/app/src/shell.rs`<br>`crates/app/src/window/watch.rs` |
 | 9 | `local-seal` | 2 | Local sealed files (standard v2) | `crates/app/local-data-standard.md`<br>`crates/app/src/action/home.rs`<br>`crates/app/src/cryptx.rs`<br>`crates/app/src/local.rs`<br>`crates/zikaron-glue/src/sealed.rs` |
@@ -27,27 +27,29 @@ This list is ZIKARON's, as of release 0.1.2. Paths are relative to this reposito
 | 19 | `family-literals` | 2 | Family literals register | `crates/app/family-literals.json`<br>`crates/app/src/keybox.rs`<br>`crates/app/tests/family_literals.rs` |
 | 20 | `structure-pins` | 2 | Structure pins and secrets-on-disk check | `crates/app/tests/checks.rs` |
 | 21 | `cli-desktop` | 2 | CLI through the desktop | `CLI-SCHEMA.md`<br>`crates/app/src/action/mod.rs`<br>`crates/app/src/door.rs`<br>`crates/app/src/fault.rs`<br>`crates/app/src/home.rs`<br>`crates/app/src/lang.rs`<br>`crates/app/src/machine.rs`<br>`crates/app/src/shell.rs`<br>`crates/app/src/task.rs`<br>`crates/app/src/window/faces.rs`<br>`crates/app/src/window/landing.rs`<br>`crates/app/src/window/mod.rs`<br>`crates/app/src/window/settings.rs`<br>`crates/zikaron-cli/src/args.rs`<br>`crates/zikaron-cli/src/codes.rs`<br>`crates/zikaron-cli/src/desk.rs`<br>`crates/zikaron-cli/src/out.rs`<br>`crates/zikaron-cli/src/verbs.rs`<br>`crates/zikaron-glue/src/door.rs`<br>`crates/zikaron-os/src/cli_path.rs`<br>`crates/zikaron-os/src/door.rs`<br>`crates/zikaron-os/src/lib.rs`<br>`crates/zikaron-os/src/machine.rs`<br>`crates/zikaron-os/src/unix.rs`<br>`crates/zikaron-os/src/windows.rs` |
-| 22 | `qr-code` | 1 | QR code | `crates/app/src/qr.rs` |
+| 22 | `qr-code` | 2 | QR code | `crates/app/src/qr.rs` |
 
 ## Changes in 0.1.2
 
-- `transport` 2: a peer that does not speak TLS is named as the handshake layer; node sentences never repeat a key from the address.
-- `node-answer` 2: node errors and addresses are said without the key in the address; a member the decision does not read never makes an answer unreadable.
+- `transport` 2: a peer that does not speak TLS is named as the handshake layer; node sentences never repeat a key from the address; every socket read waits one 250 ms slice at most and then looks at the shutdown flag, so quitting cuts an exchange in flight on every system, and each cut is counted.
+- `node-answer` 2: node errors and addresses are said without the key in the address, whatever its form (a node address is its own type, said only through its sayable form); a member the decision does not read never makes an answer unreadable; every channel names its own place.
 - `log-scan` 2: the code question and the fingerprint check wait out rate limits by the patience table; spans are remembered per place.
 - `tx-send` 2: the command line's direct send asks by hash before signing again and records what it signed; the balance check is pinned to the lowest head and compared; a voided batch is named.
+- `os-platform` 2: the home is read from the variable the system sets for it first (`HOME`, `USERPROFILE`), and the profile folder is recognised however it is spelled; kernel locks are listed and closed in a starting child; the desktop channel closes at once on every system and checks a client's user in a second step; on Windows a rename waits out a file another handle holds for at most a second, then refuses as the system did.
 - `node-agreement` 2: a chain height in the wrong shape is refused by name, never read as zero; the balance is compared across nodes.
-- `durable-write` 2: a failed whole-machine backup is recorded and named; a strict read names a zero-byte entry file.
-- `single-writer` 2: a writer mark that does not read opens read-only and is left as it is; the banner says so.
+- `durable-write` 2: a failed whole-machine backup is recorded and named; a strict read names a zero-byte entry file; a backup lands under a numbered name in one step that never replaces a file.
+- `single-writer` 2: a writer mark that does not read opens read-only and is left as it is; the banner says so; the writer lock is never inherited by a program the app starts.
 - `local-seal` 2: the place digest in the envelope header is keyed (third envelope); older envelopes still read.
 - `passcode-gate` 2: the passcode cells are wiped once handed to the gate's own task.
-- `key-file` 2: a key file of the wrong shape or out of bounds is refused before any derivation runs.
-- `machine-backup` 2: one transcription seam for every part of the package; a backup that does not read back is recorded as failed.
+- `key-file` 2: a key file of the wrong shape or out of bounds is refused before any derivation runs; the backup cost floor is one constant, the level key files are written at.
+- `machine-backup` 2: one transcription seam for every part of the package; a backup that does not read back is recorded as failed; a backup never replaces a file whose name it would take.
 - `ui-kit` 3: a leaving layer skips the placeholder colour; toasts and key-value values wrap between English words; the identity lens menu is the account switcher again.
 - `bilingual-table` 2: the first layer of the English interface carries no Chinese evidence words.
-- `app-skeleton` 2: new named refusals (identity already here, name taken, record place on more than one line, batch voided).
-- `cli-skeleton` 2: the direct `anchor` keeps a record of what it signed and answers a void as `E_TX_VOID`.
+- `app-skeleton` 2: new named refusals (identity already here, name taken, record place on more than one line, batch voided); an incomplete data-folder layout is judged once when it opens; an identity's network is one closed cell; a passcode is handed to its task, not copied.
+- `cli-skeleton` 2: the direct `anchor` keeps a record of what it signed and answers a void as `E_TX_VOID`; `adopt` joins the verbs the desktop does.
 - `packaging-release` 2: packaging scripts refuse binaries that carry a build-machine path; the root licence summary is generated.
-- `ci-toolchain` 2: workflows on the Node 24 action majors; the Linux image is named.
+- `ci-toolchain` 2: workflows on the Node 24 action majors; the Linux image is named; every test target runs without stopping at the first failure; the scrypt crates are optimised in debug builds.
 - `family-literals` 2: contact paths registered; descriptions corrected; an empty `foreign` section.
-- `structure-pins` 2: pins follow the third envelope and the writer mark rules.
-- `cli-desktop` 2: a voided batch through the desktop answers `E_TX_VOID`; the setting reads "Queue only".
+- `structure-pins` 2: pins follow the third envelope, the writer mark rules and the numbered backup landing.
+- `cli-desktop` 2: a voided batch through the desktop answers `E_TX_VOID`; the setting reads "Queue only"; `adopt` goes through the desktop and a co-signature with one half only is refused; after the app quits, the command line learns at once that it is not running.
+- `qr-code` 2: the mask is chosen by the standard penalty score, and every code is read back before it is shown.

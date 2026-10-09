@@ -101,7 +101,7 @@ pub fn is_shapeless(said: &str) -> bool {
 pub const BROADCAST: &str = "eth_sendRawTransaction";
 
 /// Whether an answer is the node's word to the question numbered `id`, and if so what it says: a JSON
-/// object carrying `result` with `error` absent or null and that `id` (a null `result` is a lawful empty
+/// object carrying `result` with `error` absent or null and that `id` (a null `result` is a valid empty
 /// answer), or a non-null `error` with `result` absent and that `id`, a null `id` or none (JSON-RPC lets a
 /// node that could not read the request's id answer its error so: a gateway's rate limit often does). Both,
 /// neither, an array, a result under another or no `id`, an error under another `id`: `None`.
@@ -181,11 +181,10 @@ pub trait Endpoint {
     }
     /// A name for people (which endpoint a reading came from).
     fn name(&self) -> String;
-    /// Which place this is, as one text: what keeps facts about an endpoint apart (a cache by node). The name is
-    /// what may be said ([`zikaron_net::sayable`]: scheme, host and port), so two places on one host differing by
-    /// path share it; the place does not ([`zikaron_net::place_key`]: the path is part of it). No default: every
-    /// channel says its own, so a wrapper that forgot would not fall back to merging places by name (a channel
-    /// without an address says its name).
+    /// The key that keeps facts about different endpoints apart (e.g. a per-node cache). Unlike the name
+    /// ([`zikaron_net::sayable`]: scheme, host and port), it includes the path ([`zikaron_net::place_key`]), so
+    /// two endpoints on one host stay distinct. There is no default, so a wrapper cannot silently merge places by
+    /// name; a channel without an address returns its name.
     fn place(&self) -> String;
 }
 
@@ -196,7 +195,7 @@ fn key(method: &str, params: &Value) -> String {
     k
 }
 
-/// Recording keys use one rule: params inside the §3 value domain use canonical bytes (as the asking side
+/// Recording keys use one rule: params inside the zikaron-v1 §3 value domain use canonical bytes (as the asking side
 /// does); params outside it (which should not occur) use the transport spelling.
 fn key_of(method: &str, params: &W) -> String {
     match wire::to_core(params) {
@@ -241,8 +240,8 @@ impl Replay {
 }
 
 impl Replay {
-    /// The recorded answer to a question. Not recorded is an error, never a guess: the §9.4 completeness rule
-    /// says an incomplete read gives no report.
+    /// The recorded answer to a question. Not recorded is an error, never a guess: by zikaron-v1 §9.4 an
+    /// incomplete read gives no report.
     pub fn answer(&mut self, k: &str) -> Result<W, Trouble> {
         match self.answers.get(k) {
             None => Err(Trouble::NotServed(k.to_string())),
@@ -455,9 +454,8 @@ impl Endpoint for Recorder {
 mod tests {
     use super::*;
 
-    /// Each channel says its own place (no default to fall back on): two nodes said alike (one host, paths
-    /// differing by network and key) are two places, so facts kept by place (a node's log range) stay apart; a
-    /// recording, which has no address, is its name.
+    /// Two endpoints on one host with different paths share a name but are two places; a recording's place is
+    /// its name.
     #[test]
     fn two_nodes_said_alike_are_two_places() {
         let eth = Http::new("https://node.example/eth/k1").expect("an address");

@@ -34,8 +34,10 @@ not repeated here.
    One line for people may precede stdout on stderr when an entry-writing verb is refused by the law
    for its body (`E_BODY_FIELD`, exit 1): it names the member the core's body table refused
    (`zikaron::entry::body_fault`, the same table the thirteen steps judge by) and the flags that give
-   it, e.g. `mode: 缺或不成形,由 --mark 与 --toolchain(或 --file) 给`. It is not part of this
-   contract: stdout and the exit code are the same with or without it.
+   it, in the system's language (section 3): e.g. `statement_md: missing or malformed; given by --statement`,
+   or `statement_md: 缺或不成形,由 --statement 给` in Chinese (the flags part comes from one table,
+   `body_flags` in `verbs.rs`, and is the same text in both). It is not part of this contract: stdout and the
+   exit code are the same with or without it.
 5. **Statuses are passed through as they are.** GREEN / PARTIAL / FAIL, COMPLETE / GAPS /
    UNAVAILABLE / BROKEN_CHAIN, KIT_OK / BADGE_OK / PAIRED and every token are bytes written by the
    base layer; the command line does not merge, rewrite or translate them.
@@ -107,7 +109,7 @@ cannot be read
 ```
 
 **A sealed ledger is not read.** Every local file ZIKARON Desk keeps, ledger entries included, is sealed
-(it starts with `zikaron-local/1`, `zikaron_glue::sealed`), and the command line holds no passcode. When the
+(it starts with `zikaron-local/2`, or `zikaron-local/1` for a file an earlier version wrote; `zikaron_glue::sealed`), and the command line holds no passcode. When the
 ledger folder a verb reads holds a sealed file (every entry-writing verb, `kit-export`, `audit` and the verbs
 that read through it when `--ledger` is a ledger folder, `show --entry` on a ledger folder), the verb stops as
 misuse, exit 2 and zero bytes on stdout:
@@ -115,6 +117,11 @@ misuse, exit 2 and zero bytes on stdout:
 ```
 E_UNREADABLE <the ledger path's place and length, as #3 (12 bytes)>
 已锁定:这是 ZIKARON Desk 封存的本机数据,命令行不读
+```
+
+```
+E_UNREADABLE <the ledger path's place and length, as #3 (12 bytes)>
+Locked: this is local data ZIKARON Desk keeps sealed; the command line does not read it
 ```
 
 The command line works on plain ledger folders and on the mirror bundles and record packages the app exports.
@@ -518,7 +525,7 @@ beside `ok`; it reads nothing and writes nothing.
 | `homeFlags` | inside `verbs`, only on a verb the desktop does through its door: the flags that verb takes beside `--home`, without `--`, in the order of its row in section 11 (empty for one that takes none) |
 
 ```
-{"exits":[{"code":0,"name":"affirmed"},…],"ok":true,"reasons":["E_ARGS",…],"standsFor":[{"flag":"key-file","for":"key"}],"verbs":[{"flags":[],"name":"keygen"},{"flags":["ledger","key","statement"],"name":"init"},…]}
+{"exits":[{"code":0,"name":"affirmed"},…],"ok":true,"reasons":["E_ARGS",…],"standsFor":[{"flag":"key-file","for":"key"}],"verbs":[{"flags":[],"name":"keygen"},{"flags":["ledger","key","statement","home"],"homeFlags":["statement"],"name":"init"},…]}
 ```
 
 ## 11 · `--home`: through the desktop

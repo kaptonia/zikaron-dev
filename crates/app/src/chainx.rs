@@ -15,11 +15,10 @@ use zikaron_anchor::endpoints;
 use zikaron_anchor::rpc;
 use zikaron_anchor::wire;
 
-/// A node's address as written, which may carry a key in its path, query or user part. It is said only through
-/// the one seam that leaves those out (`zikaron_net::sayable`): `Display` and `Debug` are that seam, and
-/// [`NodeAddr::said`] spells it. Its written form goes only to the transport and to this machine's own
-/// settings, inside this crate ([`NodeAddr::for_transport`]); nothing outside the crate can read it back, so no
-/// sentence, log line, refusal or answer built anywhere from a node can carry the key.
+/// A node's address as written, which may carry an API key in its path, query or user part. `Display`,
+/// `Debug` and [`NodeAddr::said`] show only the safe form (`zikaron_net::sayable`: scheme, host and port). The
+/// written form is readable only inside this crate ([`NodeAddr::for_transport`]), for the transport and this
+/// machine's settings, so no message, log line or refusal built from a node can leak the key.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeAddr(String);
 
@@ -34,8 +33,8 @@ impl NodeAddr {
         zikaron_net::sayable(&self.0)
     }
 
-    /// Which place the address names (`zikaron_net::place_key`): what keeps facts about nodes apart. It carries
-    /// the path, so it stays inside this crate too.
+    /// The key that identifies this node when facts about nodes are kept apart (`zikaron_net::place_key`). It
+    /// includes the path, so it also stays inside this crate.
     pub(crate) fn place(&self) -> String {
         zikaron_net::place_key(&self.0)
     }

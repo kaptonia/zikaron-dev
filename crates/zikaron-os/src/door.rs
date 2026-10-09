@@ -259,9 +259,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// Closed while a waiter is at the door (or about to be): once `close` returns, a connect finds nothing,
-    /// at once and every time, and the waiter returns `None`. Repeated, since a window between the close and
-    /// the waiter's end would show only some of the time.
+    /// Once `close` returns, a connect finds nothing and the waiter returns `None`. Repeated because a race
+    /// would show only some of the time.
     #[test]
     fn once_closed_nobody_reaches_the_door() {
         let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
@@ -301,10 +300,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// A conversation already under way when the door closes is the caller's to finish: bytes still flow both
-    /// ways. Someone new coming meanwhile is never taken, and knows the door is gone once that conversation is
-    /// over (at once where the door has a path to remove; where it is a pipe, the one instance still talking
-    /// keeps the name busy, so the newcomer waits for it, then finds nothing).
+    /// A connection accepted before the close still carries bytes both ways; a new client is never taken and
+    /// gets `NotFound` (on Windows only after the open pipe instance is done).
     #[test]
     fn a_conversation_under_way_finishes_after_the_door_closes() {
         let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
@@ -329,8 +326,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// Closing twice does nothing more: no hang, the door stays closed, the waiter gets `None`, and so does every
-    /// `accept` after it.
+    /// Closing twice is harmless: no hang, and every later `accept` returns `None`.
     #[test]
     fn closing_twice_does_nothing_more() {
         let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
@@ -347,8 +343,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// A door closed can be opened again at the same place at once, even while the closed one's listener has not
-    /// been let go yet; clients reach the new one.
+    /// A closed endpoint can be reopened at the same place at once, even before the old listener is dropped.
     #[test]
     fn a_closed_door_opens_again_at_the_same_place() {
         let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
@@ -370,9 +365,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// A client that hangs up before the door judges it: never called a stranger (the door just goes on to the
-    /// next client); with strangers pretended, refused as one, whatever the client did meanwhile, the same on
-    /// every system.
+    /// A client that hangs up before the user check is not reported as another user; with `pretend_stranger`
+    /// on, it is refused regardless, since the hook is asked before the OS.
     #[test]
     fn a_client_gone_before_it_is_judged() {
         let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());

@@ -20,8 +20,8 @@ fn scratch(tag: &str) -> PathBuf {
     p
 }
 
-/// Exit code, stdout, stderr, in English (the second stderr line is compared). A child that does not start
-/// is said with its verb and flags, the working folder and whether it is there, and the system's error.
+/// Exit code, stdout, stderr, in English (the second stderr line is compared). If the child does not start,
+/// the panic names its verb and flags, the working folder and whether it exists, and the system's error.
 fn run(dir: &Path, args: &[&str]) -> (i32, Vec<u8>, String) {
     let o = Command::new(BIN)
         .args(args)

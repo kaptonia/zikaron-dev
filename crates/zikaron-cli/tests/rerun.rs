@@ -142,15 +142,15 @@ fn home(tag: &str) -> PathBuf {
     h
 }
 
-/// `anchor` handed `home` through the system's own home variable (`zikaron_os::HOME_VAR`), so each run's
-/// record lives under its own home on every system.
+/// `anchor` with `home` set through the system's home variable (`zikaron_os::HOME_VAR`), so each run's record
+/// lives under its own home on every system.
 fn anchor(home: &Path, n: &Node) -> Ran {
     anchor_where(n, |c| {
         c.env(zikaron_os::HOME_VAR, home);
     })
 }
 
-/// `anchor` with the home variable as `set` leaves it.
+/// `anchor` with the home variable set (or unset) by `set`.
 fn anchor_where(n: &Node, set: impl FnOnce(&mut Command)) -> Ran {
     let mut c = Command::new(BIN);
     c.args(["anchor", "--endpoint", &format!("31337={}", n.url), "--key", KEY, "--form", "bare", "--hash", &zikaron::hexfmt::encode(&HASH), "--wait-secs", "0"]);
@@ -365,8 +365,8 @@ fn a_hidden_file_beside_the_record_is_not_a_record() {
     let _ = std::fs::remove_dir_all(&h);
 }
 
-/// A home handed through the system's own variable keeps its record to itself: one not there yet is made and
-/// holds the record; a home beside it holds none, and its own run starts from nothing.
+/// Each home set through the home variable keeps its own record: a missing home is created and holds the
+/// record; a sibling home holds none, and its own run starts from nothing.
 #[test]
 fn a_home_handed_through_the_systems_variable_keeps_its_record_apart() {
     let h = home("apart");
@@ -403,9 +403,9 @@ fn a_home_that_cannot_be_written_sends_nothing() {
     let _ = std::fs::remove_dir_all(&h);
 }
 
-/// No home at all (the variable unset, or set empty, and unix has nothing beyond it): nothing can be recorded,
-/// so nothing is signed or sent. Unix only: on Windows the profile known folder answers, which is the user's
-/// real one.
+/// No home at all (the variable unset or empty, with no other fallback on unix): nothing can be recorded, so
+/// nothing is signed or sent. Unix only: on Windows the profile known folder is used, which is the user's real
+/// one.
 #[cfg(unix)]
 #[test]
 fn no_home_sends_nothing() {

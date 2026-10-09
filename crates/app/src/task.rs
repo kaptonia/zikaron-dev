@@ -572,7 +572,8 @@ pub enum Done {
     Anchored {
         tx: String,
         chain: u64,
-        /// Whether the transaction succeeded (law §9.1: a status other than 1 is no anchor in either form).
+        /// Whether the transaction succeeded (`zikaron/1` §9.1: a status other than 1 is no anchor in either
+        /// form).
         confirmed: bool,
         /// What the receipt says, unchanged.
         state: String,

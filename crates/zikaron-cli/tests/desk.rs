@@ -1,9 +1,10 @@
 //! `--home`: the real CLI against a stand-in desktop in the test process. The stand-in listens on the desktop's
 //! socket (`zikaron_glue::door::place`, in the machine folder found through the home variable and the pointer
 //! file), reads one request and answers with each reply the desktop can give; stdout, exit code and the
-//! human-readable line are checked in both languages. Misuse must be refused before any request, so the stand-in counts
-//! connections. Each test has its own machine folder and home (unix only: the stand-in's machine folder sits at
-//! a short `/tmp` path for a socket path's length limit, and paths are compared as unix resolves them).
+//! human-readable line are checked in both languages. Misuse must be refused before any request, so the
+//! stand-in counts connections. Each test has its own machine folder and home (unix only: the machine folder
+//! sits at a short `/tmp` path because socket paths are length-limited, and paths are compared as unix
+//! resolves them).
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -157,7 +158,7 @@ fn the_request_carries_each_flag_as_read() {
         (vec!["history".into(), "--file".into(), file.display().to_string(), "--note".into(), "n".into()], vec![("file", std::fs::canonicalize(&file).unwrap().display().to_string()), ("note", "n".into())]),
         (vec!["kit-export".into(), "--entry".into(), "ab".repeat(32), "--entry".into(), format!("0x{}", "cd".repeat(32)), "--out".into(), "rel/out".into()], vec![("entry", format!("0x{}", "ab".repeat(32))), ("entry", format!("0x{}", "cd".repeat(32))), ("out", std::path::absolute("rel/out").unwrap().display().to_string())]),
         (vec!["succeed".into(), "--to".into(), "0xt".into(), "--effective".into(), "12".into()], vec![("to", "0xt".into()), ("effective", "12".into())]),
-        // The anchors file goes as the JSON it holds, read as the law reads it (canonical bytes).
+        // The anchors file is sent as the JSON it holds, in canonical bytes.
         (vec!["adopt".into(), "--anchors".into(), anchors.display().to_string(), "--attestor".into(), "0xa".into()], vec![("anchors", r#"[{"chainId":1,"content":"0xc","payloadKind":"bare","tx":"0xt"}]"#.into()), ("attestor", "0xa".into())]),
     ];
     for (args, want) in cases {

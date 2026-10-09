@@ -205,7 +205,7 @@ pub fn door_listen(place: &Path) -> std::io::Result<DoorListener> {
 }
 
 impl DoorListener {
-    /// The next client, not yet judged ([`DoorStream::same_user`]).
+    /// The next client; its user is not yet checked ([`DoorStream::same_user`]).
     pub fn accept(&self) -> std::io::Result<DoorStream> {
         let (s, _) = self.0.accept()?;
         Ok(DoorStream(s))
@@ -232,8 +232,8 @@ fn door_remove(place: &Path) {
     }
 }
 
-/// Connect to the endpoint at `place` (not yet judged, [`DoorStream::same_user`]): none there, or a stale one,
-/// is `NotFound`.
+/// Connect to the endpoint at `place` without checking its user ([`DoorStream::same_user`]); none there, or a
+/// stale one, is `NotFound`.
 pub fn door_connect(place: &Path) -> std::io::Result<DoorStream> {
     if too_long(place) {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("longer than a local socket's {DOOR_PATH_MAX} bytes")));
@@ -305,9 +305,8 @@ pub fn listed_id(file: &std::fs::File) -> i64 {
 }
 
 /// Start the child; between fork and exec it closes every listed lock descriptor, so it never holds a copy
-/// when its program runs, whatever order the kernel closes the rest in. The three standard descriptors are left
-/// alone: by then they are the child's own streams. Giving the command a closure makes the standard library fork
-/// and wait for the exec, so this returns only after the listed descriptors are closed in the child.
+/// when its program runs. Descriptors 0-2 are skipped: by then they are the child's own standard streams. With
+/// a `pre_exec` closure the standard library waits for the exec, so this returns only after the close.
 pub fn spawn(cmd: &mut std::process::Command) -> std::io::Result<std::process::Child> {
     use std::os::unix::process::CommandExt;
     // SAFETY: the closure runs in the child between fork and exec; it only reads atomics and calls `close`,

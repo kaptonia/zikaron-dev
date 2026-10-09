@@ -1,13 +1,11 @@
-//! A grant code read one way wherever it is taken, whatever white space came with it; a key file never below
-//! the backup floor; adoption through the door; a home's layout judged in one place; node channels kept apart by
-//! place; a named landing (a backup's) never covering what is there.
+//! Grant codes read the same whatever white space surrounds them; key files meet the backup floor; adoption
+//! through the door; home layout refusal in one place; node channels kept apart by place; numbered file landing;
+//! passcode hand-off; node addresses shown without their keys; keyed file naming.
 
-/// A code with a line break (CRLF) after it, a space before it, a space inside it, a no-break space after it,
-/// or an invisible mark (a byte-order mark before it, a zero-width space, word joiner or soft hyphen inside it)
-/// reads as the clean code does, typed and in a file alike: the same answer, word for word. The code here
-/// decodes to bytes that are not an entry, so the answer is the kit's refusal for that segment; white space
-/// that were read as part of the code would be refused for another reason instead. The answers compared carry
-/// words in the system's language, which other tests switch: run alone, so every answer is said in one.
+/// A code with surrounding or embedded white space (CRLF, spaces, no-break space, BOM, zero-width space, word
+/// joiner, soft hyphen) gives the same answer as the clean code, typed or in a file. The code decodes to a
+/// non-entry, so the expected answer is the kit's refusal; white space read as part of the code would fail
+/// differently. Runs alone because answers are localized and other tests switch the language.
 #[test]
 fn a_code_with_white_space_reads_as_the_clean_code_typed_or_in_a_file() {
     if super::alone_in(module_path!(), "a_code_with_white_space_reads_as_the_clean_code_typed_or_in_a_file") {
@@ -44,9 +42,8 @@ fn a_code_with_white_space_reads_as_the_clean_code_typed_or_in_a_file() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// An identity backed up to a key file is sealed at no less than the backup floor (`keystore::BACKUP_FLOOR`),
-/// in memory and in work: the file on disk is read back for its own parameters. The vault's floor in a shipped
-/// build is the same constant.
+/// A key file backup is sealed at no less than `keystore::BACKUP_FLOOR` in memory and work cost, checked by
+/// reading the parameters back from the file. Shipped builds use the same floor for the vault.
 #[test]
 fn a_key_file_written_is_never_below_the_backup_floor() {
     if super::alone_in(module_path!(), "a_key_file_written_is_never_below_the_backup_floor") {
@@ -79,8 +76,8 @@ fn a_key_file_written_is_never_below_the_backup_floor() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// "A home laid incomplete is refused by name" is judged in one place: the refusal is made only in `home::lay`
-/// (opening a home goes through it), never a second time on the way out.
+/// The refusal of an incomplete home layout (`Known::CannotLay`) is made only in `home::lay`, which opening a
+/// home goes through.
 #[test]
 fn a_home_laid_incomplete_is_judged_in_one_place() {
     let makers: Vec<String> = super::shipped()
@@ -95,10 +92,9 @@ fn a_home_laid_incomplete_is_judged_in_one_place() {
     assert!(lay[at..].split("\n}\n").next().unwrap_or_default().contains("Known::CannotLay"), "inside lay");
 }
 
-/// `adopt` through the door: the request becomes the adoption page's own action, its anchors (the JSON the
-/// command line read) made into the page's rows and judged by the page's one reading, each form by name; the
-/// attestor and attestation go as given (half of a co-signature is the action's to refuse:
-/// `door_b15::a_cosignature_is_both_halves_or_none_judged_once`).
+/// An `adopt` door request becomes the adoption page's action: its anchors JSON is parsed into rows by the
+/// page's own reader, with each malformed shape refused by name; attestor and attestation pass through as given
+/// (a half co-signature is refused by the action, see `door_b15::a_cosignature_is_both_halves_or_none_judged_once`).
 #[test]
 fn an_adoption_through_the_door_is_the_adoption_pages_action() {
     let ctx = zikaron_ui::egui::Context::default();
@@ -126,10 +122,10 @@ fn an_adoption_through_the_door_is_the_adoption_pages_action() {
     assert_eq!(turn(Some(&format!(r#"[{{"chainId":"x","content":"{content}","payloadKind":"bare","tx":"{tx}"}}]"#))), shape, "a chain id not whole");
     assert_eq!(turn(Some(&good)), shape, "not an array: one line, refused");
     assert_eq!(turn(Some("[{}]")), shape, "an element with nothing in it");
-    // Nothing reshaped: an element is a line only as exactly its four members, each one word.
+    // An element must have exactly its four members, each a single word; nothing is reshaped.
     let tx_kind = format!("{tx} bare");
     assert_eq!(turn(Some(&format!(r#"[{{"chainId":31337,"content":"{content}","tx":"{tx_kind}"}}]"#))), shape, "white space in a value never fills the member missing beside it");
-    // Escaped in the JSON: the value read holds a real line break.
+    // The escaped `\n` decodes to a real line break in the value.
     let two = format!("{content}\\n31337 {tx} bare {content}");
     assert_eq!(turn(Some(&format!(r#"[{{"chainId":31337,"content":"{two}","payloadKind":"bare","tx":"{tx}"}}]"#))), shape, "a line break in a value never makes two anchors of one");
     assert_eq!(turn(Some(&format!(r#"[{{"chainId":31337,"content":"{content}","note":"x","payloadKind":"bare","tx":"{tx}"}}]"#))), shape, "a member added is never dropped");
@@ -141,8 +137,8 @@ fn an_adoption_through_the_door_is_the_adoption_pages_action() {
     assert!(app::door::verbs().iter().any(|(v, fl)| *v == "adopt" && *fl == ["anchors", "attestor", "attestation"]), "the door's table lists it");
 }
 
-/// The app's node channel says its own place: two nodes said alike (one host, different paths) are two places
-/// for every fact kept by place, whichever scheme reaches them.
+/// Two nodes on one host with different paths display alike but are distinct places for per-place state,
+/// over http and https.
 #[test]
 fn the_apps_node_channels_are_kept_apart_by_place() {
     for scheme in ["http", "https"] {
@@ -153,9 +149,9 @@ fn the_apps_node_channels_are_kept_apart_by_place() {
     }
 }
 
-/// A new file named in a folder (a backup's name) is taken by a landing that never replaces anything there: free,
-/// the first name; taken by a file, a folder, a read-only file or several numbered files, the next free number,
-/// what was there untouched; a folder that cannot be written is refused by name and nothing lands.
+/// `land_numbered` never replaces an existing entry: it uses the plain name if free, otherwise the next free
+/// number (whether the name is held by a file, folder, read-only file or numbered files), leaving what was there
+/// untouched. An unwritable folder is refused and nothing lands.
 #[test]
 fn a_named_landing_never_covers_what_is_there() {
     let d = std::env::temp_dir().join(format!("zk-test-land-numbered-{}", std::process::id()));
@@ -180,7 +176,7 @@ fn a_named_landing_never_covers_what_is_there() {
     }
     assert_eq!(land(&d, "many").ok().as_deref(), Some("many-4.zikaron"), "several taken: the next free");
     assert_eq!(std::fs::read(d.join("many-2.zikaron")).expect("kept"), b"many-2.zikaron");
-    // A folder that cannot be written: read-only (on a system where that bars new files in a folder).
+    // Unix only: a read-only folder bars new files there.
     #[cfg(unix)]
     {
         let shut = d.join("shut");
@@ -202,8 +198,8 @@ fn a_named_landing_never_covers_what_is_there() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
-/// A backup made where one of the same day's name already is lands under the next number; the one there is
-/// untouched, and the record names the new one.
+/// A backup whose same-day name is taken lands under the next number; the existing file is untouched and the
+/// settings record the new path.
 #[test]
 fn a_backup_never_covers_one_of_the_same_name() {
     if super::alone_in(module_path!(), "a_backup_never_covers_one_of_the_same_name") {
@@ -223,10 +219,9 @@ fn a_backup_never_covers_one_of_the_same_name() {
     let _ = std::fs::remove_dir_all(&out);
 }
 
-/// Handing a passcode to its task is a move, not a loan: every action that carries one (those that pass the
-/// passcode gate, and the gate's own mouths) hands it once, whole; from then on its own cell is empty and
-/// handing again gives nothing, so no second copy is left behind for a failed or cancelled task to leave in
-/// memory. An action that carries none hands nothing.
+/// Handing a passcode to its task moves it out: every action carrying one hands it once, whole, leaving its own
+/// cell empty, so no second copy lingers in memory after a failed or cancelled task. Actions without a passcode
+/// hand nothing.
 #[test]
 fn a_passcode_handed_is_moved_out_and_handed_once() {
     use app::action::{Action, RestoreHow};
@@ -257,10 +252,9 @@ fn a_passcode_handed_is_moved_out_and_handed_once() {
     assert!(Action::Lock.hand_pin().is_none(), "an action with no passcode hands none");
 }
 
-/// A node's address is said one way, whatever it carries: a key in the path, the query, the fragment or the user
-/// part never appears; an IPv6 literal keeps its brackets; the default port is left out; an address that does
-/// not read is said by its length; two addresses differing only by their key are said alike. `Display`,
-/// `Debug` and the endpoint's own `Debug` all say it so.
+/// A node address is displayed without any key in its path, query, fragment or user part; IPv6 keeps its
+/// brackets, the default port is dropped, an unparseable address shows only its length, and addresses differing
+/// only by key display alike. Applies to `Display`, `Debug` and the endpoint's `Debug`.
 #[test]
 fn a_node_address_is_said_without_its_key() {
     use app::chainx::{Endpoint, NodeAddr};
@@ -287,8 +281,8 @@ fn a_node_address_is_said_without_its_key() {
     assert_eq!(NodeAddr::new("https://n.example/v3/aaaa").said(), NodeAddr::new("https://n.example/v3/bbbb").said(), "only the key differs: said alike");
 }
 
-/// The address type has no way out for its written form beyond this crate: the field is private, and the
-/// written form, the place key (it carries the path) and the endpoint's written spelling are crate-only.
+/// The raw node address (which may carry a key) never leaves the crate: the field is private, and the raw
+/// form, the place key (it includes the path) and the endpoint spelling are `pub(crate)`.
 #[test]
 fn a_node_address_gives_its_written_form_to_nobody_outside() {
     let code = super::code_only(&super::read_src_file("chainx.rs").expect("chainx.rs"));
@@ -303,10 +297,9 @@ fn a_node_address_gives_its_written_form_to_nobody_outside() {
     assert!(code.contains("pub url: NodeAddr,"), "an endpoint's address is the type, not a string");
 }
 
-/// Every kind named by its keyed name gets, from the one naming function, a name that is not its logical name
-/// and carries no id; every other kind keeps its logical name; a keyed kind whose path is not its shape is
-/// refused by name, never left at a name that tells. A keyed kind with no sample here fails this test, so a new
-/// kind cannot slip past it.
+/// Every keyed document kind gets an on-disk name that differs from its logical name and contains no id; other
+/// kinds keep their logical name; a keyed path of the wrong shape is refused rather than left revealing. A
+/// keyed kind without a sample here fails the test, so new kinds are covered.
 #[test]
 fn every_keyed_kind_is_renamed_by_the_one_naming() {
     if super::alone_in(module_path!(), "every_keyed_kind_is_renamed_by_the_one_naming") {
@@ -342,8 +335,7 @@ fn every_keyed_kind_is_renamed_by_the_one_naming() {
     }
 }
 
-/// Which kinds a migration renames is judged in one place: the check whether names are out of date and the
-/// naming itself both read `Doc::keyed`; neither keeps a list of its own.
+/// Both the out-of-date name check and the naming function read `Doc::keyed`; neither keeps its own list of kinds.
 #[test]
 fn which_kinds_are_renamed_is_judged_once() {
     let code = super::code_only(&super::read_src_file("local.rs").expect("local.rs"));

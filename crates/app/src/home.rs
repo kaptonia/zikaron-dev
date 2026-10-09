@@ -609,8 +609,7 @@ pub fn same_place(a: &Path, b: &Path) -> bool {
 
 // Choosing where output lands is decided in one place: [`choose`]. It also says why the result differs from
 // the picked place ([`Why`], three closed forms), so an unusable pick never leads to a silent subfolder. The
-// chosen path is valid only while it does not exist (re-checked at once, as `open_home_at` does with
-// `missing()`).
+// chosen path is valid only while it does not exist.
 
 /// What kind of thing is landing. Closed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -774,11 +773,10 @@ fn numbered_name(stem: &str, ext: Option<&str>, n: u32) -> String {
     }
 }
 
-/// Lands `bytes` (owner only) as a new file in `dir` under the first free numbered name (`stem.ext`, then
-/// `stem-2.ext`…), and returns where. Naming and landing are one step: the name is taken by a landing that never
-/// replaces anything already there (`zikaron_glue::landing`, a hard link or a non-replacing rename), and a name
-/// found taken at that moment, whatever holds it (a file, a folder, a read-only file), moves on to the next
-/// number. Nothing already in `dir` is ever overwritten; any other failure is refused by name.
+/// Writes `bytes` (owner only) as a new file in `dir` under the first free numbered name (`stem.ext`, then
+/// `stem-2.ext`…) and returns its path. The write never replaces an existing entry (`zikaron_glue::landing`: a
+/// hard link or a non-replacing rename); a name found taken at that moment, by anything, moves on to the next
+/// number. Any other failure is refused by name.
 pub fn land_numbered(dir: &Path, stem: &str, ext: &str, bytes: &[u8]) -> Result<PathBuf, Fault> {
     if crate::task::ticket_void() {
         return Err(crate::task::void_ticket_fault(dir));

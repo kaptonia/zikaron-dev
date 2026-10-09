@@ -352,20 +352,18 @@ pub fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
     move_file(from, to, MOVEFILE_WRITE_THROUGH)
 }
 
-/// How long a move keeps trying while another handle holds one of its two files: a reader of the target, or the
-/// system's scanner on a file just written, holds it for a moment without sharing deletion, and the move then
-/// fails at once (`ERROR_SHARING_VIOLATION`, or `ERROR_ACCESS_DENIED` for a target held that way) where on other
-/// systems a rename never waits on a reader. Past this the move's own refusal is returned as it was.
+/// How long a move keeps retrying while another handle briefly holds one of its files without sharing
+/// deletion (a reader of the target, or a virus scanner on a fresh file). Windows then fails the move at once
+/// with `ERROR_SHARING_VIOLATION` or `ERROR_ACCESS_DENIED`. Past this the OS error is returned unchanged.
 pub const MOVE_HELD_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// The pause before the first try again; each pause doubles, up to [`MOVE_HELD_PAUSE_MAX`].
 const MOVE_HELD_PAUSE: std::time::Duration = std::time::Duration::from_millis(10);
 const MOVE_HELD_PAUSE_MAX: std::time::Duration = std::time::Duration::from_millis(100);
 
-/// One move (`MoveFileExW` with `flags`), tried again within [`MOVE_HELD_WAIT`] while it fails as a file held
-/// by another handle fails; any other failure, or the same one past the wait, is returned at once as the OS said
-/// it. Both kinds of refusal it waits on are also how a lasting refusal reads (a read-only target, no right to
-/// the folder): those cost the wait, then are refused as before.
+/// `MoveFileExW` with `flags`, retried within [`MOVE_HELD_WAIT`] while it fails as a held file does; any other
+/// failure is returned at once. A lasting refusal with the same codes (a read-only target, no folder rights)
+/// costs the wait, then is returned unchanged.
 fn move_file(from: &Path, to: &Path, flags: u32) -> std::io::Result<()> {
     let (f, t) = (wide(from), wide(to));
     let began = std::time::Instant::now();
@@ -413,11 +411,9 @@ pub fn home_dir() -> Option<std::path::PathBuf> {
     known_folder(&FOLDER_PROFILE)
 }
 
-/// This app's folder in the local application data folder (`%LOCALAPPDATA%`, which does not roam) when the home
-/// is the profile known folder, as it is for a user's own logon (`USERPROFILE` names it), however it is spelled
-/// (case, a short name, a trailing separator: [`crate::same_folder`]). Any other home (a test that hands a child
-/// its own `USERPROFILE`, a stand-in from the test hooks) uses the same layout under itself, so tests never
-/// touch the user's real folder.
+/// This app's folder in `%LOCALAPPDATA%` (which does not roam) when `user_home` is the profile known folder,
+/// however it is spelled ([`crate::same_folder`]). Any other home (e.g. a test stand-in) gets the same layout
+/// under itself, so tests never touch the user's real folder.
 pub fn app_data_dir(user_home: &Path) -> std::path::PathBuf {
     if home_dir().is_some_and(|profile| crate::same_folder(&profile, user_home)) {
         if let Some(local) = known_folder(&FOLDER_LOCAL_APP_DATA) {
@@ -432,8 +428,7 @@ pub fn app_data_dir(user_home: &Path) -> std::path::PathBuf {
 /// Pipe names carry the token, not the machine directory path, so no realistic path can exceed this limit.
 pub const DOOR_PATH_MAX: usize = 256;
 
-/// On Windows the endpoint is a named pipe; its name carries the endpoint name (which the caller derives from
-/// the machine directory and the home), not the machine directory's path.
+/// On Windows the endpoint is a named pipe named after `name`, not the machine directory's path.
 pub fn door_place(_machine: &Path, name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(format!(r"\\.\pipe\{name}"))
 }
@@ -478,10 +473,9 @@ impl Drop for DoorStream {
 
 /// The listening side: the pipe instance the next client connects to.
 ///
-/// A pipe has no path to remove: it exists while an instance does. So closing ([`door_close`]) closes the
-/// waiting instance on the spot and marks it gone (`INVALID_HANDLE_VALUE`), and an accept woken by the close
-/// makes no next instance; once the close returns there is no instance, and a connect finds nothing
-/// (`NotFound`), as on unix after the socket file is removed.
+/// A pipe has no path to remove: it exists while an instance does. Closing ([`door_close`]) closes the waiting
+/// instance and marks it gone (`INVALID_HANDLE_VALUE`), and a woken accept creates no new one, so a connect then
+/// gets `NotFound`, as on unix.
 pub struct DoorListener {
     name: Vec<u16>,
     /// The instance the next client connects to, or `INVALID_HANDLE_VALUE` once closed. Held across
@@ -536,9 +530,8 @@ fn door_gone() -> std::io::Error {
 }
 
 impl DoorListener {
-    /// The next client, not yet judged ([`DoorStream::same_user`]). A client that connected and already hung up
-    /// (`ERROR_NO_DATA`) is taken like any other: its stream reads as ended, and the instance is not left
-    /// half-used for the next accept.
+    /// The next client; its user is not yet checked ([`DoorStream::same_user`]). A client that already hung up
+    /// (`ERROR_NO_DATA`) is returned like any other, with a stream that reads as ended.
     pub fn accept(&self) -> std::io::Result<DoorStream> {
         let mut next = self.next.lock().unwrap_or_else(|e| e.into_inner());
         let h = *next;
@@ -585,8 +578,7 @@ fn open_pipe(name: &[u16]) -> std::io::Result<Handle> {
         match e.raw_os_error() {
             Some(ERROR_FILE_NOT_FOUND) => return Err(std::io::Error::new(std::io::ErrorKind::NotFound, e.to_string())),
             Some(ERROR_ACCESS_DENIED) => return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.to_string())),
-            // All instances are busy: wait for one to free up (the endpoint serves one at a time), a while at a
-            // time, trying again after each, so a door closed meanwhile is found gone (`NotFound`).
+            // All instances busy: wait in short slices and retry, so an endpoint closed meanwhile is `NotFound`.
             Some(ERROR_PIPE_BUSY) => {
                 if unsafe { WaitNamedPipeW(name.as_ptr(), BUSY_WAIT_MS) } == 0 {
                     let e = std::io::Error::last_os_error();
@@ -600,9 +592,9 @@ fn open_pipe(name: &[u16]) -> std::io::Result<Handle> {
     }
 }
 
-/// Close the endpoint (see [`DoorListener`]): mark it closing, wake an accept waiting on the instance by
-/// connecting once (never waiting for a busy pipe: a busy pipe has nobody waiting on it), then close the
-/// instance under the lock the accept holds. A listener already let go closed its instance itself.
+/// Close the endpoint (see [`DoorListener`]): mark it closing, wake a waiting accept by connecting once (without
+/// waiting on a busy pipe, which has no waiter), then close the instance under the accept's lock. A dropped
+/// listener has already closed its instance.
 pub fn door_close(_place: &Path, listener: Option<&DoorListener>) {
     let Some(l) = listener else { return };
     l.closing.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -619,7 +611,7 @@ pub fn door_close(_place: &Path, listener: Option<&DoorListener>) {
     }
 }
 
-/// Connect to the endpoint at `place`, not yet judged ([`DoorStream::same_user`]).
+/// Connect to the endpoint at `place` without checking its user ([`DoorStream::same_user`]).
 pub fn door_connect(place: &Path) -> std::io::Result<DoorStream> {
     let h = open_pipe(&pipe_name(place))?;
     Ok(DoorStream { h, server: false, deadline: std::cell::Cell::new(None) })
@@ -742,10 +734,9 @@ pub fn cli_unsupported(_cli: &Path) -> Option<String> {
     None
 }
 
-/// The CLI's folder is on the machine-wide `Path` (put there by an installer). The switch writes the user's
-/// `Path`, and processes started afterwards inherit that entry in `PATH`; reading the process `PATH` would see
-/// the switch's own entry as "provided" and it could never be turned off. So only the machine `Path`, which the
-/// switch never writes, is read here.
+/// The CLI's folder is on the machine-wide `Path` (put there by an installer). Only the machine `Path` is read:
+/// the process `PATH` also inherits the switch's own user-`Path` entry, which would then read as "provided" and
+/// could never be turned off.
 pub fn cli_provided(cli: &Path, moved: bool) -> bool {
     let Some(dir) = cli.parent() else { return false };
     machine_path(moved).is_ok_and(|p| p.split(';').any(|e| same_dir(e, dir)))
@@ -888,8 +879,8 @@ mod tests {
         (d, from, to)
     }
 
-    /// Open `at` to read, sharing reading only (not deletion, as a reader or a scanner does), and let it go after
-    /// `hold`; `None` holds it until the returned handle is dropped.
+    /// Open `at` sharing reading only (not deletion), and close it after `hold`; `None` keeps it until the
+    /// returned handle is dropped.
     fn hold(at: &Path, hold: Option<std::time::Duration>) -> (Option<std::fs::File>, Option<std::thread::JoinHandle<()>>) {
         let f = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(at).expect("held");
         match hold {
@@ -901,8 +892,7 @@ mod tests {
         }
     }
 
-    /// A move whose target or source another handle holds for a moment is made once it is let go, within the
-    /// wait; the same for a move that never replaces. With no target, a replacing move is made at once.
+    /// A move whose source or target is briefly held succeeds once released, for both move kinds.
     #[test]
     fn a_move_waits_out_a_file_held_for_a_moment() {
         let moment = Some(MOVE_HELD_WAIT / 5);
@@ -931,9 +921,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// Held past the wait, the move is refused as the system refused it (a held file's code), and both files
-    /// stay as they were; a source that is not there is refused at once as not found, never waited on; a move
-    /// that never replaces still refuses a target that is there.
+    /// Held past the wait, the move returns the OS error and leaves both files; a missing source fails at once;
+    /// a non-replacing move still refuses an existing target.
     #[test]
     fn a_move_held_past_the_wait_is_refused_as_before() {
         let (d, from, to) = move_scratch("held-long", true);
@@ -956,8 +945,8 @@ mod tests {
         assert_eq!(app_data_dir(stand_in), stand_in.join("AppData").join("Local").join(APP_FOLDER));
     }
 
-    /// The profile folder spelled otherwise (other case, a trailing separator) is still the profile: the app's
-    /// folder stays in the local application data folder, where an upgraded user's data is.
+    /// The profile spelled differently (case, trailing separator) still maps to `%LOCALAPPDATA%`, where existing
+    /// users' data is.
     #[test]
     fn the_profile_spelled_otherwise_is_still_the_profile() {
         let (Some(profile), Some(local)) = (home_dir(), known_folder(&FOLDER_LOCAL_APP_DATA)) else { return };
@@ -987,10 +976,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// The switch's own entry is never read back as "provided": when enabled (the user's `Path` holds the CLI
-    /// folder) and this process's `PATH` also carries it (as after the app restarts), it reads as on and can be
-    /// turned off; an installer's entry in the machine `Path` reads as provided. Uses stand-in files in a test
-    /// folder; the registry is not touched.
+    /// The switch's own entry reads as on (and can be turned off) even when the process `PATH` carries it; an
+    /// installer's machine `Path` entry reads as provided. Uses stand-in files, not the registry.
     #[test]
     fn the_switchs_own_entry_is_never_read_as_provided() {
         use crate::cli_path::{disable, enable, state, State, ENV_DIR, MACHINE_PATH_STAND_IN};

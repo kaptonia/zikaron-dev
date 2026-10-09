@@ -99,10 +99,9 @@ fn shapeless(t: &Result<W, Trouble>) -> bool {
     matches!(t, Err(Trouble::Transport(e)) if rpc::is_shapeless(e))
 }
 
-/// The eight forms an answer comes in, and what each is read as. ① a gateway's JSON page without `result` and
-/// `error`, ⑤ another question's `id`, ⑧ an array: none is an empty result, each is "the answer's shape is
-/// wrong"; ② 429 is a rate limit, ③ 403 credentials, ④ 502 a refusal carrying its status, each by its status;
-/// ⑥ `result: null` is still a lawful empty answer; ⑦ `error: null` beside a `result` is the result.
+/// Eight answer forms: a JSON page without `result` or `error`, another request's `id`, or an array is a wrong
+/// shape (never an empty result); 429, 403 and 502 are read by status; `result: null` is a valid empty answer;
+/// `error: null` beside a `result` is the result.
 #[test]
 fn only_an_answer_to_this_question_is_the_nodes_word() {
     assert!(shapeless(&ask_once(200, "{\"message\":\"Too Many Requests\"}")), "①");
@@ -166,11 +165,10 @@ fn a_broadcast_is_asked_exactly_once_and_a_read_once_more() {
     assert_eq!(*asked.lock().expect("asked"), vec!["eth_blockNumber", "eth_blockNumber", rpc::BROADCAST]);
 }
 
-/// The command line's anchor (estimate, then send): over one node, the broadcast is asked exactly once
-/// even when its connection breaks, and an estimate refused for the node's own reasons (a rate limit by
-/// status, by sentence, credentials, a missing method, a wrong chain, words without a numeric code) is the
-/// network's, never "the call would revert"; only a refusal about the call is (a revert, and the node's coded
-/// error in words the table does not name).
+/// The command line's anchor: the broadcast is asked exactly once even when its connection breaks, and an
+/// estimate refused for the node's own reasons (rate limit, credentials, missing method, wrong chain) is a
+/// network trouble; only a refusal about the call itself (a revert, an unrecognised coded error) means "the
+/// call would revert".
 #[test]
 fn an_estimate_is_refused_by_the_one_table_and_a_broadcast_goes_once() {
     let estimate_says = |reply: fn() -> Reply| {

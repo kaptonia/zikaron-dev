@@ -2842,7 +2842,7 @@ fn every_small_file_this_desk_lands_is_owner_only() {
     app::home::put_at(&dir, "probe.json", b"{}").expect("落得下");
     assert!(zikaron_os::is_owner_only(&dir.join("probe.json")).expect("读得回"), "落下的档只本人可读写");
     let _ = std::fs::remove_dir_all(&dir);
-    // The vault no longer writes files itself: `rename` and `File::create` appear nowhere in keybox.rs.
+    // The vault writes no files itself: `rename` and `File::create` appear nowhere in keybox.rs.
     let keybox = code_only(&read_src_file("keybox.rs").expect("读不出 keybox.rs"));
     for own in ["std::fs::rename", "File::create"] {
         assert!(!keybox.contains(own), "keybox.rs 里又自己落档了:{own}");
@@ -3170,7 +3170,7 @@ fn where_a_thing_lands_is_judged_in_one_place_and_says_why() {
     let e = choose(&Kind::Bundle { stem: "kit".into() }, &named);
     assert_eq!((e.at.clone(), e.why), (named, Why::AsPicked));
     let _ = std::fs::remove_dir_all(&base);
-    // None of the three old functions remains; destinations are chosen only through `choose`.
+    // No separate destination functions exist; destinations are chosen only through `choose`.
     for (name, text) in shipped() {
         let code = code_only(&text);
         for gone in ["kit_target(", "migrate_target(", "file_target("] {
@@ -3324,7 +3324,7 @@ fn boot_never_lands_on_an_empty_seat_and_the_empty_seat_is_judged_once() {
     for key in ["t(Key::SetChangeHome), Role::Secondary, seat_ok)", "t(Key::DoMeasure), Role::Secondary, seat_ok, crate::task::Kind::Archive)"] {
         assert!(window.contains(key), "空席上这一键不可按:{key}");
     }
-    // The wizard's preconditions are unchanged.
+    // The wizard still requires a key, a passcode and (for an author) a genesis.
     let nav = code_only(&read_src_file("nav.rs").expect("读不出 nav.rs"));
     assert!(nav.contains("!self.key || !self.pin || (role == Role::Author && !self.genesis)"), "向导的前提不动");
 }

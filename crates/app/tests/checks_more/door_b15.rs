@@ -424,7 +424,7 @@ fn a_door_that_cannot_open_is_kept_by_name() {
     for _ in 0..5 {
         shell.drain();
     }
-    // The shell keeps the home as it was opened; the bench keeps it with links resolved (`/tmp` is a link on macOS).
+    // The shell keeps the home path as opened; the bench resolves links (`/tmp` is a link on macOS).
     let kept = shell.door_shut.as_ref().map(|(h, f)| (std::fs::canonicalize(h).unwrap_or_else(|_| h.clone()), f.which()));
     assert_eq!(kept, Some((b.home.clone(), Some(app::fault::Known::DoorShut))), "kept by name as the shell's reading");
     assert!(shell.faults.iter().all(|f| f.which() != Some(app::fault::Known::DoorShut)), "never among the troubles: nobody pressed anything");
@@ -457,7 +457,7 @@ fn the_door_table_is_the_contracts_and_each_flag_reaches_its_action() {
     assert_eq!(rows, real, "the door's table is §11's");
     let (_b, shell) = Bench::new("table");
     for (verb, flags) in app::door::verbs() {
-        // The anchors are the law's JSON: the marker rides in its members, which reach the page's rows as they are.
+        // `anchors` takes the law's JSON form; the marker sits in its members, which reach the page's rows unchanged.
         let value = |f: &str| match f {
             "anchors" => format!(r#"[{{"chainId":1,"content":"v-{f}-1","payloadKind":"bare","tx":"v-{f}-1"}}]"#),
             _ => format!("v-{f}-1"),
@@ -541,10 +541,9 @@ fn a_shell_let_go_of_closes_its_door() {
     assert!(matches!(r, Some(Reply::Wrote { .. })), "{r:?}");
 }
 
-/// A co-signature is both halves or none, judged once, in the adoption action, for the page and the door alike:
-/// an attestor alone, or an attestation alone, is refused by the missing half's name and nothing is written;
-/// neither adopts without one; both is checked (one that does not verify is refused by its own name, nothing
-/// written). The door hands the two halves on as given and judges nothing of them.
+/// A co-signature is both halves or none, checked only in the adoption action (for the page and the door alike):
+/// one half alone is refused naming the missing half, with nothing written; neither adopts without one; both are
+/// verified, and a failing one is refused with nothing written. The door passes the halves on unchanged.
 #[test]
 fn a_cosignature_is_both_halves_or_none_judged_once() {
     let (b, mut shell) = Bench::new("cosign");
@@ -560,7 +559,7 @@ fn a_cosignature_is_both_halves_or_none_judged_once() {
             other => panic!("half a co-signature is refused, not {other:?}"),
         }
         assert_eq!(seq(&shell), before, "nothing written");
-        // Through the door: handed on as given, judged only by the action.
+        // The door passes the halves on as given; only the action checks them.
         let q = b.ask("adopt", &[("anchors", &format!(r#"[{{"chainId":31337,"content":"0x{}","payloadKind":"bare","tx":"0x{}"}}]"#, "77".repeat(32), "11".repeat(32))), ("attestor", who), ("attestation", sig)]);
         match app::door::turn_of(&shell, &q) {
             Ok(app::door::Turn::Act(Action::AdoptAnchors { attestor, attestation, .. })) => assert_eq!((attestor.as_str(), attestation.as_str()), (who, sig), "as given"),

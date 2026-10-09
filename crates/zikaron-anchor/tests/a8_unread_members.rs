@@ -1,6 +1,6 @@
-//! A question judged by named facts is cut to those facts before its answer is read into the law's value
-//! domain: a member no decision reads (the fee history's fractional `gasUsedRatio`) never makes the whole answer
-//! unreadable. In-process nodes only; no network.
+//! An answer judged by named facts is cut to those facts before it is read into the zikaron-v1 value domain, so a member
+//! no decision reads (the fee history's fractional `gasUsedRatio`) never makes the whole answer unreadable.
+//! In-process nodes only; no network.
 
 use zikaron::json::Value;
 use zikaron_anchor::judge::{self, Missing};
@@ -15,7 +15,7 @@ fn w(s: &str) -> W {
 /// A fee history as nodes give it: the paid priority fees, and each block's fractional `gasUsedRatio`.
 const FEE_HISTORY: &str = "{\"oldestBlock\":\"0x3d\",\"baseFeePerGas\":[\"0x3b9aca00\",\"0x3b9aca00\",\"0x3b9aca00\",\"0x3b9aca00\"],\"gasUsedRatio\":[0.5,0.123456789,0.0],\"reward\":[[\"0x5f5e100\"],[\"0x5f5e100\"],[\"0x5f5e100\"]]}";
 
-/// A node in this process answering every question of a fee reading, the fee history with fractions.
+/// An in-process node answering every call of a fee reading, with a fee history that carries fractions.
 struct Node;
 
 impl Endpoint for Node {
@@ -36,16 +36,13 @@ impl Endpoint for Node {
     }
 }
 
-/// The fee history as a whole is outside the law's value domain (a fraction). Judged through the judging table
-/// it is read as the `reward` fact alone, from both nodes, with no node passed over as unreadable; the one-node
-/// reading (`read_as_decided`) reads it too, and the fee reading's tip is read, not `None` (`send::read_fees`
-/// over a node answering fractions gives the chain's fees, not the fallback). A question judged on the whole
-/// answer stays whole: the same fraction there is unreadable, by name.
+/// A fee history with fractions is read as its `reward` fact alone, by the judging table, the one-node reading
+/// and `send::read_fees`; a question judged on the whole answer still reports the fraction as unreadable.
 #[test]
 fn a_member_no_decision_reads_does_not_make_the_answer_unreadable() {
     let params = send::tip_params(0x40);
     let history = w(FEE_HISTORY);
-    // The precondition: whole, the answer does not read into the law's values.
+    // Whole, the answer is outside the value domain.
     assert!(wire::to_core(&history).is_none(), "a fraction is outside the value domain");
     // Named facts: the fee history is judged by `reward` alone.
     assert_eq!(judge::facts_of("eth_feeHistory", &params), Some(&judge::FEE_HISTORY_FACTS[..]));
@@ -73,7 +70,7 @@ fn a_member_no_decision_reads_does_not_make_the_answer_unreadable() {
     let fees = send::read_fees(&mut Node);
     assert!(fees.from_chain, "{fees:?}");
     assert_eq!(fees, send::Fees::of(Some(1_000_000_000), Some(100_000_000)), "the tip read, not its ceiling");
-    // A question judged whole stays whole: the fraction there makes it unreadable, said by its text.
+    // A question judged on the whole answer: the fraction makes it unreadable.
     let j = judge::judge("eth_getBalance", &Value::Arr(vec![]), vec![("http://a".to_string(), Ok(w("0.5")))]);
     match j {
         Err(judge::NoReading::NoneAnswered(m)) => assert!(matches!(m.as_slice(), [(_, Missing::Unreadable(_))]), "{m:?}"),

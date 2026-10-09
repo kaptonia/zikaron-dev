@@ -155,8 +155,8 @@ pub(super) fn open_home_at(shell: &mut Shell, root: &str, pointer: bool) -> Resu
     // identity or seat refuses the opening by name and leaves the place untouched.
     let as_seat = opened_as(std::path::Path::new(root));
     crate::local::check_label(std::path::Path::new(root), as_seat.as_ref().map(|(i, s)| (i.as_str(), *s)), false)?;
-    // A home laid incomplete is refused by name in one place: `home::lay` (inside `open_or_create`) reads the
-    // rooms back from disk and refuses `CANNOT_LAY` when any is missing; nothing here judges it a second time.
+    // An incompletely laid home is refused by `home::lay` (inside `open_or_create`), which reads the folders
+    // back from disk and returns `CANNOT_LAY` when any is missing.
     let home = crate::home::Home::open_or_create(root)?;
     // Re-entering the home whose writer lock is already held: reuse it instead of opening a second descriptor
     // and judging itself a reader.

@@ -476,13 +476,11 @@ impl Action {
         }
     }
 
-    /// Hands the passcode this action carries to the task that derives with it: moved out of the action, not
-    /// copied, so from that moment the action's own cell is empty (asking again hands nothing) and no second copy
-    /// of the passcode is left in memory. An action that passes the passcode gate ([`Action::pin_asked`]) hands
-    /// its passcode at the gate in [`apply`]; the gate's own mouths ([`Action::gate_pin`]) are taken apart by
-    /// value where they are done, which moves their passcode the same way, and this hands it when asked first.
-    /// `None` when the action carries none, or has handed it already. What is not handed goes
-    /// with the action and is zeroed when it is dropped (`Secret`'s drop), on a lock, a quit or a refusal alike.
+    /// Moves the passcode this action carries out to the task that derives with it, leaving the action's field
+    /// empty so no second copy stays in memory. Gated actions ([`Action::pin_asked`]) hand it over in
+    /// [`apply`]; the gate's own actions ([`Action::gate_pin`]) move it out when destructured. `None` when the
+    /// action carries no passcode or has already handed it over. A passcode never handed over is zeroed when the
+    /// action is dropped (`Secret`'s drop), whether on a lock, a quit or a refusal.
     pub fn hand_pin(&mut self) -> Option<crate::secret::Secret> {
         let cell = match self {
             Action::BackupKey { pin, .. }

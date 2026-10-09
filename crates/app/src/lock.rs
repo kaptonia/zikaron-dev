@@ -225,10 +225,10 @@ pub fn holds_writer(held: Option<&Lock>, home: &Home) -> bool {
     crate::home::same_place(l.path(), &path_of(home))
 }
 
-/// The lock file's descriptor, listed with the OS layer while open (`zikaron_os::LockFile`): a child process
-/// starting meanwhile closes its copy before it runs, so a lock let go here is free at once and the next attempt
-/// on this machine is never a reader held off by a child's copy. Closing it, including after a failed grab, goes
-/// through that one type.
+/// The lock file's descriptor, registered with the OS layer while open (`zikaron_os::LockFile`). A child process
+/// spawned meanwhile closes its inherited copy before it runs, so releasing the lock here frees it at once and a
+/// later attempt on this machine is never turned into a reader by a child's copy. Every close, including after a
+/// failed grab, goes through that type.
 struct Held(zikaron_os::LockFile);
 
 /// Take the lock: obtained means writer (or [`Mode::OtherMachine`] per the writer mark), not obtained means

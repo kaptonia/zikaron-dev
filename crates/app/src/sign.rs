@@ -1,7 +1,7 @@
 //! Signing API for the anchor key. Only the two legal domains are exposed: entry and co-signature.
 //!
-//! Law §5.7: the anchor key never holds funds, never delegates and never carries code, and the interface
-//! never offers a way to send funds or delegate with it. In code, the dangerous form is a general signing
+//! `zikaron/1` §5.7: the anchor key never holds funds, never delegates and never carries code, and the
+//! interface never offers a way to send funds or delegate with it. In code, the dangerous form is a general signing
 //! function, `sign(bytes)` or `sign(domain, bytes)`: with it, `personal_sign` and EIP-7702 authorizations are
 //! one string away at the caller, and "nobody pass that string" is a convention, not structure.
 //!
@@ -12,8 +12,8 @@
 //! 2. One function per face, each with its domain fixed in its body. Signing another domain is not merely
 //!    forbidden: there is no function to call, and no parameter chooses a domain.
 //!
-//! [`Face`] maps the two faces one to one onto the two domains. The law defines four domains; this desk signs
-//! only its two (the kit law's fpm and ack domains are signed by the CLI's `fpm-sign` and `ack-sign`).
+//! [`Face`] maps the two faces one to one onto the two domains. The specs define four domains; this desk signs
+//! only its two (`zikaron.kit/1`'s fpm and ack domains are signed by the CLI's `fpm-sign` and `ack-sign`).
 //! [`domains`] is computed from this table, so an added domain shows up in the UI and the self-check suite at
 //! once.
 //!
@@ -32,15 +32,15 @@ use zikaron::cryptox;
 use zikaron::entry as k1;
 use zikaron::hexfmt;
 
-/// The closed domain type. Each variant wraps a closed type from the law; a free string cannot be expressed.
+/// The closed domain type. Each variant wraps a closed type from the core; a free string cannot be expressed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Law {
-    /// Law §5.2's two domains (the core's closed type).
+    /// The two domains of `zikaron/1` §5.2 (the core's closed type).
     Core(zikaron::tokens::Domain),
 }
 
 impl Law {
-    /// This domain's literal, taken from the law's closed type; this layer spells nothing itself.
+    /// This domain's literal, taken from the core's closed type; this layer spells nothing itself.
     pub fn as_str(self) -> &'static str {
         match self {
             Law::Core(d) => d.as_str(),
@@ -63,7 +63,7 @@ impl Face {
     pub fn as_str(self) -> &'static str {
         match self {
             Face::Entry => "entry",
-            // Product names do not reuse the law's words. This domain's real literal `zikaron/1-adoption`
+            // Product names do not reuse the spec's words. This domain's real literal `zikaron/1-adoption`
             // comes from the core's closed type (see [`Face::law`]); the short name is this layer's own.
             Face::Adoption => "cosign",
         }
@@ -88,16 +88,16 @@ impl Face {
     }
 }
 
-/// Sign once, returning `0x` plus 130 hex digits (r‖s‖v, law §5.4).
+/// Sign once, returning `0x` plus 130 hex digits (r‖s‖v, `zikaron/1` §5.4).
 ///
-/// The third argument takes [`Law`]: the union of the law's closed types, not a string.
+/// The third argument takes [`Law`]: the union of the core's closed domain types, not a string.
 fn seal(s: &Secret, preimage: &[u8], domain: Law) -> Result<String, Fault> {
     let digest = digest_under(preimage, domain);
     // Every call to the primitive that actually signs is in this file. The key layer lends the private key
     // bytes for exactly this statement; this file does not keep them and cannot get them twice.
     //
     // The third returned member is already v (27 or 28), not the recovery id: adding 27 again would fail the
-    // law's `SigV` check. The CLI's `entry::sign` does the same.
+    // core's `SigV` check. The CLI's `entry::sign` does the same.
     let (r, sv, v) = s
         .with_sign_key(|k| cryptox::sign_digest(k, &digest))
         .ok_or_else(|| Fault::known(Known::SignFailed, format!("domain {}", domain.as_str())))?;
@@ -108,7 +108,8 @@ fn seal(s: &Secret, preimage: &[u8], domain: Law) -> Result<String, Fault> {
     Ok(hexfmt::encode(&out))
 }
 
-/// The 32 bytes actually signed after the domain prefix. Computed only here (law §5.2 to §5.3 is the core's).
+/// The 32 bytes actually signed after the domain prefix. Computed only here (`zikaron/1` §5.2 to §5.3 is the
+/// core's).
 ///
 /// The signing statement (`seal`) and the copy handed to tests for outside verification use this one
 /// function; computing the digest in two places would leave "what is verified outside is what was signed
@@ -177,7 +178,7 @@ pub fn anchor_send(
     fees: zikaron_anchor::send::Fees,
     backoff: &[std::time::Duration],
 ) -> Result<Broadcast, Fault> {
-    // The first node, as it may be said (a refusal's evidence names it so).
+    // The first node in its safe-to-display form, as a refusal's evidence names it.
     let first = urls.first().map(crate::chainx::NodeAddr::said).unwrap_or_default();
     let open = |url: &crate::chainx::NodeAddr| {
         crate::chainx::endpoint_at(url.for_transport()).ok_or_else(|| {
@@ -270,7 +271,7 @@ fn signed_at(s: &Secret, chain: u64, registry: Option<[u8; 20]>, hashes: &[[u8; 
 /// the first endpoint that echoes the hash took it; one that answers "already pending" or "nonce used" is
 /// asked by hash whether it knows this very transaction.
 fn broadcast(urls: &[crate::chainx::NodeAddr], chain: u64, raw: &[u8], hash: [u8; 32], backoff: &[std::time::Duration], last: Option<Fault>) -> Result<Broadcast, Fault> {
-    // The first node, as it may be said (a refusal's evidence names it so).
+    // The first node in its safe-to-display form, as a refusal's evidence names it.
     let first = urls.first().map(crate::chainx::NodeAddr::said).unwrap_or_default();
     let mut last = last;
     let open = |url: &crate::chainx::NodeAddr| crate::chainx::endpoint_at(url.for_transport()).ok_or_else(|| Fault::known(Known::SettingsShape, crate::chainx::address_said(url.for_transport())));
@@ -382,8 +383,9 @@ impl Use {
 /// decides (refusals use `SEAT_DOMAIN`).
 ///
 /// * Entry: both seats. "Its own ledger" is enforced by a separate check at key fetching (the current seat
-///   must own the open home, see `action::signing_key`), so relicensing (kit/1 §10.4: the grantee opens their
-///   own ledger and signs their own entries) works, and signing into someone else's ledger is impossible.
+///   must own the open home, see `action::signing_key`), so relicensing (`zikaron.kit/1` §10.4: the grantee
+///   opens their own ledger and signs their own entries) works, and signing into someone else's ledger is
+///   impossible.
 /// * Co-signature: the author seat's domain. The product currently only verifies co-signatures and never
 ///   signs them (`adoptx::cosigned` verifies the counterpart's), so no product path reaches this cell; it is
 ///   still answered in the table.

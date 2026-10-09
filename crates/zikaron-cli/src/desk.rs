@@ -51,7 +51,7 @@ pub fn ask(a: &Args) -> Answer {
 }
 
 /// Each flag the verb takes beside `--home`, in its row's order (a repeatable flag's values in the order given),
-/// read as the verb reads it without `--home`: whole numbers within the law's ceiling, entry ids in their one
+/// read as the verb reads it without `--home`: whole numbers within the spec's ceiling, entry ids in their one
 /// form, a file that must exist and read, places made whole.
 fn read_args(a: &Args) -> Vec<(String, String)> {
     let own = verbs::accepts(a.verb(), true).unwrap_or_default();
@@ -60,8 +60,8 @@ fn read_args(a: &Args) -> Vec<(String, String)> {
         let values: Vec<String> = match (a.verb(), flag) {
             (_, "window-from" | "window-to" | "effective") => a.within_ceiling(flag).map(|n| n.to_string()).into_iter().collect(),
             ("history", "file") => vec![whole_file(&a.need(flag))],
-            // The anchors file read as without `--home` (a file that does not read, or is not the law's JSON, is
-            // misuse here), handed over as that JSON.
+            // The anchors file is read as without `--home` (unreadable or not valid JSON is misuse here) and
+            // handed over as that JSON.
             ("adopt", "anchors") => a.one(flag).map(|p| String::from_utf8_lossy(&zikaron::json::canon_bytes(&crate::args::slurp_json(&p))).into_owned()).into_iter().collect(),
             ("kit-export", "out") => vec![whole_place(&a.need(flag))],
             ("kit-export", "entry") => a.many(flag).iter().map(|x| verbs::entry_id_form(x)).collect(),
@@ -117,7 +117,7 @@ fn answer_of(r: Reply) -> Answer {
         Reply::OnDesktop => out::denied(Reason::OnDesktop, vec![]).telling(Said::OnDesktop.text().to_string()),
         Reply::Refused { code, tail, network, zh, en } => {
             let members = vec![(Key::Token, s(&code)), (Key::Detail, s(&tail))];
-            // A network refusal is the absence of an answer (law §9.4), never a negative one.
+            // A network refusal is the absence of an answer (`zikaron/1` §9.4), never a negative one.
             let a = if network { out::unanswered(Reason::DesktopRefused, members) } else { out::denied(Reason::DesktopRefused, members) };
             a.telling(out::pick(zh, en))
         }

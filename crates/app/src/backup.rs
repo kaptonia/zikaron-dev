@@ -12,9 +12,9 @@
 //! format newer than this one are each refused by name ([`Known::BackupPassword`], [`Known::BackupNotOurs`],
 //! [`Known::BackupTooNew`]); none of them touches the vault or its failure count.
 //!
-//! The file name is `zikaron-backup-YYYY-MM-DD.zikaron` ([`file_stem`], [`EXT`]), numbered when taken; it is
-//! landed by a step that never replaces anything already there (`home::land_numbered`, 0600), then read back and
-//! opened before it counts.
+//! The file name is `zikaron-backup-YYYY-MM-DD.zikaron` ([`file_stem`], [`EXT`]), numbered if taken. It is
+//! written without ever replacing an existing file (`home::land_numbered`, 0600), then read back and opened
+//! before it counts.
 
 use crate::fault::{classify, Fault, Known};
 use crate::local::{Doc, Whose};
@@ -595,16 +595,16 @@ pub struct Exported {
 }
 
 /// Writes a backup into `folder` (vault open). The name is `zikaron-backup-YYYY-MM-DD.zikaron`, numbered if
-/// taken, and taken by a landing that never replaces what is there (0600); the file is then read back and opened
-/// with the same password, and only then counts: the backup's time, place and count are recorded in the machine settings.
+/// taken; an existing file is never replaced (0600). The file is then read back and opened with the same
+/// password, and only then counts: its time, place and count are recorded in the machine settings.
 pub fn export(folder: &Path, password: &str, now: u64) -> Result<Exported, Fault> {
     crate::trace::mark(crate::feature::Feature::H4);
     let p = collect()?;
     let summary = summary_of(&p, now);
     let package = Wiped(package_bytes(&p));
     let sealed = seal(&package, password, now)?;
-    // Named and landed in one step, never over anything already there (`home::land_numbered`); written, then
-    // read back: the file on disk must open with the password to the same package. If either step fails, that is
+    // Named and written in one step that never replaces an existing file (`home::land_numbered`), then read
+    // back: the file on disk must open with the password to the same package. If either step fails, that is
     // recorded on this machine (`machine::backup_failed`) before it is reported.
     let landed = (|| -> Result<PathBuf, Fault> {
         let at = crate::home::land_numbered(folder, &file_stem(now), EXT, &sealed)?;

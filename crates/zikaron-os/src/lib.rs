@@ -276,13 +276,11 @@ pub fn rename_new(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// Serializes starting children against opening and closing kernel locks. A starting child holds a copy of
-/// every open descriptor until it runs its program; a `flock` released while such a copy lives stays held by it,
-/// so the next locker (this process included) would see the lock held by another, and the single instance
-/// would open its own home read-only. So a lock opened as a [`LockFile`] (the home's writer lock) is listed while
-/// open, and every child started through [`spawn`] closes the listed ones before it runs; a lock file opened
-/// otherwise is not listed. A listed lock opens and closes under the exclusive turn and a child starts under the
-/// shared one, so the list a child reads is exactly the listed locks open when it was made, and none of them is
-/// let go while a child is starting.
+/// every open descriptor until it execs, and a `flock` released while such a copy lives stays held by it, so
+/// this process could later find its own home locked and open it read-only. A [`LockFile`] is therefore listed
+/// while open, and every child started through [`spawn`] closes the listed descriptors before it runs. Locks
+/// open and close under the write side and children start under the read side, so no listed lock changes
+/// while a child is starting.
 static CHILDREN: std::sync::RwLock<()> = std::sync::RwLock::new(());
 
 /// How many kernel locks this process may hold open at once ([`LockFile`]); one more is refused by name. The
@@ -302,9 +300,8 @@ pub fn spawn(cmd: &mut std::process::Command) -> std::io::Result<std::process::C
     imp::spawn(cmd)
 }
 
-/// A kernel lock's file, open while this value lives, opened and closed only under [`CHILDREN`]'s exclusive turn
-/// and listed while open, so no child ever holds a copy of it ([`spawn`]): once let go, the next locker finds it
-/// free. More than [`LOCKS_MAX`] open at once is refused by name and opens nothing.
+/// A kernel lock's file, open while this value lives and listed so no child holds a copy of it ([`spawn`]);
+/// once dropped, the next locker finds it free. More than [`LOCKS_MAX`] at once is refused and opens nothing.
 pub struct LockFile {
     file: std::mem::ManuallyDrop<std::fs::File>,
     slot: usize,
@@ -337,14 +334,13 @@ impl Drop for LockFile {
     }
 }
 
-/// The variable the system itself sets for the user's home (unix `HOME`, Windows `USERPROFILE`, which Windows
-/// sets from the profile at logon and passes to every process it starts). The home is read from it first, and a
-/// process that starts another one hands it a home through it.
+/// The environment variable the system sets for the user's home (unix `HOME`, Windows `USERPROFILE`). The home
+/// is read from it first, and a parent process can pass a home to a child through it.
 pub const HOME_VAR: &str = imp::HOME_VAR;
 
-/// The user's home directory: [`HOME_VAR`] when it is set and not empty, otherwise what the OS reports beyond it
-/// (Windows the profile known folder; unix nothing); `None` if neither. A home that does not exist yet, or that
-/// cannot be written, is returned as named; whoever writes there reports the failure.
+/// The user's home directory: [`HOME_VAR`] when set and not empty, otherwise the OS's answer (Windows: the
+/// profile known folder; unix: none); `None` if neither. The path is returned even if it does not exist or is
+/// not writable; whoever writes there reports the failure.
 pub fn user_home() -> Option<std::path::PathBuf> {
     home_from(std::env::var_os(HOME_VAR), imp::home_dir)
 }
@@ -384,8 +380,7 @@ mod tests {
         d
     }
 
-    /// The home is the system's own variable when set and not empty (as given, whether or not it exists);
-    /// unset or empty, the OS's answer beyond it; neither, none.
+    /// The home comes from [`HOME_VAR`] when set and not empty, else from the OS, else `None`.
     #[test]
     fn the_home_is_the_systems_own_variable_first() {
         let os = || Some(std::path::PathBuf::from("from-the-os"));
@@ -398,8 +393,7 @@ mod tests {
         assert_eq!(home_from(Some("".into()), none), None);
     }
 
-    /// A folder is itself however it is spelled (a trailing separator, a `.` step; a link to it is in the
-    /// platform's own tests); another folder, and a path that is not there spelled otherwise, are not.
+    /// A folder matches itself however it is spelled; another folder, or a missing path spelled otherwise, does not.
     #[test]
     fn a_folder_is_the_same_however_it_is_spelled() {
         let d = scratch("same");
@@ -425,8 +419,7 @@ mod tests {
         LockFile::open(Options::new().read(true).write(true).create(true), p).expect("a lock file")
     }
 
-    /// Each lock is listed while open and unlisted when let go: none, one, several; letting one go frees only
-    /// its own slot.
+    /// Each lock is listed while open and unlisted when dropped; dropping one frees only its own slot.
     #[test]
     fn a_lock_is_listed_while_it_is_open() {
         let _t = LOCKS_TURN.lock().unwrap_or_else(|e| e.into_inner());
@@ -461,8 +454,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// A lock let go while a child is starting waits until the child has started (the start holds the shared
-    /// turn), so the child never starts with the lock's descriptor freshly let go under it.
+    /// Dropping a lock while a child is starting waits until the start is done.
     #[test]
     fn a_lock_let_go_while_a_child_starts_waits_for_the_start() {
         let _t = LOCKS_TURN.lock().unwrap_or_else(|e| e.into_inner());
@@ -507,8 +499,8 @@ mod tests {
         i64::from(f.as_raw_fd())
     }
 
-    /// A child never runs holding a listed lock's descriptor, even one that would survive exec: one, several,
-    /// and none listed (the child still starts). A descriptor not listed (an ordinary file) is not touched.
+    /// A child never runs holding a listed lock's descriptor, even an inheritable one; unlisted descriptors are
+    /// left alone.
     #[cfg(unix)]
     #[test]
     fn a_child_never_runs_holding_a_listed_lock() {
@@ -610,9 +602,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// Each of the three methods, reached by marking the earlier ones unsupported, places the bytes and never
-    /// replaces an existing file (even an empty one); with none supported it errors and moves nothing; a rename
-    /// failing after the claim removes the claim. One test, since the setting is process-wide.
+    /// Each [`land_new`] method lands the bytes and never replaces an existing file; with none supported it
+    /// errors and moves nothing; a failed rename after the claim removes the claim. One test, since the
+    /// setting is process-wide.
     #[test]
     fn a_name_is_given_by_the_first_way_the_volume_supports() {
         let d = scratch("land");

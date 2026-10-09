@@ -67,8 +67,8 @@ const ROWS: [Row; 11] = [
         },
     },
     Row { flags: &["grant", "case"], make: |q| Action::Revoke { grant: one(q, "grant"), case: one(q, "case") } },
-    // Adopting anchors: the command line hands the `--anchors` file's JSON as it read it; the rows the adoption
-    // page takes are made from it here, and the page's own reading judges them ([`anchor_rows`]).
+    // Adopting anchors: the command line passes the `--anchors` file's JSON unchanged; it is turned into the
+    // adoption page's rows here ([`anchor_rows`]) and validated by the page's own parser.
     Row {
         flags: &["anchors", "attestor", "attestation"],
         make: |q| Action::AdoptAnchors { rows: anchor_rows(&one(q, "anchors")), attestor: one(q, "attestor"), attestation: one(q, "attestation") },
@@ -82,14 +82,12 @@ const ROWS: [Row; 11] = [
     Row { flags: &["entry", "note", "out"], make: |q| Action::ExportKit { from: String::new(), to: String::new(), ids: q.many("entry").join("\n"), attach: String::new(), note: one(q, "note"), out: one(q, "out") } },
 ];
 
-/// The anchors a command hands over (the JSON array its `--anchors` file holds) as the rows the adoption page
-/// takes, one line per element: chain id, transaction, payload kind and content, each one word. Nothing is
-/// judged here, and nothing is reshaped either: an element is a line only when it is exactly those four
-/// members, the chain id a whole number and the others text with no white space in it, so its line reads back
-/// as those four and nothing else. Any other element (a member missing, added or of another shape, a value
-/// with white space that would split or join cells or lines) is the line `-`, which the page's own reading
-/// refuses by its number (`adoptx::rows_of`); text that is not an array is that one line; none at all is no
-/// rows.
+/// Converts the JSON array from a `--anchors` file into the adoption page's rows, one line per element:
+/// chain id, transaction, payload kind and content, space-separated. Nothing is validated or reshaped here. An
+/// element becomes a line only when it has exactly those four members, an integer chain id and non-empty
+/// strings without white space, so the line reads back as the same four values. Any other element becomes
+/// `-`, which the page's parser (`adoptx::rows_of`) refuses by its line number. Text that is not an array
+/// becomes a single `-`; empty text gives no rows.
 fn anchor_rows(text: &str) -> String {
     use zikaron::json::Value;
     const MEMBERS: [&str; 4] = ["chainId", "tx", "payloadKind", "content"];
@@ -368,7 +366,7 @@ impl Shell {
         }
     }
 
-    /// Sends a reply and counts it (`Shell::door_answered`), so a driver can tell a request was answered.
+    /// Sends a reply and counts it (`Shell::door_answered`), so tests can tell a request was answered.
     fn door_send(&mut self, answer: &Sender<Reply>, r: Reply) {
         self.door_answered += 1;
         let _ = answer.send(r);

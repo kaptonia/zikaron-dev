@@ -35,10 +35,8 @@ pub struct Params {
     pub p: usize,
 }
 
-/// The cost floor of an identity backup (the key file this app writes) and, in a shipped build, of the key
-/// vault's own derivation section: geth's standard scrypt level. One constant: the key file is written at it
-/// ([`Params::standard`]), and the vault's floor is this pass's parameters, which are it outside the test hooks
-/// (`keybox::params`).
+/// The scrypt cost floor (geth's standard level) for the key files this app writes ([`Params::standard`]) and,
+/// outside the test hooks, for the key vault's own derivation (`keybox::params`).
 pub const BACKUP_FLOOR: Params = Params { n: 262_144, r: 8, p: 1 };
 
 impl Params {

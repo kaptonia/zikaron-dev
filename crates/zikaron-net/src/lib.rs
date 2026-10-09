@@ -12,10 +12,10 @@
 //! whether the transport is shutting down, so shutting down cuts an exchange in flight within a slice on every
 //! system, without relying on the system waking a blocked read. A write the peer does not take is bounded by
 //! the time left only, not sliced (a sliced write would break a request the peer is slow to take); shutting
-//! down shuts its socket, and that is what ends it. Every resolved
-//! address is tried (`dial`). A connection whose response ended cleanly and whose peer left it open is kept for
-//! the next request to the same place (`keep`); an idempotent request ([`Ask::Read`]) is retried once on a new
-//! connection if the connection breaks before any response byte arrives.
+//! down shuts its socket, and that is what ends it. Every resolved address is tried (`dial`). A connection
+//! whose response ended cleanly and whose peer left it open is kept for the next request to the same place
+//! (`keep`); an idempotent request ([`Ask::Read`]) is retried once on a new connection if the connection breaks
+//! before any response byte arrives.
 
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
@@ -130,7 +130,7 @@ impl Clock {
     /// looks at shutdown after a slice at most (with no deadline, too) and still runs out exactly at the
     /// deadline.
     ///
-    /// A socket shutting down has shut refuses its timeouts on some systems: a refusal found with the flag
+    /// On some systems a socket closed by shutdown refuses its timeouts: a refusal found with the flag
     /// raised is the cut ([`keep::cut`]), never a stream failure.
     fn bound(&self, tcp: &std::net::TcpStream) -> Result<(), Fail> {
         let left = self.left()?;
@@ -690,7 +690,7 @@ mod tests {
         (said, took)
     }
 
-    /// A socket shutting down has shut may refuse its timeouts (some systems do): with the flag raised that is
+    /// A socket closed by shutdown may refuse its timeouts (some systems do): with the flag raised that is
     /// the cut, counted, never a stream failure.
     #[test]
     fn a_timeout_refused_while_shutting_down_is_the_cut() {

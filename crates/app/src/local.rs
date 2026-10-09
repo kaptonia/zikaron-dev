@@ -1447,8 +1447,8 @@ pub fn disk_rel(doc: Doc, logical: &str, nk: &crate::names::NameKey) -> Result<S
     let parts: Vec<&str> = logical.split('/').collect();
     let bad = || Fault::known(Known::LocalSeal, format!("{} {logical}", doc.tag()));
     let stem = |f: &str, suffix: &str| -> Result<String, Fault> { f.strip_suffix(suffix).map(str::to_string).ok_or_else(bad) };
-    // One judgement: a kind not named by its keyed name keeps its logical name; a kind that is (`Doc::keyed`)
-    // goes by its own arm below, and one with no arm is refused by name, never left at a name that tells.
+    // A kind that is not keyed keeps its logical name. A keyed kind (`Doc::keyed`) is renamed by its arm below;
+    // one with no arm is refused by name, never left under a revealing name.
     if !doc.keyed() {
         return Ok(logical.to_string());
     }

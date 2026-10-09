@@ -201,7 +201,7 @@ fn partial_gets_its_own_exit_code_and_is_never_folded_into_green() {
 #[test]
 fn a_world_that_cannot_answer_is_not_a_world_that_answers_no() {
     let w = scratch("unanswered");
-    // law §9.4: a scan failure is the absence of an answer. No endpoint exits 4, not 1.
+    // `zikaron/1` §9.4: a scan failure is the absence of an answer. No endpoint exits 4, not 1.
     let port = {
         let l = std::net::TcpListener::bind("127.0.0.1:0").expect("绑不到端口");
         let p = l.local_addr().expect("读不出端口").port();

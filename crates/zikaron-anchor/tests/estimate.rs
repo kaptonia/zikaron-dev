@@ -1,11 +1,8 @@
 //! The gas estimate and the command line's estimated send (`send::estimate_gas`, `send::anchor_estimated`).
 //!
-//! The estimate's own forms, one line each: a zero estimate, exactly the ceiling, one past it, a capital prefix,
-//! a quantity past 128 bits, the bare prefix, an answer that is not text, and the head or the estimate failing
-//! in the network kind and in the call's kind. Then the command line's way, on a scripted node that answers
-//! in the shape a node does: the fees first (head, that block, the fee history), then the head again, the
-//! estimate at that pinned head, the nonce, the one broadcast and the receipt; an estimate refused about the
-//! call, refused for a rate limit, or past the ceiling sends nothing at all.
+//! Covers the estimate's edge forms (zero, the ceiling and one past it, malformed quantities, network and call
+//! failures) and the command line's send order on a scripted node: fees, head, estimate at that head, nonce,
+//! one broadcast, receipt. An estimate refused or past the ceiling sends nothing.
 
 use zikaron::json::Value;
 use zikaron_anchor::rpc::{Endpoint, Trouble};

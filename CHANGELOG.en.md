@@ -11,7 +11,7 @@ This release reworks how the app talks to nodes (proxies, rate limits, comparing
 - **Proxy**: Settings > Network has a new "Proxy" setting: System (the default), Off, or Custom proxy (`http://` or `socks5://`). Nodes on this machine are never reached through a proxy. The manual's "Network" section covers VPNs.
 - **Steadier connections**: when a node's address resolves to several IP addresses, each is tried; every request has one overall deadline; a chain read cut off mid-connection is asked once more (a transaction is never sent twice); a rate-limited node is asked again after waits from one table; one request goes to every node at the same time.
 - **Comparing nodes by what each request needs**: each kind of request compares only the facts its result depends on; the chain head is the lowest of the nodes', and a node too far behind is named; nodes serving another chain are left out.
-- **Keys in node addresses stay private**: an access key inside a node address never appears in any message, detail or log.
+- **Keys in node addresses stay private**: an access key inside a node address never appears in any message, detail or log, whatever the address's form (IPv6, no port given, the key in the path).
 - **The main network's registry is checked when saved**: a registry you enter by hand whose code is not the build ZIKARON pins is not saved.
 - IPv6 node addresses can be written in brackets (for example `http://[::1]:8545`).
 - Every request's `User-Agent` names the product only.
@@ -27,8 +27,9 @@ This release reworks how the app talks to nodes (proxies, rate limits, comparing
 
 ### Command line
 
-- **Writing and putting on chain through the desktop**: with `--home <data folder>`, ten writing verbs are done by the running desktop app, the entry shows in its window at once, and the command line holds no key. `anchor` through the desktop follows "Putting on chain from the command line" in Settings > Network: send automatically, or queue only and wait for you to send from the desktop.
+- **Writing and putting on chain through the desktop**: with `--home <data folder>`, eleven writing verbs (`adopt` among them) are done by the running desktop app, the entry shows in its window at once, and the command line holds no key. `anchor` through the desktop follows "Putting on chain from the command line" in Settings > Network: send automatically, or queue only and wait for you to send from the desktop.
 - **Enable command line**: a new switch in Settings > Local data makes `zikaron` available in any terminal (a link in `/usr/local/bin` on macOS and in `~/.local/bin` on Linux, this user's `PATH` on Windows).
+- **Adopting anchor proofs judges a co-signature whole**: a co-signature with only one of its two halves is refused, on the page and on the command line alike.
 - **A rerun never pays twice**: without `--home`, `anchor` records the hashes it signed; when the same command runs again it asks by hash first, answers an included transaction as included and signs no new nonce, and answers `E_TX_VOID` when what it sent lapsed.
 - **`zikaron contract`** prints the command line's own contract (verbs, flags, exit codes, refusal reasons), made from the same tables in the code.
 - A usage error no longer echoes the value you typed (for example a mistyped private key); it names only the flag and where it went wrong.
@@ -44,6 +45,9 @@ This release reworks how the app talks to nodes (proxies, rate limits, comparing
 - **A data folder from elsewhere is refused before it opens**: one that belongs to another identity or another machine is refused without writing a byte.
 - **Entries land on FAT and exFAT volumes** (0.1.1 failed on every entry there).
 - **Whole-machine backups** carry the read-only network list; the backup lamp has four colours (up to date, entries added since, never backed up, last backup failed), and a failed backup is named under Alerts.
+- **A backup never replaces a file**: when the name chosen for a backup is already taken, the next free number is used.
+- **Saving on Windows waits out a busy file**: when another program (a virus scanner, for example) holds a file for a moment, the save tries again for up to a second instead of failing with "no permission".
+- **Programs the app starts never hold its lock**: on macOS and Linux, a program started from the app no longer keeps the data folder locked after the app quits.
 - A broken key file, or one with parameters out of bounds, is refused before any key derivation runs, so it cannot tie up the machine.
 - Recovery words that were shown are wiped from memory on hide, lock and quit; a passcode is wiped as soon as it has been handed on.
 
@@ -68,7 +72,9 @@ This release reworks how the app talks to nodes (proxies, rate limits, comparing
 - A strict ledger read names a zero-byte entry file instead of skipping it.
 - A grant file's length header is read in one spelling only.
 - Closing a panel or overlay no longer flashes its text in the placeholder colour while it fades.
-- Quitting no longer waits for network reads to finish.
+- Quitting no longer waits for network reads to finish: on every system an exchange in flight is cut within a quarter of a second.
+- After the app quits, the command line with `--home` is told at once that the app is not running; on Windows it could be left waiting on a channel the app had already closed.
+- A grant code pasted from a messenger or an email with line breaks, spaces or invisible marks (zero-width characters, a byte-order mark) is read as the code itself.
 
 ### Known limitations
 

@@ -173,10 +173,10 @@ pub struct Row {
     pub unread_network: Option<String>,
 }
 
-/// The network an identity chose, as one closed cell: a row of the known deployments table by its name (a name
-/// a later table has is kept as written), or custom with what one seat filled in (`None` until complete). A row
-/// carrying hand-filled values cannot be held, and choosing another network lets the filled-in values go with
-/// the old choice by construction: the writing and the reading of the choice keep no second guard for it.
+/// The network an identity chose: a row of the known deployments table by name (a name from a later version's
+/// table is kept as written), or custom with what one seat filled in (`None` until complete). The type cannot
+/// hold a row with hand-filled values, and choosing another network drops the filled-in values with the old
+/// choice.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Chosen {
     Row(String),
@@ -987,7 +987,7 @@ pub fn set_network(reg: &mut Registry, id: &str, name: &str) -> Result<Row, Faul
     let Some(r) = reg.rows.iter_mut().find(|r| r.id == id) else {
         return Err(Fault::known(Known::NoIdentity, id.to_string()));
     };
-    // Hand-filled values belong to the custom choice itself, so they go with it by construction.
+    // Hand-filled values belong to the custom choice, so replacing the choice drops them.
     if r.network.as_ref().map(Chosen::name) != Some(name) {
         r.network = Some(Chosen::named(name));
         r.unread_network = None;
@@ -1024,8 +1024,8 @@ fn network_value(chosen: &Chosen) -> Value {
     Value::Obj(m)
 }
 
-/// The network cell read strictly; `None` when any part of it does not read (hand-filled values beside a row's
-/// name among them: a row carries none).
+/// The network cell read strictly; `None` when any part of it does not read, including hand-filled values
+/// next to a row's name (a row carries none).
 fn network_of(v: &Value) -> Option<Chosen> {
     let name = match v.member("name") {
         Some(Value::Str(n)) if crate::deploy::is_choice(n) => n.clone(),
@@ -1367,10 +1367,10 @@ mod tests {
         assert_eq!(held.rows[0].network, None);
     }
 
-    /// The network cell reads into one choice, whatever form an older or later file wrote: a row's name alone;
-    /// custom alone, then with its values; no cell; hand-filled values with no name (no choice, carried); a
-    /// custom cell whose values do not read (custom, nothing filled in, carried); and values beside a row's
-    /// name (the row, its values not taken, carried). Choosing a row afterwards lets custom's values go.
+    /// Every network cell form older or later files write reads into one choice: a row name alone; custom with
+    /// and without values; no cell; values with no name (no choice, carried); custom with unreadable values
+    /// (custom, nothing filled in, carried); values next to a row name (the row, values ignored, carried).
+    /// Choosing a row afterwards drops custom's values.
     #[test]
     fn the_network_cell_reads_into_one_choice() {
         let base = String::from_utf8(Registry { current: None, rows: vec![row(7, Kind::Words)], left: Vec::new() }.to_bytes()).unwrap();
