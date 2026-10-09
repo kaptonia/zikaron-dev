@@ -80,14 +80,21 @@ fn written_as_code(b: &[u8]) -> bool {
 }
 
 /// The grant code that text holds, if it holds one: every white space character is dropped (a line break, a
-/// space, a tab, and a no-break space or any other a messenger or mail client adds, inside the code too) and
-/// what is left is written as a code ([`written_as_code`]). A code has no white space of its own (base64
-/// segments joined by dots), so dropping it changes no code. The one reading for typed text and a file alike;
-/// bytes that are not text hold no code.
+/// space, a tab, and a no-break space or any other a messenger or mail client adds, inside the code too), and
+/// so is every invisible mark that adds no width ([`unseen`]: a zero-width space or joiner, a word joiner, a
+/// soft hyphen, the byte-order mark an editor writes first); what is left is written as a code
+/// ([`written_as_code`]). A code has none of these of its own (base64 segments joined by dots), so dropping
+/// them changes no code. The one reading for typed text and a file alike; bytes that are not text hold no code.
 fn code_in(b: &[u8]) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(b).ok()?;
-    let code: Vec<u8> = text.chars().filter(|c| !c.is_whitespace()).collect::<String>().into_bytes();
+    let code: Vec<u8> = text.chars().filter(|c| !c.is_whitespace() && !unseen(*c)).collect::<String>().into_bytes();
     written_as_code(&code).then_some(code)
+}
+
+/// The invisible marks text picks up on its way that are not white space: zero-width space, non-joiner and
+/// joiner, word joiner, soft hyphen, and the byte-order mark.
+fn unseen(c: char) -> bool {
+    matches!(c, '\u{200B}'..='\u{200D}' | '\u{2060}' | '\u{00AD}' | '\u{FEFF}')
 }
 
 /// Read the input in full: pasted code, payload file, grant file, or entry file.

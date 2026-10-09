@@ -451,6 +451,20 @@ pub(crate) fn admin_refusal(stderr: &str) -> crate::cli_path::Refused {
 mod tests {
     use std::os::unix::fs::PermissionsExt;
 
+    /// A folder reached by a link is the same folder (`same_folder`); a link to another folder is not.
+    #[test]
+    fn a_folder_reached_by_a_link_is_the_same_folder() {
+        let d = std::env::temp_dir().join(format!("zikaron-os-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let other = d.join("other");
+        std::fs::create_dir_all(&other).expect("other");
+        let link = d.join("link");
+        std::os::unix::fs::symlink(&other, &link).expect("a link");
+        assert!(crate::same_folder(&other, &link) && crate::same_folder(&link, &d.join("link").join("..").join("other")), "a link to it");
+        assert!(!crate::same_folder(&d, &link), "a link to another folder");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     /// The dialog's two failure modes map to distinct refusals.
     #[test]
     fn the_administrator_dialog_is_read_by_what_it_said() {

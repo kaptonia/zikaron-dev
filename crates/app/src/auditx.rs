@@ -454,7 +454,7 @@ fn thin_from(answered: &[(u64, String)], chains: &[u64]) -> Vec<u64> {
 }
 
 fn nth_for(eps: &[Endpoint], chain: u64, k: usize) -> Option<String> {
-    let mine: Vec<&String> = eps.iter().filter(|e| e.chain == chain).map(|e| &e.url).collect();
+    let mine: Vec<&str> = eps.iter().filter(|e| e.chain == chain).map(|e| e.url.for_transport()).collect();
     mine.get(k.min(mine.len().saturating_sub(1))).map(|u| (*u).to_string())
 }
 

@@ -143,7 +143,7 @@ pub struct Broadcast {
     /// retries at the same place).
     pub asked: usize,
     /// The endpoint that took it.
-    pub taken: String,
+    pub taken: crate::chainx::NodeAddr,
     /// The nonce it was signed at, when this send chose it (`anchor_send`); a resend's is the batch's own.
     pub nonce: Option<u64>,
 }
@@ -170,17 +170,18 @@ pub struct Broadcast {
 pub fn anchor_send(
     _pass: &crate::exitgate::Pass,
     s: &Secret,
-    urls: &[String],
+    urls: &[crate::chainx::NodeAddr],
     chain: u64,
     registry: Option<[u8; 20]>,
     hashes: &[[u8; 32]],
     fees: zikaron_anchor::send::Fees,
     backoff: &[std::time::Duration],
 ) -> Result<Broadcast, Fault> {
-    let first = urls.first().cloned().unwrap_or_default();
-    let open = |url: &str| {
-        crate::chainx::endpoint_at(url).ok_or_else(|| {
-            Fault::known(Known::SettingsShape, crate::chainx::address_said(url))
+    // The first node, as it may be said (a refusal's evidence names it so).
+    let first = urls.first().map(crate::chainx::NodeAddr::said).unwrap_or_default();
+    let open = |url: &crate::chainx::NodeAddr| {
+        crate::chainx::endpoint_at(url.for_transport()).ok_or_else(|| {
+            Fault::known(Known::SettingsShape, crate::chainx::address_said(url.for_transport()))
         })
     };
     use crate::chainx::Next;
@@ -198,7 +199,7 @@ pub fn anchor_send(
         let mut words: Vec<(usize, Fault)> = Vec::new();
         for (i, url) in urls.iter().enumerate() {
             match open(url) {
-                Ok(h) => nodes.push((url.clone(), h)),
+                Ok(h) => nodes.push((url.for_transport().to_string(), h)),
                 Err(f) => words.push((i, f)),
             }
         }
@@ -222,7 +223,7 @@ pub fn anchor_send(
                         zikaron_anchor::judge::Missing::Unreadable(_) => zikaron_anchor::rpc::Trouble::Transport("nonce 读不出".into()),
                     };
                     let f = crate::chainx::said_fault(&url, &t);
-                    let i = urls.iter().position(|u| *u == url).unwrap_or(usize::MAX);
+                    let i = urls.iter().position(|u| u.for_transport() == url).unwrap_or(usize::MAX);
                     words.push((i, f));
                 }
                 words.sort_by_key(|(i, _)| *i);
@@ -245,8 +246,8 @@ pub fn anchor_send(
 /// read back from the chain, `task::Stuck`) signed again with `fees` by the same key; nothing is sent. A
 /// different key is refused before anything is signed (`AddressMismatch`). The caller records the hash, then
 /// sends the bytes ([`bump_broadcast`]), so a resend that went out is always one the queue watches.
-pub fn bump_sign(_pass: &crate::exitgate::Pass, s: &Secret, urls: &[String], stuck: &crate::task::Stuck, fees: zikaron_anchor::send::Fees) -> Result<(Vec<u8>, [u8; 32]), Fault> {
-    let first = urls.first().cloned().unwrap_or_default();
+pub fn bump_sign(_pass: &crate::exitgate::Pass, s: &Secret, urls: &[crate::chainx::NodeAddr], stuck: &crate::task::Stuck, fees: zikaron_anchor::send::Fees) -> Result<(Vec<u8>, [u8; 32]), Fault> {
+    let first = urls.first().map(|u| u.for_transport().to_string()).unwrap_or_default();
     if s.address().map(|a| a.0) != Some(stuck.from) {
         return Err(Fault::known(Known::AddressMismatch, zikaron::hexfmt::encode(&stuck.from)));
     }
@@ -255,7 +256,7 @@ pub fn bump_sign(_pass: &crate::exitgate::Pass, s: &Secret, urls: &[String], stu
 }
 
 /// Send a signed resend through the single broadcast path ([`broadcast`]), once.
-pub fn bump_broadcast(_pass: &crate::exitgate::Pass, urls: &[String], chain: u64, raw: &[u8], hash: [u8; 32], backoff: &[std::time::Duration]) -> Result<Broadcast, Fault> {
+pub fn bump_broadcast(_pass: &crate::exitgate::Pass, urls: &[crate::chainx::NodeAddr], chain: u64, raw: &[u8], hash: [u8; 32], backoff: &[std::time::Duration]) -> Result<Broadcast, Fault> {
     broadcast(urls, chain, raw, hash, backoff, None)
 }
 
@@ -268,10 +269,11 @@ fn signed_at(s: &Secret, chain: u64, registry: Option<[u8; 20]>, hashes: &[[u8; 
 /// Submit signed bytes endpoint by endpoint (every anchoring transaction goes out here, once per signing):
 /// the first endpoint that echoes the hash took it; one that answers "already pending" or "nonce used" is
 /// asked by hash whether it knows this very transaction.
-fn broadcast(urls: &[String], chain: u64, raw: &[u8], hash: [u8; 32], backoff: &[std::time::Duration], last: Option<Fault>) -> Result<Broadcast, Fault> {
-    let first = urls.first().cloned().unwrap_or_default();
+fn broadcast(urls: &[crate::chainx::NodeAddr], chain: u64, raw: &[u8], hash: [u8; 32], backoff: &[std::time::Duration], last: Option<Fault>) -> Result<Broadcast, Fault> {
+    // The first node, as it may be said (a refusal's evidence names it so).
+    let first = urls.first().map(crate::chainx::NodeAddr::said).unwrap_or_default();
     let mut last = last;
-    let open = |url: &str| crate::chainx::endpoint_at(url).ok_or_else(|| Fault::known(Known::SettingsShape, crate::chainx::address_said(url)));
+    let open = |url: &crate::chainx::NodeAddr| crate::chainx::endpoint_at(url.for_transport()).ok_or_else(|| Fault::known(Known::SettingsShape, crate::chainx::address_said(url.for_transport())));
     use crate::chainx::Next;
     let waits: Vec<std::time::Duration> = std::iter::once(std::time::Duration::ZERO).chain(backoff.iter().copied()).collect();
     // Step 2: submit the same bytes endpoint by endpoint.
@@ -297,7 +299,7 @@ fn broadcast(urls: &[String], chain: u64, raw: &[u8], hash: [u8; 32], backoff: &
                 Ok(()) => return Ok(Broadcast { hash, asked, taken: url.clone(), nonce: None }),
                 Err(t) => {
                     // What the node said, classified only in `chainx::said_fault`.
-                    let f = crate::chainx::said_fault(url, &t);
+                    let f = crate::chainx::said_fault(url.for_transport(), &t);
                     // "Already pending" or "nonce used": ask once by hash; if a node knows the transaction it
                     // was taken (then wait for the receipt), otherwise refuse as before.
                     if crate::chainx::already_taken(&f) && crate::chainx::tx_known(urls, chain, &hash) {
@@ -321,7 +323,7 @@ fn broadcast(urls: &[String], chain: u64, raw: &[u8], hash: [u8; 32], backoff: &
     // next pass anchor again with a new nonce, and if the earlier transaction was also included the batch would
     // be anchored twice.
     if handed && crate::chainx::tx_known(urls, chain, &hash) {
-        let taken = urls.first().cloned().unwrap_or_default();
+        let Some(taken) = urls.first().cloned() else { return Err(last.unwrap_or_else(|| Fault::known(Known::NoEndpoint, first))) };
         return Ok(Broadcast { hash, asked, taken, nonce: None });
     }
     Err(last.unwrap_or_else(|| Fault::known(Known::NoEndpoint, first)))

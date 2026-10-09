@@ -12,8 +12,9 @@
 //! format newer than this one are each refused by name ([`Known::BackupPassword`], [`Known::BackupNotOurs`],
 //! [`Known::BackupTooNew`]); none of them touches the vault or its failure count.
 //!
-//! The file name is `zikaron-backup-YYYY-MM-DD.zikaron` ([`file_stem`], [`EXT`]); it is written aside and
-//! renamed into place (`home::put_at`, 0600), then read back and opened before it counts.
+//! The file name is `zikaron-backup-YYYY-MM-DD.zikaron` ([`file_stem`], [`EXT`]), numbered when taken; it is
+//! landed by a step that never replaces anything already there (`home::land_numbered`, 0600), then read back and
+//! opened before it counts.
 
 use crate::fault::{classify, Fault, Known};
 use crate::local::{Doc, Whose};
@@ -594,32 +595,33 @@ pub struct Exported {
 }
 
 /// Writes a backup into `folder` (vault open). The name is `zikaron-backup-YYYY-MM-DD.zikaron`, numbered if
-/// taken; the file is written aside and renamed (0600), then read back and opened with the same password, and
-/// only then counts: the backup's time, place and count are recorded in the machine settings.
+/// taken, and taken by a landing that never replaces what is there (0600); the file is then read back and opened
+/// with the same password, and only then counts: the backup's time, place and count are recorded in the machine settings.
 pub fn export(folder: &Path, password: &str, now: u64) -> Result<Exported, Fault> {
     crate::trace::mark(crate::feature::Feature::H4);
     let p = collect()?;
     let summary = summary_of(&p, now);
     let package = Wiped(package_bytes(&p));
     let sealed = seal(&package, password, now)?;
-    let chosen = crate::home::choose(&crate::home::Kind::File { stem: file_stem(now), ext: EXT.to_string() }, folder);
-    let dir = chosen.at.parent().map(Path::to_path_buf).unwrap_or_else(|| folder.to_path_buf());
-    let name = chosen.at.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    // Written, then read back: the file on disk must open with the password to the same package. If either step
-    // fails, that is recorded on this machine (`machine::backup_failed`) before it is reported.
-    let landed = (|| -> Result<(), Fault> {
-        crate::home::put_at(&dir, &name, &sealed)?;
-        let back = read_file(&chosen.at)?;
+    // Named and landed in one step, never over anything already there (`home::land_numbered`); written, then
+    // read back: the file on disk must open with the password to the same package. If either step fails, that is
+    // recorded on this machine (`machine::backup_failed`) before it is reported.
+    let landed = (|| -> Result<PathBuf, Fault> {
+        let at = crate::home::land_numbered(folder, &file_stem(now), EXT, &sealed)?;
+        let back = read_file(&at)?;
         let (_, again) = open(&back, password)?;
         if again.0 != package.0 {
-            return Err(Fault::known(Known::BackupNotLanded, chosen.at.display().to_string()));
+            return Err(Fault::known(Known::BackupNotLanded, at.display().to_string()));
         }
-        Ok(())
+        Ok(at)
     })();
-    if let Err(f) = landed {
-        let _ = crate::machine::update(|m| m.backup_failed = Some(now));
-        return Err(f);
-    }
+    let at = match landed {
+        Ok(at) => at,
+        Err(f) => {
+            let _ = crate::machine::update(|m| m.backup_failed = Some(now));
+            return Err(f);
+        }
+    };
     // The file was written and read back, so clear the failure flag whatever the bookkeeping below reports.
     crate::machine::update(|m| m.backup_failed = None)?;
     // Unreadable settings are refused before the index is written.
@@ -627,10 +629,10 @@ pub fn export(folder: &Path, password: &str, now: u64) -> Result<Exported, Fault
     write_index(now, &p.files.iter().map(|f| (f.doc, f.rel.clone())).collect::<Vec<_>>())?;
     let count = count_now()?;
     crate::machine::update(|m| {
-        m.backup = Some(crate::machine::Backed { at: now, path: chosen.at.display().to_string(), count, indexed: true });
+        m.backup = Some(crate::machine::Backed { at: now, path: at.display().to_string(), count, indexed: true });
         m.backup_failed = None;
     })?;
-    Ok(Exported { path: chosen.at, summary })
+    Ok(Exported { path: at, summary })
 }
 
 /// Opens a backup with its password and reports what it holds (nothing on this machine changes; works while

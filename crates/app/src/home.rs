@@ -756,15 +756,44 @@ impl Chosen {
 fn numbered(dir: &Path, stem: &str, ext: Option<&str>, first: Why) -> Chosen {
     let mut n = 1u32;
     loop {
-        let name = match (n, ext) {
-            (1, None) => stem.to_string(),
-            (1, Some(e)) => format!("{stem}.{e}"),
-            (k, None) => format!("{stem}-{k}"),
-            (k, Some(e)) => format!("{stem}-{k}.{e}"),
-        };
-        let p = dir.join(name);
+        let p = dir.join(numbered_name(stem, ext, n));
         if !p.exists() {
             return Chosen { at: p, why: if n == 1 { first } else { Why::NameTaken } };
+        }
+        n += 1;
+    }
+}
+
+/// The `n`th landing name for a stem: the stem itself first, then `stem-2`, `stem-3`… (the extension after).
+fn numbered_name(stem: &str, ext: Option<&str>, n: u32) -> String {
+    match (n, ext) {
+        (1, None) => stem.to_string(),
+        (1, Some(e)) => format!("{stem}.{e}"),
+        (k, None) => format!("{stem}-{k}"),
+        (k, Some(e)) => format!("{stem}-{k}.{e}"),
+    }
+}
+
+/// Lands `bytes` (owner only) as a new file in `dir` under the first free numbered name (`stem.ext`, then
+/// `stem-2.ext`…), and returns where. Naming and landing are one step: the name is taken by a landing that never
+/// replaces anything already there (`zikaron_glue::landing`, a hard link or a non-replacing rename), and a name
+/// found taken at that moment, whatever holds it (a file, a folder, a read-only file), moves on to the next
+/// number. Nothing already in `dir` is ever overwritten; any other failure is refused by name.
+pub fn land_numbered(dir: &Path, stem: &str, ext: &str, bytes: &[u8]) -> Result<PathBuf, Fault> {
+    if crate::task::ticket_void() {
+        return Err(crate::task::void_ticket_fault(dir));
+    }
+    std::fs::create_dir_all(dir).map_err(|e| classify(&e, &dir.display().to_string()))?;
+    let mut n = 1u32;
+    loop {
+        let p = dir.join(numbered_name(stem, Some(ext), n));
+        // `symlink_metadata`: a link at the name (even a broken one) holds it too.
+        if std::fs::symlink_metadata(&p).is_err() {
+            match zikaron_glue::landing::land_bytes_for(zikaron_glue::landing::Readers::Owner, &p, bytes) {
+                Ok(()) => return Ok(p),
+                Err(zikaron_glue::landing::Trouble::Occupied(_)) => {}
+                Err(t) => return Err(Fault::of_landing(t)),
+            }
         }
         n += 1;
     }

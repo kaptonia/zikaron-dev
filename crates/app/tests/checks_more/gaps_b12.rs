@@ -271,19 +271,19 @@ fn the_app_cell_and_the_command_line_read_an_item_alike() {
     let (mut shell, base) = bench("cell");
     home(&mut shell, &base, "a");
     let url = "https://node.example/v3";
-    let cell = |shell: &mut app::shell::Shell, spec: &str| -> Option<Vec<String>> {
+    let cell = |shell: &mut app::shell::Shell, spec: &str| -> Option<Vec<app::chainx::Endpoint>> {
         match apply(shell, Action::SetEndpoints { specs: spec.to_string() }) {
             Applied::Trouble(f) => {
                 assert_eq!(f.which(), Some(app::fault::Known::SettingsShape), "{spec:?}: {f:?}");
                 None
             }
-            _ => Some(shell.endpoints.iter().map(|e| e.spec()).collect()),
+            _ => Some(shell.endpoints.clone()),
         }
     };
     let one = |spec: &str| zikaron_anchor::rpc::endpoint_spec(spec).ok().map(|(c, u)| vec![format!("{c}={u}")]);
     // Taken alike: white space at either end only.
     for spec in [format!("1={url}"), format!("  1={url}\t"), format!("\n1={url} ")] {
-        assert_eq!(cell(&mut shell, &spec), Some(vec![format!("1={url}")]), "{spec:?}");
+        assert_eq!(cell(&mut shell, &spec), Some(vec![app::chainx::Endpoint::at(1, url)]), "{spec:?}");
         assert_eq!(one(&spec), Some(vec![format!("1={url}")]), "{spec:?}");
     }
     // Refused alike: white space around the `=`, inside the address, a tab, a line end.

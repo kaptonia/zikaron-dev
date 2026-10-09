@@ -562,7 +562,7 @@ pub enum Done {
     Submitted {
         tx: String,
         chain: u64,
-        url: String,
+        url: crate::chainx::NodeAddr,
         ids: Vec<String>,
         gas: Option<u64>,
         queue: crate::queue::Queue,

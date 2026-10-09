@@ -2305,7 +2305,7 @@ fn the_send_card_says_when_its_cap_is_the_fallback() {
 fn the_app_reads_an_endpoint_spelling_as_the_command_line_does() {
     for s in [" 1=https://a.example", "1= https://a.example", "01=https://a.example", "+1=https://a.example", "1=https://a/?k=v", "1==x", "1", "=x", "-1=x", "1=", "1=  ", "18446744073709551616=x"] {
         let app = app::chainx::Endpoint::parse(s).map(|e| (e.chain, e.url));
-        assert_eq!(app, zikaron_anchor::rpc::endpoint_spec(s).ok(), "{s:?}");
+        assert_eq!(app, zikaron_anchor::rpc::endpoint_spec(s).ok().map(|(c, u)| (c, app::chainx::NodeAddr::new(u))), "{s:?}");
     }
 }
 
@@ -3044,8 +3044,8 @@ fn opening_a_home_is_judged_in_one_place() {
     }
 }
 
-/// Key files are owner-only, while files handed to the counterpart stay readable: each caller names
-/// [`Readers`] per item.
+/// Key files and whole-machine backups are owner-only, while files handed to the counterpart stay readable:
+/// each caller names [`Readers`] per item.
 #[test]
 fn the_exported_key_file_is_for_its_owner_only_and_the_rest_are_not() {
     let code = code_only(&read_src_file("action.rs").expect("读不出 action.rs"));
@@ -3054,12 +3054,16 @@ fn the_exported_key_file_is_for_its_owner_only_and_the_rest_are_not() {
         code.contains("land_bytes_for(zikaron_glue::landing::Readers::Owner, &path, &ks.json)"),
         "导出密钥文件那一路该具名 Readers::Owner"
     );
-    // No blanket rule: exactly one place writes with `Owner`.
+    // The backup's numbered landing names `Owner` too (a backup is the whole machine, sealed, for its owner).
+    let home = code_only(&read_src_file("home.rs").expect("读不出 home.rs"));
+    let numbered = home.split("pub fn land_numbered(").nth(1).and_then(|b| b.split("\npub fn ").next()).unwrap_or_default();
+    assert!(numbered.contains("land_bytes_for(zikaron_glue::landing::Readers::Owner, &p, bytes)"), "备份起名落档那一处该具名 Readers::Owner");
+    // No blanket rule: exactly those two places write with `Owner`.
     let mut owner = 0usize;
     for (_, text) in shipped() {
         owner += code_only(&text).matches("Readers::Owner").count();
     }
-    assert_eq!(owner, 1, "具名 Owner 的落档现数 {owner} 处(只该是密钥文件那一路)");
+    assert_eq!(owner, 2, "具名 Owner 的落档现数 {owner} 处(只该是密钥文件与整机备份两路)");
     // The permission is set in one statement and the temporary file has it from creation (moving into place
     // uses a hard link, keeping the same inode's permission).
     let landing = std::fs::read_to_string(
@@ -3448,7 +3452,7 @@ fn the_post_landing_test_hook_is_set_only_by_test_code() {
 fn what_the_node_said_is_dispatched_in_one_place() {
     let sign = code_only(&read_src_file("sign.rs").expect("读不出 sign.rs"));
     assert!(!sign.contains("Known::SendFailed"), "发锚那一路不许再把节点的话压成 SEND_FAILED");
-    assert!(sign.contains("crate::chainx::said_fault(url, &t)"), "发锚那一路按节点说的话分派");
+    assert!(sign.contains("crate::chainx::said_fault(url.for_transport(), &t)"), "发锚那一路按节点说的话分派");
     for k in [
         "NonceUsed", "AlreadyPending", "Underpriced", "GasTooLow", "ContractRefused", "RateLimited", "MethodMissing",
         "NodeAuth", "WrongChain", "NodeRefused", "NodeTls", "NodeTimeout", "AnswerTooLong", "AnswerNotJson",
@@ -4342,7 +4346,7 @@ fn a_revert_asked_of_the_nodes_says_what_the_contract_said() {
             let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes());
         }
     });
-    let eps = vec![app::chainx::Endpoint { chain: 31337, url: format!("http://127.0.0.1:{port}") }];
+    let eps = vec![app::chainx::Endpoint::at(31337, format!("http://127.0.0.1:{port}"))];
     let f = app::chainx::ask(&eps, "eth_estimateGas", &zikaron::json::Value::Arr(Vec::new())).err().expect("refused");
     assert_eq!(f.which(), Some(app::fault::Known::ContractRefused));
     assert!(f.tail().contains("reason: nope"), "{}", f.tail());
@@ -4602,7 +4606,8 @@ fn a_task_whose_home_moved_on_writes_nothing() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The ticket is checked only at the write gates (`home::put_at`, the ledger's append), never by a task.
+/// The ticket is checked only at the write gates (`home::put_at`, `home::land_numbered`, the ledger's append),
+/// never by a task.
 #[test]
 fn the_ticket_is_asked_only_at_the_write_gates() {
     let mut at: Vec<String> = Vec::new();
@@ -4613,10 +4618,12 @@ fn the_ticket_is_asked_only_at_the_write_gates() {
         }
     }
     at.sort();
-    assert_eq!(at, vec!["home.rs".to_string(), "local.rs".to_string(), "task.rs".to_string()], "查票只在写口");
+    assert_eq!(at, vec!["home.rs".to_string(), "home.rs".to_string(), "local.rs".to_string(), "task.rs".to_string()], "查票只在写口");
     let home = code_only(&read_src_file("home.rs").unwrap());
     let put_at = home.split("pub fn put_at(").nth(1).and_then(|b| b.split("\npub fn ").next()).unwrap_or_default();
     assert!(put_at.contains("ticket_void()"), "put_at 收票");
+    let numbered = home.split("pub fn land_numbered(").nth(1).and_then(|b| b.split("\npub fn ").next()).unwrap_or_default();
+    assert!(numbered.contains("ticket_void()"), "land_numbered 收票");
     let local = code_only(&read_src_file("local.rs").unwrap());
     let append = local.split("pub fn append(").nth(1).and_then(|b| b.split("\n    pub fn ").next()).unwrap_or_default();
     assert!(append.contains("ticket_void()"), "账本追加收票");

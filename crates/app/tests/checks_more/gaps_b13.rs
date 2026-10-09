@@ -43,7 +43,7 @@ fn the_node_cell_reads_an_address_as_the_command_line_does() {
             }
             _ => {
                 assert!(reads, "{spec:?} taken");
-                assert_eq!(shell.endpoints.iter().map(|e| e.spec()).collect::<Vec<_>>().len(), 1, "{spec:?}");
+                assert_eq!(shell.endpoints.len(), 1, "{spec:?}");
             }
         }
         let typed = app::chainx::Endpoint::typed(spec);

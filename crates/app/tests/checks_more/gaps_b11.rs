@@ -77,7 +77,7 @@ fn estimate_refused_at(name: &str, address: Option<&str>, head: Option<&'static 
     shell.settings.chain_id = Some(31337);
     shell.settings.registry = Some(app::key::Address([0x11; 20]));
     let url = address.map(str::to_string).unwrap_or_else(|| node(head, estimate));
-    shell.endpoints = vec![app::chainx::Endpoint { chain: 31337, url }];
+    shell.endpoints = vec![app::chainx::Endpoint::at(31337, url)];
     let said = match apply_settled(&mut shell, Action::EstimateGas { count: 1 }) {
         Applied::Trouble(f) => f.which(),
         other => panic!("the estimate was not refused: {other:?}"),

@@ -253,7 +253,7 @@ mod tests {
         assert!(took >= Duration::from_millis(300) && took < Duration::from_millis(300 + 1500), "took {took:?}");
     }
 
-    /// Closing down while resolving fails at once as closed, not at the deadline.
+    /// Closing down while resolving fails at once as closed, not at the deadline, and counts as one cut.
     #[test]
     fn closing_down_while_resolving_is_closed() {
         let _turn = keep::turn();
@@ -268,10 +268,13 @@ mod tests {
             (resolve_with(&t, &clock, slow).err(), began.elapsed())
         });
         std::thread::sleep(Duration::from_millis(100));
+        let cut_before = keep::cuts();
         keep::close_down();
         let (said, took) = asking.join().expect("the resolving thread");
+        let cut_after = keep::cuts();
         keep::open_up();
         assert_eq!(said, Some(Fail::Closed));
+        assert_eq!(cut_after, cut_before + 1, "the cut leaves its trace, once");
         assert!(took < Duration::from_secs(1), "at once, not at the resolver's pace: {took:?}");
     }
 
@@ -296,7 +299,8 @@ mod tests {
         assert!(took >= cap && took < cap + Duration::from_millis(1500), "took {took:?}");
     }
 
-    /// Closing down while every address is still connecting fails at once as closed, not at the cap.
+    /// Closing down while every address is still connecting fails at once as closed, not at the cap, and counts
+    /// as one cut.
     #[test]
     fn closing_down_while_connecting_is_closed() {
         let _turn = keep::turn();
@@ -310,12 +314,15 @@ mod tests {
             (race(&[a("127.0.0.2:9"), a("127.0.0.3:9")], &clock, swallow).err().map(|f| f == Fail::Closed), began.elapsed())
         });
         std::thread::sleep(STAGGER + Duration::from_millis(50));
+        let cut_before = keep::cuts();
         let raised = Instant::now();
         keep::raise_flag_only();
         let (closed, _) = asking.join().expect("the connecting thread");
         let took = raised.elapsed();
+        let cut_after = keep::cuts();
         keep::open_up();
         assert_eq!(closed, Some(true));
+        assert_eq!(cut_after, cut_before + 1, "the cut leaves its trace, once");
         assert!(took < SLICE * 4, "within a slice or so, not at the cap: {took:?}");
     }
 

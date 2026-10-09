@@ -398,8 +398,8 @@ mod tests {
         assert_eq!(home_from(Some("".into()), none), None);
     }
 
-    /// A folder is itself however it is spelled (a trailing separator, a `.` step, a link to it); another folder,
-    /// and a path that is not there spelled otherwise, are not.
+    /// A folder is itself however it is spelled (a trailing separator, a `.` step; a link to it is in the
+    /// platform's own tests); another folder, and a path that is not there spelled otherwise, are not.
     #[test]
     fn a_folder_is_the_same_however_it_is_spelled() {
         let d = scratch("same");

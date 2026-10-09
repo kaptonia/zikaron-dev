@@ -15,11 +15,66 @@ use zikaron_anchor::endpoints;
 use zikaron_anchor::rpc;
 use zikaron_anchor::wire;
 
-/// One endpoint: chain id and url.
+/// A node's address as written, which may carry a key in its path, query or user part. It is said only through
+/// the one seam that leaves those out (`zikaron_net::sayable`): `Display` and `Debug` are that seam, and
+/// [`NodeAddr::said`] spells it. Its written form goes only to the transport and to this machine's own
+/// settings, inside this crate ([`NodeAddr::for_transport`]); nothing outside the crate can read it back, so no
+/// sentence, log line, refusal or answer built anywhere from a node can carry the key.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NodeAddr(String);
+
+impl NodeAddr {
+    /// A node's address, as written.
+    pub fn new(written: impl Into<String>) -> NodeAddr {
+        NodeAddr(written.into())
+    }
+
+    /// The address as it may be said: scheme, host and port only (`zikaron_net::sayable`).
+    pub fn said(&self) -> String {
+        zikaron_net::sayable(&self.0)
+    }
+
+    /// Which place the address names (`zikaron_net::place_key`): what keeps facts about nodes apart. It carries
+    /// the path, so it stays inside this crate too.
+    pub(crate) fn place(&self) -> String {
+        zikaron_net::place_key(&self.0)
+    }
+
+    /// The written form, for the transport (and this machine's settings) only.
+    pub(crate) fn for_transport(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for NodeAddr {
+    fn from(s: String) -> NodeAddr {
+        NodeAddr(s)
+    }
+}
+
+impl From<&str> for NodeAddr {
+    fn from(s: &str) -> NodeAddr {
+        NodeAddr(s.to_string())
+    }
+}
+
+impl std::fmt::Display for NodeAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.said())
+    }
+}
+
+impl std::fmt::Debug for NodeAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("NodeAddr").field(&self.said()).finish()
+    }
+}
+
+/// One endpoint: chain id and the node's address.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint {
     pub chain: u64,
-    pub url: String,
+    pub url: NodeAddr,
 }
 
 impl Endpoint {
@@ -27,7 +82,12 @@ impl Endpoint {
     /// (`zikaron_anchor::rpc::endpoint_spec`).
     pub fn parse(spec: &str) -> Option<Endpoint> {
         let (chain, url) = zikaron_anchor::rpc::endpoint_spec(spec).ok()?;
-        Some(Endpoint { chain, url })
+        Some(Endpoint { chain, url: NodeAddr(url) })
+    }
+
+    /// An endpoint for a chain at a node.
+    pub fn at(chain: u64, url: impl Into<NodeAddr>) -> Endpoint {
+        Endpoint { chain, url: url.into() }
     }
 
     /// A node entry a person typed (node fields, the check page's nodes): the form is parsed by
@@ -39,12 +99,13 @@ impl Endpoint {
         // An unparseable entry is described the way nodes are (`zikaron_net::sayable`: a non-address is
         // described by its length), never echoed, so a key typed into it cannot leak into messages or logs.
         let e = Endpoint::parse(spec).ok_or_else(|| crate::lang::filln(crate::lang::Key::Tail008, &[&zikaron_net::sayable(spec)]))?;
-        zikaron_anchor::rpc::read_address(&e.url).map_err(|_| address_said(&e.url))?;
+        zikaron_anchor::rpc::read_address(e.url.for_transport()).map_err(|_| address_said(e.url.for_transport()))?;
         Ok(e)
     }
 
-    pub fn spec(&self) -> String {
-        format!("{}={}", self.chain, self.url)
+    /// The written `<chain>=<url>` form, for this machine's settings and the person's own node editor.
+    pub(crate) fn spec(&self) -> String {
+        format!("{}={}", self.chain, self.url.for_transport())
     }
 }
 
@@ -168,7 +229,7 @@ pub fn already_taken(f: &Fault) -> bool {
 /// Whether any node knows this transaction (asked by hash; the first non-empty answer). "Already pending",
 /// "nonce used" and "submitted but no answer anywhere" are decided only by this: known means it went out,
 /// unknown means it did not (the refusal's wording alone decides nothing).
-pub fn tx_known(urls: &[String], chain: u64, hash: &[u8; 32]) -> bool {
+pub fn tx_known(urls: &[NodeAddr], chain: u64, hash: &[u8; 32]) -> bool {
     let q = Value::Arr(vec![Value::Str(zikaron::hexfmt::encode(hash))]);
     urls.iter().any(|u| {
         let ep = Endpoint { chain, url: u.clone() };
@@ -430,14 +491,14 @@ fn ask_all(eps: &[Endpoint], method: &str, params: &Value) -> (Vec<(String, Resu
     let mut nodes: Vec<(String, Box<dyn rpc::Endpoint + Send>)> = Vec::new();
     let mut unread: Vec<String> = Vec::new();
     for e in eps {
-        let place = zikaron_net::place_key(&e.url);
+        let place = e.url.place();
         if seen.contains(&place) {
             continue;
         }
         seen.push(place);
-        match endpoint_at(&e.url) {
-            Some(h) => nodes.push((e.url.clone(), h)),
-            None => unread.push(address_said(&e.url)),
+        match endpoint_at(e.url.for_transport()) {
+            Some(h) => nodes.push((e.url.for_transport().to_string(), h)),
+            None => unread.push(address_said(e.url.for_transport())),
         }
     }
     (endpoints::ask_each(nodes, method, params), unread)
@@ -650,7 +711,7 @@ pub fn serving(eps: &[Endpoint], chain: u64) -> Result<(Vec<Endpoint>, Vec<Strin
     let mine: Vec<Endpoint> = eps.iter().filter(|e| e.chain == chain).cloned().collect();
     let unknown: Vec<Endpoint> = {
         let known = SERVES.lock().unwrap_or_else(|e| e.into_inner());
-        mine.iter().filter(|e| !known.contains_key(&zikaron_net::place_key(&e.url))).cloned().collect()
+        mine.iter().filter(|e| !known.contains_key(&e.url.place())).cloned().collect()
     };
     if !unknown.is_empty() {
         let (answers, _) = ask_all(&unknown, "eth_chainId", &Value::Arr(Vec::new()));
@@ -665,8 +726,8 @@ pub fn serving(eps: &[Endpoint], chain: u64) -> Result<(Vec<Endpoint>, Vec<Strin
     let mut kept = Vec::new();
     let mut left: Vec<String> = Vec::new();
     for e in mine {
-        match known.get(&zikaron_net::place_key(&e.url)) {
-            Some(id) if *id != chain => left.push(crate::lang::filln(crate::lang::Key::TailWrongChainNode, &[&zikaron_net::sayable(&e.url), &id.to_string(), &chain.to_string()])),
+        match known.get(&e.url.place()) {
+            Some(id) if *id != chain => left.push(crate::lang::filln(crate::lang::Key::TailWrongChainNode, &[&e.url.said(), &id.to_string(), &chain.to_string()])),
             _ => kept.push(e),
         }
     }
@@ -679,12 +740,12 @@ pub fn serving(eps: &[Endpoint], chain: u64) -> Result<(Vec<Endpoint>, Vec<Strin
 /// A transaction in full as one node of this chain holds it (`eth_getTransactionByHash`, not trimmed to the
 /// judging table's facts): the first serving node that knows it answers. Used where one node's own answer is
 /// what matters: a resend re-signs exactly the transaction a node holds, never an agreement of several.
-pub fn tx_as_held(urls: &[String], chain: u64, tx: &str) -> Option<Value> {
+pub fn tx_as_held(urls: &[NodeAddr], chain: u64, tx: &str) -> Option<Value> {
     let eps: Vec<Endpoint> = urls.iter().map(|u| Endpoint { chain, url: u.clone() }).collect();
     let (eps, _) = serving(&eps, chain).ok()?;
     let q = Value::Arr(vec![Value::Str(tx.to_string())]);
     eps.iter().find_map(|e| {
-        let mut ep = endpoint_at(&e.url)?;
+        let mut ep = endpoint_at(e.url.for_transport())?;
         let got = ep.call("eth_getTransactionByHash", &q).ok()?;
         wire::to_core(&got).filter(|v| matches!(v, Value::Obj(_)))
     })

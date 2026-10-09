@@ -53,7 +53,7 @@ fn erring(err: &str) -> String {
 /// The estimate asked of these places: the member said and whether it is about the call.
 fn estimate(urls: &[String]) -> (Option<Known>, bool) {
     zikaron_anchor::patience::set_waits(Some(std::time::Duration::ZERO));
-    let eps: Vec<Endpoint> = urls.iter().map(|u| Endpoint { chain: 31337, url: u.clone() }).collect();
+    let eps: Vec<Endpoint> = urls.iter().map(|u| Endpoint::at(31337, u.as_str())).collect();
     match ask_call(&eps, "eth_estimateGas", &Value::Arr(Vec::new())) {
         Ok(r) => panic!("answered: {:?}", r.value),
         Err((f, call)) => (f.which(), call),

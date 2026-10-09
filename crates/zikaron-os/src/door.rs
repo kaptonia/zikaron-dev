@@ -80,6 +80,11 @@ impl Listener {
     /// is at the other end are two steps; the test hook ([`pretend_stranger`]) is asked between them, before
     /// the OS, so a client that hangs up meanwhile does not change the answer.
     pub fn accept(&self) -> std::io::Result<Option<Stream>> {
+        // Closed already: the wake-up the close sent may have been taken by an earlier `accept`, so this one is
+        // not left waiting for a client that can no longer come.
+        if self.shut.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
         let got = self.door.accept();
         if self.shut.load(Ordering::SeqCst) {
             return Ok(None);
@@ -92,9 +97,11 @@ impl Listener {
 }
 
 impl Closer {
-    /// Close the endpoint: a waiting `accept` wakes and returns `None`, and once this returns nobody can reach
-    /// the endpoint any more (a connect finds nothing there: `NotFound`), on every system. Connections accepted
-    /// earlier remain the caller's to finish. Closing twice does nothing more.
+    /// Close the endpoint: a waiting `accept` wakes and returns `None` (as does every `accept` after), and once
+    /// this returns nobody new is taken: a connect finds nothing there (`NotFound`), at once where the endpoint
+    /// is a path, and where it is a pipe once a conversation accepted earlier is over (that one instance keeps
+    /// the name busy meanwhile). Connections accepted earlier remain the caller's to finish. Closing twice does
+    /// nothing more.
     pub fn close(&self) {
         if !self.shut.swap(true, Ordering::SeqCst) {
             crate::imp::door_close(&self.place, self.door.upgrade().as_deref());
@@ -322,7 +329,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    /// Closing twice does nothing more: no hang, the door stays closed, the waiter gets `None` once.
+    /// Closing twice does nothing more: no hang, the door stays closed, the waiter gets `None`, and so does every
+    /// `accept` after it.
     #[test]
     fn closing_twice_does_nothing_more() {
         let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
@@ -334,6 +342,7 @@ mod tests {
         other.close();
         assert!(closer.closed() && other.closed());
         assert!(l.accept().expect("closed").is_none());
+        assert!(l.accept().expect("closed").is_none(), "asked again after the close: `None`, never a wait");
         assert_eq!(connect(&at).err().map(|e| e.kind()), Some(std::io::ErrorKind::NotFound));
         let _ = std::fs::remove_dir_all(&d);
     }

@@ -167,7 +167,7 @@ fn bench(name: &str, nodes: &[&Node]) -> app::shell::Shell {
 
 /// Make `nodes` the shell's endpoints and estimate the batch of one over them, so it may be sent.
 fn point(shell: &mut app::shell::Shell, name: &str, nodes: &[&Node]) {
-    shell.endpoints = nodes.iter().map(|n| app::chainx::Endpoint { chain: 31337, url: n.url.clone() }).collect();
+    shell.endpoints = nodes.iter().map(|n| app::chainx::Endpoint::at(31337, n.url.clone())).collect();
     match apply_settled(shell, Action::EstimateGas { count: 1 }) {
         Applied::Gas { count: 1, .. } => {}
         other => panic!("{name}: the batch was not estimated: {other:?}"),
@@ -299,7 +299,7 @@ fn one_signing_the_same_bytes_to_every_node_and_the_echo_must_match() {
     }
     match got {
         Ok(Done::Submitted { tx, url, .. }) => {
-            assert_eq!(url, right.url, "{form}: the node whose echo matched took it");
+            assert_eq!(url, app::chainx::NodeAddr::new(right.url.clone()), "{form}: the node whose echo matched took it");
             assert_eq!(tx, hash_of(&raw), "{form}: the hash of the bytes handed over");
         }
         other => panic!("{form}: sent: {other:?}"),
@@ -351,7 +351,7 @@ fn already_taken_answers_are_asked_by_hash_and_no_new_nonce_is_signed() {
             assert!(asked.iter().all(|h| *h == hash), "{form}: by the hash signed: {asked:?} against {hash}");
             if known {
                 match got {
-                    Ok(Done::Submitted { tx, url, .. }) => assert_eq!((tx, url), (hash, n.url.clone()), "{form}: taken"),
+                    Ok(Done::Submitted { tx, url, .. }) => assert_eq!((tx, url), (hash, app::chainx::NodeAddr::new(n.url.clone())), "{form}: taken"),
                     other => panic!("{form}: a transaction the node knows was taken: {other:?}"),
                 }
             } else {

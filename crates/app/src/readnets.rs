@@ -84,7 +84,7 @@ impl Net {
 
     /// Its nodes as endpoints of its chain.
     pub fn endpoints(&self) -> Vec<crate::chainx::Endpoint> {
-        self.nodes.iter().map(|u| crate::chainx::Endpoint { chain: self.chain_id, url: u.clone() }).collect()
+        self.nodes.iter().map(|u| crate::chainx::Endpoint::at(self.chain_id, u.as_str())).collect()
     }
 
     fn value(&self) -> Value {

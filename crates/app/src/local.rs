@@ -1447,6 +1447,11 @@ pub fn disk_rel(doc: Doc, logical: &str, nk: &crate::names::NameKey) -> Result<S
     let parts: Vec<&str> = logical.split('/').collect();
     let bad = || Fault::known(Known::LocalSeal, format!("{} {logical}", doc.tag()));
     let stem = |f: &str, suffix: &str| -> Result<String, Fault> { f.strip_suffix(suffix).map(str::to_string).ok_or_else(bad) };
+    // One judgement: a kind not named by its keyed name keeps its logical name; a kind that is (`Doc::keyed`)
+    // goes by its own arm below, and one with no arm is refused by name, never left at a name that tells.
+    if !doc.keyed() {
+        return Ok(logical.to_string());
+    }
     Ok(match (doc, parts.as_slice()) {
         (Doc::Entry, [_, f]) => format!("{}/{}{}", Slot::Ledger.as_str(), nk.name(L::Entry(&stem(f, zikaron_store::layout::ENTRY_SUFFIX)?)), zikaron_store::layout::ENTRY_SUFFIX),
         (Doc::Held, [_, f]) => format!("{}/{}{}", Slot::GrantsHeld.as_str(), nk.name(L::Held(&stem(f, zikaron_store::layout::ENTRY_SUFFIX)?)), zikaron_store::layout::ENTRY_SUFFIX),
@@ -1460,8 +1465,7 @@ pub fn disk_rel(doc: Doc, logical: &str, nk: &crate::names::NameKey) -> Result<S
             let g = f.strip_prefix("grant-").and_then(|x| x.strip_suffix(".json")).ok_or_else(bad)?;
             format!("{}/{}/grant-{}.json", Slot::Kits.as_str(), crate::termsx::ROOM, nk.name(L::TermsRecord(g)))
         }
-        (Doc::Entry | Doc::Held | Doc::Verdict | Doc::KeptGrant | Doc::TermsDoc | Doc::TermsRecord, _) => return Err(bad()),
-        _ => logical.to_string(),
+        _ => return Err(bad()),
     })
 }
 
@@ -1628,7 +1632,7 @@ fn names_out_of_date(nk: &crate::names::NameKey) -> Result<bool, Fault> {
         }
     }
     for f in all_files()? {
-        if matches!(f.doc, Doc::Entry | Doc::Held | Doc::Verdict | Doc::KeptGrant | Doc::TermsDoc | Doc::TermsRecord) {
+        if f.doc.keyed() {
             let raw = std::fs::read(&f.at).map_err(|e| classify(&e, &f.at.display().to_string()))?;
             let mut plain = open_with(&key, &expect_found(&f)?, &raw, &f.rel)?;
             let want = disk_rel(f.doc, &logical_rel(f.doc, &f.rel, &plain)?, nk)?;

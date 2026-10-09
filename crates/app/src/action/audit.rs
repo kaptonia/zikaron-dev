@@ -100,7 +100,8 @@ pub(super) fn set_basis(
     // as for read-only networks; see [`basis_read`]). With no node for this chain yet there is nothing to ask:
     // the basis is saved as typed and shows "not checked" (people often fill the basis before the nodes), and
     // the same check runs when nodes for this chain are saved ([`check_basis_after_nodes`]).
-    let nodes: Vec<String> = shell.endpoints.iter().filter(|e| e.chain == c).map(|e| e.url.clone()).collect();
+    // The read-only network's node list keeps its written form (it is the same kind of list the machine keeps).
+    let nodes: Vec<String> = shell.endpoints.iter().filter(|e| e.chain == c).map(|e| e.url.for_transport().to_string()).collect();
     if nodes.is_empty() {
         write_basis(shell, c, r, f)?;
         shell.basis_read = Some((c, r, None));
@@ -130,7 +131,8 @@ pub(super) fn check_basis_after_nodes(shell: &mut Shell) {
     if crate::deploy::KNOWN.iter().any(|d| d.chain_id == c && d.registry_address() == r) {
         return;
     }
-    let nodes: Vec<String> = shell.endpoints.iter().filter(|e| e.chain == c).map(|e| e.url.clone()).collect();
+    // The read-only network's node list keeps its written form (it is the same kind of list the machine keeps).
+    let nodes: Vec<String> = shell.endpoints.iter().filter(|e| e.chain == c).map(|e| e.url.for_transport().to_string()).collect();
     if nodes.is_empty() {
         return;
     }
@@ -156,7 +158,7 @@ pub fn basis_stamp(shell: &Shell, c: u64) -> BasisStamp {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (s.chain_id, s.registry.map(|r| r.0), s.from_block, s.network.clone()).hash(&mut h);
     let cell = h.finish();
-    let mut nodes: Vec<&str> = shell.endpoints.iter().filter(|e| e.chain == c).map(|e| e.url.as_str()).collect();
+    let mut nodes: Vec<&str> = shell.endpoints.iter().filter(|e| e.chain == c).map(|e| e.url.for_transport()).collect();
     nodes.sort_unstable();
     let mut h = std::collections::hash_map::DefaultHasher::new();
     nodes.hash(&mut h);

@@ -542,8 +542,9 @@ answered `E_DESKTOP` with `detail` `CLOSED`. The machine folder is found as the 
 **Order.** The arguments are read and misuse is judged exactly as without `--home`, before the desktop is asked
 (exit 2, nothing on stdout): each verb takes `--home` and the flags of its row below, and nothing else (a flag
 the verb takes on its own but not with `--home` is misuse saying so); the data folder must be a folder; for
-`history` the file must be there and read; whole numbers are judged against the law's ceiling and entry ids by
-their one form. Paths are made whole before they go (the desktop does not share this process's working folder).
+`history` the file, and for `adopt` an `--anchors` file given, must be there and read (the anchors as the law's
+JSON); whole numbers are judged against the law's ceiling and entry ids by their one form. Paths are made whole
+before they go (the desktop does not share this process's working folder).
 Requests are done one at a time, in the order they reach the door; one that reaches it while another is being
 done waits.
 

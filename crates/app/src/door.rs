@@ -83,24 +83,34 @@ const ROWS: [Row; 11] = [
 ];
 
 /// The anchors a command hands over (the JSON array its `--anchors` file holds) as the rows the adoption page
-/// takes, one line per element: chain id, transaction, payload kind and content. Nothing is judged here: an
-/// element missing a member, or with a member of another shape, becomes a line the page's own reading refuses
-/// by its number (`adoptx::rows_of`); text that is not an array is one such line; none at all is no rows.
+/// takes, one line per element: chain id, transaction, payload kind and content, each one word. Nothing is
+/// judged here, and nothing is reshaped either: an element is a line only when it is exactly those four
+/// members, the chain id a whole number and the others text with no white space in it, so its line reads back
+/// as those four and nothing else. Any other element (a member missing, added or of another shape, a value
+/// with white space that would split or join cells or lines) is the line `-`, which the page's own reading
+/// refuses by its number (`adoptx::rows_of`); text that is not an array is that one line; none at all is no
+/// rows.
 fn anchor_rows(text: &str) -> String {
     use zikaron::json::Value;
-    let Ok(Value::Arr(items)) = zikaron::json::parse(text.as_bytes()) else { return text.to_string() };
-    let cell = |v: &Value, k: &str| match v.member(k) {
-        Some(Value::Str(x)) => x.clone(),
-        Some(Value::Int(n)) => n.to_string(),
-        Some(other) => String::from_utf8_lossy(&zikaron::json::canon_bytes(other)).into_owned(),
-        None => String::new(),
+    const MEMBERS: [&str; 4] = ["chainId", "tx", "payloadKind", "content"];
+    if text.trim().is_empty() {
+        return String::new();
+    }
+    let Ok(Value::Arr(items)) = zikaron::json::parse(text.as_bytes()) else { return "-".to_string() };
+    let word = |v: &Value, k: &str| match (k, v.member(k)?) {
+        ("chainId", Value::Int(n)) => Some(n.to_string()),
+        ("chainId", _) => None,
+        (_, Value::Str(x)) if !x.is_empty() && !x.chars().any(char::is_whitespace) => Some(x.clone()),
+        _ => None,
     };
-    items
-        .iter()
-        .map(|e| ["chainId", "tx", "payloadKind", "content"].iter().map(|k| cell(e, k)).filter(|c| !c.is_empty()).collect::<Vec<_>>().join(" "))
-        .map(|l| if l.is_empty() { "-".to_string() } else { l })
-        .collect::<Vec<_>>()
-        .join("\n")
+    let line = |e: &Value| -> Option<String> {
+        let Value::Obj(members) = e else { return None };
+        if members.len() != MEMBERS.len() {
+            return None;
+        }
+        MEMBERS.iter().map(|k| word(e, k)).collect::<Option<Vec<_>>>().map(|w| w.join(" "))
+    };
+    items.iter().map(|e| line(e).unwrap_or_else(|| "-".to_string())).collect::<Vec<_>>().join("\n")
 }
 
 /// A row's verb: the one its action names (`Action::verb`).
@@ -193,6 +203,15 @@ pub fn turn_of(shell: &Shell, q: &Request) -> Result<Turn, Fault> {
             (crate::machine::CliAnchor::Send, 1..) => Turn::Send { count },
             _ => Turn::Act(Action::SendAsked { count }),
         });
+    }
+    // A co-signature is both halves or none, as the command line takes it without the desktop (the core
+    // refuses half of one by the missing member's name): half of one is refused here, never written without it.
+    if let Action::AdoptAnchors { attestor, attestation, .. } = &act {
+        match (attestor.trim().is_empty(), attestation.trim().is_empty()) {
+            (false, true) => return Err(Fault::known(Known::FieldMissing, "attestation".to_string())),
+            (true, false) => return Err(Fault::known(Known::FieldMissing, "attestor".to_string())),
+            _ => {}
+        }
     }
     Ok(Turn::Act(act))
 }

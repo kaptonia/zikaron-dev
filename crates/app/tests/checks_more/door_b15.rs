@@ -457,7 +457,12 @@ fn the_door_table_is_the_contracts_and_each_flag_reaches_its_action() {
     assert_eq!(rows, real, "the door's table is §11's");
     let (_b, shell) = Bench::new("table");
     for (verb, flags) in app::door::verbs() {
-        let args: Vec<(String, String)> = flags.iter().map(|f| (f.to_string(), format!("v-{f}-1"))).collect();
+        // The anchors are the law's JSON: the marker rides in its members, which reach the page's rows as they are.
+        let value = |f: &str| match f {
+            "anchors" => format!(r#"[{{"chainId":1,"content":"v-{f}-1","payloadKind":"bare","tx":"v-{f}-1"}}]"#),
+            _ => format!("v-{f}-1"),
+        };
+        let args: Vec<(String, String)> = flags.iter().map(|f| (f.to_string(), value(f))).collect();
         let q = Request { verb: verb.to_string(), home: String::new(), args };
         let act = match app::door::turn_of(&shell, &q).unwrap_or_else(|f| panic!("{verb}: {f:?}")) {
             app::door::Turn::Act(a) => a,

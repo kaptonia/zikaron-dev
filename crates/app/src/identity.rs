@@ -1397,5 +1397,12 @@ mod tests {
         let id = reg.rows[0].id.clone();
         assert_eq!(set_network(&mut reg, &id, d).unwrap().network, Some(Chosen::Row(d.into())), "a row chosen: custom's values go with it");
         assert_eq!(remember_custom(&mut reg, &id, crate::deploy::Custom { chain_id: 1, registry: Address([1; 20]), from_block: 0, endpoints: Vec::new() }).ok(), Some(false), "a row takes no hand-filled values");
+        let custom = crate::deploy::CUSTOM;
+        assert_eq!(set_network(&mut reg, &id, custom).unwrap().network, Some(Chosen::Custom(None)), "custom chosen after a row: nothing filled in yet");
+        let again = crate::deploy::Custom { chain_id: 5, registry: Address([5; 20]), from_block: 1, endpoints: vec!["5=https://m.example".into()] };
+        assert_eq!(remember_custom(&mut reg, &id, again.clone()).ok(), Some(true), "custom takes what is filled in");
+        assert_eq!(set_network(&mut reg, &id, custom).unwrap().network, Some(Chosen::Custom(Some(again))), "custom chosen again: what was filled in stays");
+        assert_eq!(set_network(&mut reg, &id, d).unwrap().network, Some(Chosen::Row(d.into())));
+        assert_eq!(set_network(&mut reg, &id, custom).unwrap().network, Some(Chosen::Custom(None)), "custom after a row again: the earlier values went with their choice");
     }
 }

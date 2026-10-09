@@ -7,9 +7,12 @@
 //! verified; there is no way to skip them.
 //!
 //! Each exchange has one deadline, fixed when it starts: resolving, connecting, the handshake, writing and
-//! every read get only the time left, and running out anywhere is a deadline failure. No wait lasts longer than
-//! one [`SLICE`] before it looks whether the transport is shutting down, so shutting down cuts an exchange in
-//! flight within a slice on every system, without relying on the system waking a blocked read. Every resolved
+//! every read get only the time left, and running out anywhere is a deadline failure. No wait for the peer (to
+//! resolve, connect, answer or finish a handshake or tunnel) lasts longer than one [`SLICE`] before it looks
+//! whether the transport is shutting down, so shutting down cuts an exchange in flight within a slice on every
+//! system, without relying on the system waking a blocked read. A write the peer does not take is bounded by
+//! the time left only, not sliced (a sliced write would break a request the peer is slow to take); shutting
+//! down shuts its socket, and that is what ends it. Every resolved
 //! address is tried (`dial`). A connection whose response ended cleanly and whose peer left it open is kept for
 //! the next request to the same place (`keep`); an idempotent request ([`Ask::Read`]) is retried once on a new
 //! connection if the connection breaks before any response byte arrives.
@@ -126,10 +129,13 @@ impl Clock {
     /// Limit the socket's writes to the time left and each read to one [`SLICE`] within it, so every read loop
     /// looks at shutdown after a slice at most (with no deadline, too) and still runs out exactly at the
     /// deadline.
+    ///
+    /// A socket shutting down has shut refuses its timeouts on some systems: a refusal found with the flag
+    /// raised is the cut ([`keep::cut`]), never a stream failure.
     fn bound(&self, tcp: &std::net::TcpStream) -> Result<(), Fail> {
         let left = self.left()?;
         let read = Some(left.map_or(SLICE, |l| l.min(SLICE)));
-        tcp.set_read_timeout(read).and_then(|_| tcp.set_write_timeout(left)).map_err(|e| Fail::Stream(e.to_string()))
+        tcp.set_read_timeout(read).and_then(|_| tcp.set_write_timeout(left)).map_err(|e| if keep::closing() { keep::cut() } else { Fail::Stream(e.to_string()) })
     }
 }
 
@@ -682,6 +688,29 @@ mod tests {
         keep::open_up();
         assert_eq!(keep::cuts(), cut_before + 1, "the cut leaves its trace");
         (said, took)
+    }
+
+    /// A socket shutting down has shut may refuse its timeouts (some systems do): with the flag raised that is
+    /// the cut, counted, never a stream failure.
+    #[test]
+    fn a_timeout_refused_while_shutting_down_is_the_cut() {
+        let _turn = keep::turn();
+        let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let tcp = std::net::TcpStream::connect(l.local_addr().expect("addr")).expect("connect");
+        let _ = tcp.shutdown(std::net::Shutdown::Both);
+        let clock = Clock::start(Duration::from_secs(20));
+        keep::raise_flag_only();
+        let before = keep::cuts();
+        let got = clock.bound(&tcp);
+        let after = keep::cuts();
+        keep::open_up();
+        match got {
+            Ok(()) => assert_eq!(after, before, "taken: nothing cut here"),
+            Err(f) => {
+                assert!(matches!(f, Fail::Closed), "refused while shutting down: closed, not {f:?}");
+                assert_eq!(after, before + 1, "the cut leaves its trace");
+            }
+        }
     }
 
     /// The cut rests on the flag, not on the system waking a blocked read: with only the flag raised, an

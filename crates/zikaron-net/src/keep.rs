@@ -103,17 +103,24 @@ pub fn cuts() -> u64 {
     CUTS.load(Ordering::SeqCst)
 }
 
-/// Track a socket as in use from the moment it connects (handshake included); refused while shutting down.
+/// Track a socket as in use from the moment it connects (handshake included); refused while shutting down. The
+/// connection was being made, so a refusal here cuts an exchange under way ([`cut`]).
 pub(crate) fn ticket(tcp: &std::net::TcpStream) -> Result<Ticket, Fail> {
+    track(tcp)?.ok_or_else(cut)
+}
+
+/// Track a socket as in use: `None` while shutting down (the socket shut), counting nothing; whether that
+/// refusal cut an exchange under way is the caller's to say.
+fn track(tcp: &std::net::TcpStream) -> Result<Option<Ticket>, Fail> {
     let handle = tcp.try_clone().map_err(|e| Fail::Stream(e.to_string()))?;
     let mut f = flying();
     if closing() {
         let _ = handle.shutdown(std::net::Shutdown::Both);
-        return Err(cut());
+        return Ok(None);
     }
     let ticket = NEXT.fetch_add(1, Ordering::SeqCst);
     f.insert(ticket, handle);
-    Ok(Ticket(ticket))
+    Ok(Some(Ticket(ticket)))
 }
 
 /// A connection in use under the ticket its socket was tracked with.
@@ -121,9 +128,10 @@ pub(crate) fn live(conn: Conn, ticket: Ticket) -> Live {
     Live { conn, _ticket: ticket }
 }
 
-/// Track a connection as in use; refused while shutting down.
+/// Track a kept connection as in use again; refused while shutting down. Nothing has been asked on it yet, so
+/// the refusal is not a cut.
 pub(crate) fn fly(conn: Conn) -> Result<Live, Fail> {
-    let t = ticket(conn.stream.tcp())?;
+    let t = track(conn.stream.tcp())?.ok_or(Fail::Closed)?;
     Ok(live(conn, t))
 }
 
@@ -235,6 +243,30 @@ mod tests {
         let since = Instant::now().checked_sub(IDLE_KEEP - Duration::from_secs(1)).expect("an instant that long ago");
         idle().entry(at.clone()).or_default().push((since, within));
         assert_eq!(take(&at).map(|l| port_of(&l.conn)), Some(p), "inside IDLE_KEEP: taken");
+    }
+
+    /// While shutting down, taking a kept connection is refused and counts no cut (nothing was asked on it);
+    /// tracking a connection just made is refused as the cut of the exchange making it, counted once.
+    #[test]
+    fn a_kept_connection_refused_while_shutting_down_is_not_a_cut() {
+        let _turn = turn();
+        let l = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let at = place("refused-kept.test");
+        let (kept, _) = conn(&l, &at);
+        let (fresh, _) = conn(&l, &at);
+        raise_flag_only();
+        idle().entry(at.clone()).or_default().push((Instant::now(), kept));
+        let before = cuts();
+        let taken = take(&at);
+        let after_take = cuts();
+        let tracked = ticket(fresh.stream.tcp());
+        let after_ticket = cuts();
+        idle().clear();
+        open_up();
+        assert!(taken.is_none(), "refused while shutting down");
+        assert_eq!(after_take, before, "taking a kept connection is no cut");
+        assert!(matches!(tracked, Err(Fail::Closed)), "tracking a new one is refused as closed");
+        assert_eq!(after_ticket, before + 1, "and that exchange is cut, once");
     }
 
     /// Shutdown drops every idle connection: one kept before shutdown is not handed out after reopening.

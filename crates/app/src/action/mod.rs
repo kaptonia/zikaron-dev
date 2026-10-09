@@ -476,6 +476,36 @@ impl Action {
         }
     }
 
+    /// Hands the passcode this action carries to the task that derives with it: moved out of the action, not
+    /// copied, so from that moment the action's own cell is empty (asking again hands nothing) and no second copy
+    /// of the passcode is left in memory. An action that passes the passcode gate ([`Action::pin_asked`]) hands
+    /// its passcode at the gate in [`apply`]; the gate's own mouths ([`Action::gate_pin`]) are taken apart by
+    /// value where they are done, which moves their passcode the same way, and this hands it when asked first.
+    /// `None` when the action carries none, or has handed it already. What is not handed goes
+    /// with the action and is zeroed when it is dropped (`Secret`'s drop), on a lock, a quit or a refusal alike.
+    pub fn hand_pin(&mut self) -> Option<crate::secret::Secret> {
+        let cell = match self {
+            Action::BackupKey { pin, .. }
+            | Action::DeleteIdentity { pin, .. }
+            | Action::RevealWords { pin }
+            | Action::AttestFor { pin, .. }
+            | Action::ExportBackup { pin, .. }
+            | Action::SetPin { pin, .. }
+            | Action::Unlock { pin }
+            | Action::Reseal { pin }
+            | Action::RecoverWords { pin, .. }
+            | Action::RecoverKeystore { pin, .. }
+            | Action::SetPrimary { pin, .. }
+            | Action::RestoreBackup { how: RestoreHow::Settings { pin } | RestoreHow::Locked { pin, .. }, .. } => pin,
+            Action::ChangePin { old, .. } => old,
+            _ => return None,
+        };
+        if cell.is_empty() {
+            return None;
+        }
+        Some(std::mem::take(cell))
+    }
+
     /// Which actions ask for the local passcode (exporting a key file, deleting an identity, showing the
     /// words).
     ///
@@ -1263,10 +1293,11 @@ pub fn apply(shell: &mut Shell, a: Action) -> Applied {
     //
     // Key derivation runs in the background: the unlock runs in a `Kind::Vault` task, and only on success does
     // the action body run where the result lands (`vault_landed`, then `body`); the passcode field is wiped
-    // before the action is handed on.
-    if let Some(pin) = a.pin_asked() {
-        let pin = pin.clone();
+    // before the action is handed on. The passcode is moved out of the action into the task (`hand_pin`), never
+    // copied: the action handed on carries none.
+    if a.pin_asked().is_some() {
         let mut rest = a;
+        let pin = rest.hand_pin().unwrap_or_default();
         rest.forget_pin();
         return vault(shell, move || {
             crate::keybox::unlock(pin.expose())?;
@@ -2393,7 +2424,7 @@ struct Batch {
     chain: u64,
     registry: Address,
     /// All of the chain's endpoints, in settings order.
-    urls: Vec<String>,
+    urls: Vec<crate::chainx::NodeAddr>,
     /// The retry backoff delays (a shell field tests may change).
     backoff: Vec<std::time::Duration>,
 }

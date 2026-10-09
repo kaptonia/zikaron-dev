@@ -21,7 +21,7 @@ pub(super) fn batch(shell: &Shell, count: usize) -> Result<Batch, crate::fault::
     let registry = shell.settings.registry.ok_or_else(|| {
         crate::fault::Fault::known(crate::fault::Known::NoRegistry, String::new())
     })?;
-    let urls: Vec<String> = shell.endpoints.iter().filter(|e| e.chain == chain).map(|e| e.url.clone()).collect();
+    let urls: Vec<crate::chainx::NodeAddr> = shell.endpoints.iter().filter(|e| e.chain == chain).map(|e| e.url.clone()).collect();
     if urls.is_empty() {
         return Err(crate::fault::Fault::known(
             crate::fault::Known::NoEndpoint,
@@ -213,7 +213,7 @@ pub fn audit_after_send(shell: &mut Shell) {
 }
 
 /// After a broadcast lands, waits for the receipt (called where the shell receives task results).
-pub fn wait_submitted(shell: &mut Shell, tx: String, chain: u64, url: String, ids: Vec<String>, gas: Option<u64>) {
+pub fn wait_submitted(shell: &mut Shell, tx: String, chain: u64, url: crate::chainx::NodeAddr, ids: Vec<String>, gas: Option<u64>) {
     let Some(root) = shell.home.as_ref().map(|h| h.root().to_path_buf()) else { return };
     let urls = receipt_urls(shell, chain, Some(&url));
     let wait = shell.anchor_wait;
@@ -227,8 +227,8 @@ pub fn wait_submitted(shell: &mut Shell, tx: String, chain: u64, url: String, id
 
 /// Where to ask for the receipt: the endpoint that accepted the transaction first, then this chain's other
 /// configured endpoints (deduplicated).
-pub(super) fn receipt_urls(shell: &Shell, chain: u64, taken: Option<&str>) -> Vec<String> {
-    let mut out: Vec<String> = taken.map(|u| vec![u.to_string()]).unwrap_or_default();
+pub(super) fn receipt_urls(shell: &Shell, chain: u64, taken: Option<&crate::chainx::NodeAddr>) -> Vec<crate::chainx::NodeAddr> {
+    let mut out: Vec<crate::chainx::NodeAddr> = taken.cloned().into_iter().collect();
     for e in shell.endpoints.iter().filter(|e| e.chain == chain) {
         if !out.iter().any(|u| *u == e.url) {
             out.push(e.url.clone());
@@ -250,7 +250,7 @@ pub(super) fn funds_gate(b: &Batch, secret: &crate::key::Secret, fees: zikaron_a
     })?;
     // The balance uses every endpoint for this chain: those that answer and agree count; those that do not
     // answer are skipped and reported.
-    let eps: Vec<crate::chainx::Endpoint> = b.urls.iter().map(|u| crate::chainx::Endpoint { chain: b.chain, url: u.clone() }).collect();
+    let eps: Vec<crate::chainx::Endpoint> = b.urls.iter().map(|u| crate::chainx::Endpoint::at(b.chain, u.clone())).collect();
     let (have, _) = crate::chainx::balance(&eps, b.chain, &who)?;
     funds_check(fees.cap_wei(), have)
 }
@@ -355,8 +355,8 @@ pub(super) fn anchor_batch(
 /// The batch's nodes that serve its chain (each checked once per process, `chainx::serving`); the pre-send
 /// balance, nonce and broadcast use only these. Nodes serving another chain are left out and reported as a
 /// `WRONG_CHAIN` refusal naming them. Runs on the task's thread.
-fn serving_urls(urls: &[String], chain: u64) -> Result<Vec<String>, crate::fault::Fault> {
-    let eps: Vec<crate::chainx::Endpoint> = urls.iter().map(|u| crate::chainx::Endpoint { chain, url: u.clone() }).collect();
+fn serving_urls(urls: &[crate::chainx::NodeAddr], chain: u64) -> Result<Vec<crate::chainx::NodeAddr>, crate::fault::Fault> {
+    let eps: Vec<crate::chainx::Endpoint> = urls.iter().map(|u| crate::chainx::Endpoint::at(chain, u.clone())).collect();
     let (kept, _) = crate::chainx::serving(&eps, chain)?;
     Ok(kept.into_iter().map(|e| e.url).collect())
 }
@@ -458,7 +458,7 @@ fn resend_batch(b: Batch, stuck: crate::task::Stuck, fees: zikaron_anchor::send:
 #[allow(clippy::too_many_arguments)]
 pub(super) fn confirm_batch(
     root: std::path::PathBuf,
-    urls: Vec<String>,
+    urls: Vec<crate::chainx::NodeAddr>,
     chain: u64,
     txs: Vec<String>,
     ids: Vec<String>,
@@ -468,7 +468,7 @@ pub(super) fn confirm_batch(
     sender: Option<Sender>,
     nonce: Option<u64>,
 ) -> Result<Done, crate::fault::Fault> {
-    let url = urls.first().cloned().unwrap_or_default();
+    let url = urls.first().map(|u| u.for_transport().to_string()).unwrap_or_default();
     let mut hashes: Vec<[u8; 32]> = Vec::with_capacity(txs.len());
     for tx in &txs {
         let h: [u8; 32] = zikaron::hexfmt::decode(tx)
@@ -481,7 +481,7 @@ pub(super) fn confirm_batch(
     }
     // Ask each endpoint for the receipt, starting with the one that accepted the transaction; if none can be
     // opened, refuse by name.
-    let mut opened: Vec<Box<dyn zikaron_anchor::rpc::Endpoint + Send>> = urls.iter().filter_map(|u| crate::chainx::endpoint_at(u)).collect();
+    let mut opened: Vec<Box<dyn zikaron_anchor::rpc::Endpoint + Send>> = urls.iter().filter_map(|u| crate::chainx::endpoint_at(u.for_transport())).collect();
     if opened.is_empty() {
         return Err(crate::fault::Fault::known(crate::fault::Known::SettingsShape, crate::chainx::address_said(&url)));
     }
@@ -611,7 +611,7 @@ enum Unheld {
 ///
 /// The rule is the anchoring crate's (`zikaron_anchor::send::unheld`, also used by the command line's `anchor`
 /// on a rerun); this side supplies the queries (every node serving the chain).
-fn unheld(urls: &[String], chain: u64, txs: &[String], ids: &[String], nonce: Option<u64>, who: Sender, refs: &mut [&mut dyn zikaron_anchor::rpc::Endpoint]) -> Unheld {
+fn unheld(urls: &[crate::chainx::NodeAddr], chain: u64, txs: &[String], ids: &[String], nonce: Option<u64>, who: Sender, refs: &mut [&mut dyn zikaron_anchor::rpc::Endpoint]) -> Unheld {
     let on_chain = chain_nonce(urls, chain, &who.from);
     let mine = nonce.or(on_chain).unwrap_or_default();
     let none_included = || {
@@ -632,10 +632,10 @@ fn unheld(urls: &[String], chain: u64, txs: &[String], ids: &[String], nonce: Op
 
 /// The sending account's nonce at the `latest` block, the lowest among nodes serving this chain (so a lagging
 /// node never makes a batch look void). `None` when no node answers.
-fn chain_nonce(urls: &[String], chain: u64, from: &[u8; 20]) -> Option<u64> {
-    let eps: Vec<crate::chainx::Endpoint> = urls.iter().map(|u| crate::chainx::Endpoint { chain, url: u.clone() }).collect();
+fn chain_nonce(urls: &[crate::chainx::NodeAddr], chain: u64, from: &[u8; 20]) -> Option<u64> {
+    let eps: Vec<crate::chainx::Endpoint> = urls.iter().map(|u| crate::chainx::Endpoint::at(chain, u.clone())).collect();
     let (eps, _) = crate::chainx::serving(&eps, chain).ok()?;
-    let nodes: Vec<(String, Box<dyn zikaron_anchor::rpc::Endpoint + Send>)> = eps.iter().filter_map(|e| crate::chainx::endpoint_at(&e.url).map(|h| (e.url.clone(), h))).collect();
+    let nodes: Vec<(String, Box<dyn zikaron_anchor::rpc::Endpoint + Send>)> = eps.iter().filter_map(|e| crate::chainx::endpoint_at(e.url.for_transport()).map(|h| (e.url.for_transport().to_string(), h))).collect();
     let params = zikaron::json::Value::Arr(vec![zikaron::json::Value::Str(zikaron::hexfmt::encode(from)), zikaron::json::Value::Str("latest".into())]);
     zikaron_anchor::endpoints::ask_each(nodes, "eth_getTransactionCount", &params)
         .into_iter()
@@ -650,9 +650,9 @@ fn chain_nonce(urls: &[String], chain: u64, from: &[u8; 20]) -> Option<u64> {
 /// from the account, at `nonce`, with the current price and a fresh gas estimate (nothing is replaced, so no
 /// bump over the last). Once resent [`crate::queue::RESENDS_MAX`] times nothing more is offered; if the price or
 /// gas cannot be read, nothing is offered and the wait goes on.
-fn again_of(urls: &[String], chain: u64, txs: &[String], ids: &[String], nonce: u64, who: Sender) -> Option<crate::task::Stuck> {
+fn again_of(urls: &[crate::chainx::NodeAddr], chain: u64, txs: &[String], ids: &[String], nonce: u64, who: Sender) -> Option<crate::task::Stuck> {
     let input = zikaron_anchor::send::registry_calldata(&crate::queue::Queue::hashes(ids).ok()?);
-    let eps: Vec<crate::chainx::Endpoint> = urls.iter().map(|u| crate::chainx::Endpoint { chain, url: u.clone() }).collect();
+    let eps: Vec<crate::chainx::Endpoint> = urls.iter().map(|u| crate::chainx::Endpoint::at(chain, u.clone())).collect();
     let now = crate::chainx::fee_reading(&eps, chain);
     let gas = zikaron_anchor::send::estimate_gas(
         || crate::chainx::head_block(&eps, chain).map(|(height, _)| height).map_err(|f| (f, false)),
@@ -686,7 +686,7 @@ fn text_member(v: &zikaron::json::Value, k: &str) -> Option<String> {
 
 /// A batch not included by the end of a wait: its last transaction as the chain holds it (`held`) and what can
 /// be done now. `None` if the transaction's fields cannot be read (nothing is offered then).
-fn stuck_of(urls: &[String], chain: u64, txs: &[String], held: &zikaron::json::Value) -> Option<crate::task::Stuck> {
+fn stuck_of(urls: &[crate::chainx::NodeAddr], chain: u64, txs: &[String], held: &zikaron::json::Value) -> Option<crate::task::Stuck> {
     let qty = |k: &str| text_member(held, k).as_deref().and_then(crate::chainx::wei).and_then(|n| u64::try_from(n).ok());
     let addr = |k: &str| text_member(held, k).as_deref().and_then(zikaron::hexfmt::decode).and_then(|b| <[u8; 20]>::try_from(b).ok());
     let input = text_member(held, "input").as_deref().and_then(zikaron::hexfmt::decode)?;
@@ -695,7 +695,7 @@ fn stuck_of(urls: &[String], chain: u64, txs: &[String], held: &zikaron::json::V
     let (offer, left) = if txs.len() > crate::queue::RESENDS_MAX {
         (crate::task::Offer::Spent, Vec::new())
     } else {
-        let eps: Vec<crate::chainx::Endpoint> = urls.iter().map(|u| crate::chainx::Endpoint { chain, url: u.clone() }).collect();
+        let eps: Vec<crate::chainx::Endpoint> = urls.iter().map(|u| crate::chainx::Endpoint::at(chain, u.clone())).collect();
         let now = crate::chainx::fee_reading(&eps, chain);
         let offer = match now.base {
             Some(base_now) if base_now > sent.max_fee => crate::task::Offer::Resend { fees: zikaron_anchor::send::Fees::replacing(sent, now.fees), base_now },
