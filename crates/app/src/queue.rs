@@ -32,8 +32,8 @@ pub enum Step {
     /// Queued, not sent.
     Queued,
     /// Broadcast, and the node returned the matching transaction hash: waiting for the receipt. Saved to disk,
-    /// so after a restart the same transaction is awaited, never resent. `nonce` is the batch's signed nonce
-    /// (`None` in files from older versions); it distinguishes a batch no node holds any more from one whose
+    /// so after a restart the same transaction is awaited, never resent. `nonce` is the batch's signed nonce,
+    /// always written and required when read; it distinguishes a batch no node holds any more from one whose
     /// nonce another transaction used (`action::confirm_batch`).
     Submitted { tx: String, chain: u64, nonce: Option<u64> },
     /// Included, but the receipt status is not 1 (law §9.1: not an anchor). Stays queued and can be
@@ -118,7 +118,7 @@ pub struct Queued {
     pub id: String,
     /// When it was queued (only for ordering and display, never for decisions).
     pub at: u64,
-    /// Its state (files from older versions lack it; read as [`Step::Queued`]).
+    /// Its state.
     pub step: Step,
 }
 
@@ -140,8 +140,7 @@ pub struct Queue {
     /// self-audit report (absent after a restart). An already anchored entry could then be queued and anchored
     /// again, costing gas twice. Recording it here survives restarts and home copies.
     pub anchored: Vec<String>,
-    /// Included transactions with chain and block number, recorded by the receipt path; files from older
-    /// versions lack this and read it as empty.
+    /// Included transactions with chain and block number, recorded by the receipt path.
     pub blocks: Vec<Block>,
 }
 
@@ -179,7 +178,9 @@ fn member<'a>(v: &'a Value, k: &str) -> Option<&'a Value> {
 }
 
 impl Queue {
-    /// Read the queue. No file means an empty queue ("never queued" is not an error).
+    /// Read the queue. No file means an empty queue ("never queued" is not an error). Every member this version
+    /// writes is required: a file missing one (an earlier version's, or altered) is refused by name
+    /// (`QUEUE_SHAPE`), never read with a member guessed.
     pub fn read(home: &Home) -> Result<Queue, Fault> {
         let p = home.dir(Slot::Settings).join(FILE);
         // Sealed (`local::Doc::Queue`). Locked or unreadable is an error, never treated as empty, or the next
@@ -203,9 +204,10 @@ impl Queue {
                     ))
                 }
             };
+            let bad = || Fault::known(Known::QueueShape, crate::lang::filln(crate::lang::Key::Tail201, &[&(p.display()).to_string()]));
             let at = match member(r, member::AT) {
                 Some(Value::Int(n)) => *n,
-                _ => 0,
+                _ => return Err(bad()),
             };
             let text = |k: &str| match member(r, k) {
                 Some(Value::Str(s)) => Some(s.clone()),
@@ -215,17 +217,14 @@ impl Queue {
                 Some(Value::Int(n)) => Some(*n),
                 _ => None,
             };
-            // The batch's nonce: absent in files from older versions; if present it must be an integer.
+            // The batch's nonce, required where a batch was signed (submitted, resent).
             let nonce = match member(r, member::NONCE) {
-                None => Ok(None),
                 Some(Value::Int(n)) => Ok(Some(*n)),
-                Some(_) => Err(()),
+                _ => Err(()),
             };
-            // `state`: absent (older files) reads as queued; unknown or incomplete is a shape error, never
-            // guessed.
-            let bad = || Fault::known(Known::QueueShape, crate::lang::filln(crate::lang::Key::Tail201, &[&(p.display()).to_string()]));
+            // `state`: required; unknown or incomplete is a shape error, never guessed.
             let step = match text(member::STATE).as_deref() {
-                None | Some(state::QUEUED) => Step::Queued,
+                Some(state::QUEUED) => Step::Queued,
                 Some(state::SUBMITTED) => match (text(member::TX), chain, nonce) {
                     (Some(tx), Some(chain), Ok(nonce)) if zikaron::hexfmt::is_hex32(&tx) => Step::Submitted { tx, chain, nonce },
                     _ => return Err(bad()),
@@ -234,7 +233,7 @@ impl Queue {
                     (Some(tx), Some(chain)) if zikaron::hexfmt::is_hex32(&tx) => Step::Reverted { tx, chain },
                     _ => return Err(bad()),
                 },
-                Some(state::REFUSED) => Step::Refused { said: text(member::SAID).unwrap_or_default() },
+                Some(state::REFUSED) => Step::Refused { said: text(member::SAID).ok_or_else(bad)? },
                 // Resent: 2 to `1 + RESENDS_MAX` transaction hashes; anything else is a shape error.
                 Some(state::RESENT) => {
                     let txs: Option<Vec<String>> = match member(r, member::TXS) {
@@ -249,13 +248,15 @@ impl Queue {
                         _ => return Err(bad()),
                     }
                 }
-                Some(_) => return Err(bad()),
+                _ => return Err(bad()),
             };
             items.push(Queued { id, at, step });
         }
-        // `anchored`: absent in files from older versions; read as empty, not an error.
+        // `anchored` and `blocks`: required (empty lists when there are none).
+        let missing = |k: &str| Fault::known(Known::QueueShape, format!("{}: {k}", p.display()));
         let mut anchored: Vec<String> = Vec::new();
-        if let Some(Value::Arr(rows)) = member(&v, member::ANCHORED) {
+        let Some(Value::Arr(rows)) = member(&v, member::ANCHORED) else { return Err(missing(member::ANCHORED)) };
+        {
             for r in rows {
                 match r {
                     Value::Str(x) if zikaron::hexfmt::is_hex32(x) => anchored.push(x.clone()),
@@ -268,9 +269,9 @@ impl Queue {
                 }
             }
         }
-        // `blocks`: absent in files from older versions; read as empty.
         let mut blocks: Vec<Block> = Vec::new();
-        if let Some(Value::Arr(rows)) = member(&v, member::BLOCKS) {
+        let Some(Value::Arr(rows)) = member(&v, member::BLOCKS) else { return Err(missing(member::BLOCKS)) };
+        {
             for r in rows {
                 let (Some(Value::Str(id)), Some(Value::Str(tx)), Some(Value::Int(chain)), Some(Value::Int(block))) =
                     (member(r, member::ID), member(r, member::TX), member(r, member::CHAIN), member(r, member::BLOCK))

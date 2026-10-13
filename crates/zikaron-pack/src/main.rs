@@ -17,6 +17,9 @@
 //! Each verb prints one line describing what it did and exits 0 (for `rustflags` the line is the flags), or
 //! names what failed and exits 1.
 
+// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+#![forbid(unsafe_code)]
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 

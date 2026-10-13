@@ -86,7 +86,7 @@ pub(super) fn check_tail(shell: &mut Shell) -> Result<Spawned, crate::fault::Fau
     use crate::fault::{Fault, Known};
     // The open home's settings are checked first: without them nothing can be checked.
     crate::exitgate::ask_of(shell)?;
-    let view = crate::register::view(shell.settings.role)?;
+    let view = crate::register::view()?;
     let (row, _) = crate::identity::now_row(&view).ok_or_else(|| Fault::known(Known::NoIdentity, String::new()))?;
     let open = shell.home.as_ref().map(|h| h.root().to_path_buf());
     // Each seat of this identity whose home has the mark (an unreadable mark counts as present), with what the
@@ -238,7 +238,7 @@ fn fetch_from(shell: &mut Shell, from: &str) -> Result<FetchFrom, crate::fault::
     let who = shell.anchor.ok_or_else(|| Fault::known(Known::KeyNotStored, String::new()))?;
     // The source is a whole-machine backup: this identity's ledger for this seat is taken from it.
     let seat = shell.settings.role;
-    let id = crate::identity::now_row(&crate::register::view(seat)?).map(|(r, _)| r.id).ok_or_else(|| Fault::known(Known::NoIdentity, String::new()))?;
+    let id = crate::identity::now_row(&crate::register::view()?).map(|(r, _)| r.id).ok_or_else(|| Fault::known(Known::NoIdentity, String::new()))?;
     let at = crate::home::landing(from)?;
     let mut g = ground_bare(shell)?;
     g.senders = vec![who.hex()];

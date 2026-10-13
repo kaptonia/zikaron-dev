@@ -34,11 +34,6 @@ pub enum Step {
     Anchor,
 }
 
-/// Names of steps removed from the checklist, as found in files written by older versions. Such lines are
-/// skipped and the remaining lines are checked in the current order, so an older file resumes at the step
-/// after the last one ticked. Removing a step only adds its name here.
-pub const RETIRED: [&str; 2] = ["bond", "undertaking"];
-
 impl Step {
     pub const ALL: [Step; 2] = [Step::Terms, Step::Anchor];
 
@@ -138,9 +133,7 @@ impl Wizard {
                 return Err(Fault::known(Known::SettingsShape, p.display().to_string()));
             };
             let step = match rm.iter().find(|(k, _)| k == member::STEP) {
-                // Lines in older files for removed steps (`RETIRED`) are skipped; the rest are checked in the
-                // current order.
-                Some((_, Value::Str(s))) if RETIRED.contains(&s.as_str()) => continue,
+                // A step this version does not have is refused by name (never skipped).
                 Some((_, Value::Str(s))) => Step::parse(s),
                 _ => None,
             };

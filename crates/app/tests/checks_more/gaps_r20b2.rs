@@ -177,7 +177,7 @@ fn the_bar_says_a_mark_that_does_not_read_as_such() {
 fn the_backup_lamp_has_four_colours() {
     use app::firstrun::{backup_point, Shade};
     use app::watchx::{Item, Light, Say};
-    let b = |count: u64| app::machine::Backed { at: 1, path: String::new(), count, indexed: false };
+    let b = |count: u64| app::machine::Backed { at: 1, path: String::new(), count };
     let (two, four) = (b(2), b(4));
     let lamp = |backup: (Option<&app::machine::Backed>, Option<u64>, Option<u64>)| {
         let t = app::watchx::author(None, 0, None, backup, None, None);

@@ -282,7 +282,10 @@ fn paint_slip(ctx: &egui::Context, s: &Slip, center_x: f32, screen: Rect, labels
         let p = ui.painter();
         let radius = if two { Radius::Sheet } else { Radius::Pill };
         paint::surface(p, r, radius, c(C::Surface), Lift::Toast);
-        let ic = pos2(r.left() + pad_l + icon / 2.0, if two { r.top() + pad_y + 10.0 } else { r.center().y });
+        // The icon and the keys share one height, by one judgement: on the first line when there is more than
+        // one, so opening the details below never moves them; centred on a one-line pill.
+        let line_y = if two { r.top() + pad_y + 10.0 } else { r.center().y };
+        let ic = pos2(r.left() + pad_l + icon / 2.0, line_y);
         let (fill, glyph) = match s.tone {
             Tone::Note => (C::Ok, Glyph::Ok),
             Tone::Bad => (C::Bad, Glyph::No),
@@ -303,11 +306,11 @@ fn paint_slip(ctx: &egui::Context, s: &Slip, center_x: f32, screen: Rect, labels
         if let Some(g) = raw {
             p.galley(pos2(tx, y + 6.0), g, c(C::Ink3));
         }
-        // The keys, right of the words, centered on the pill.
+        // The keys, right of the words, at the icon's height.
         let mut kx = r.right() - pad_r - keys_w + if keys.is_empty() { 0.0 } else { 10.0 };
         for (label, which) in &keys {
             let kw = ui.fonts_mut(|f| f.layout_no_wrap(label.clone(), crate::button::key_font(), egui::Color32::BLACK).size().x);
-            let kr = Rect::from_min_size(pos2(kx, r.center().y - 10.0), vec2(kw, 20.0));
+            let kr = Rect::from_min_size(pos2(kx, line_y - 10.0), vec2(kw, 20.0));
             let resp = ui.interact(kr, egui::Id::new(("zikaron-toast-key", s.id, *which)), egui::Sense::click());
             let colour = if *which == 201 { c(C::Ink2) } else { c(C::AccentInk) };
             let k = Key::new(label, Role::Link);

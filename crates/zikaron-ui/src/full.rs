@@ -138,7 +138,11 @@ pub fn radio_row(ui: &mut egui::Ui, id: egui::Id, on: bool, title: &str, pill: O
     let mut job = egui::text::LayoutJob::single_section(sub.to_string(), egui::TextFormat { font_id: crate::tokens::Type::Small.font(), color: c(C::Ink2), line_height: Some(crate::tokens::Type::Small.line()), ..Default::default() });
     job.wrap.max_width = (w - text_x - 14.0).max(1.0);
     let sub_g = ui.fonts_mut(|f| f.layout_job(job));
-    let h = 12.0 + crate::tokens::Type::Strong.line() + 2.0 + sub_g.size().y.max(crate::tokens::Type::Small.line()) + 12.0;
+    // The row's height and the title's place follow the lines there are: with no line under it, one line,
+    // centred; otherwise the title and the line's own rows.
+    let two = !sub.is_empty();
+    let lines_h = crate::tokens::Type::Strong.line() + if two { 2.0 + sub_g.size().y.max(crate::tokens::Type::Small.line()) } else { 0.0 };
+    let h = 12.0 + lines_h + 12.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(w, h), egui::Sense::click());
     let lit = motion::flag(ui.ctx(), id.with("on"), on, tokens::FAST);
     let dot = motion::to(ui.ctx(), id.with("dot"), if on { 1.0 } else { 0.0 }, tokens::FAST, Curve::Spring);
@@ -152,7 +156,7 @@ pub fn radio_row(ui: &mut egui::Ui, id: egui::Id, on: bool, title: &str, pill: O
         p.circle_filled(rc, 4.5 * dot, c(C::Accent));
     }
     let x = rect.left() + text_x;
-    let ty = rect.top() + 12.0;
+    let ty = rect.center().y - lines_h / 2.0;
     let tr = p.text(pos2(x, ty), egui::Align2::LEFT_TOP, title, crate::tokens::Type::Strong.font(), c(C::Ink));
     if let Some(s) = pill {
         let pw = crate::mark::pill_w(ui, s, false);
@@ -160,6 +164,8 @@ pub fn radio_row(ui: &mut egui::Ui, id: egui::Id, on: bool, title: &str, pill: O
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(pr));
         crate::mark::pill(&mut child, s, crate::palette::Tone::Ok);
     }
-    p.galley(pos2(x, ty + crate::tokens::Type::Strong.line() + 2.0), sub_g, c(C::Ink2));
+    if two {
+        p.galley(pos2(x, ty + crate::tokens::Type::Strong.line() + 2.0), sub_g, c(C::Ink2));
+    }
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

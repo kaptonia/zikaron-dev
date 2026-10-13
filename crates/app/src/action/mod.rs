@@ -78,8 +78,6 @@ pub enum Action {
     /// Shut down: reap every background task.
     Quit,
     // ── Identity and keys ──
-    /// Create the anchor key and put it in the local key vault. A legal action.
-    MakeAnchorKey,
     /// Switch seat. An existing-key identity switches view only (key and home unchanged); a recovery-word
     /// identity switches derived key and that seat's home.
     SwitchRole,
@@ -561,9 +559,8 @@ impl Action {
             | Action::Cosign { .. }
             | Action::Succeed { .. }
             | Action::AttestFor { .. }
-            // The key actions themselves: create, build an identity, import, delete an identity, back up to a
-            // file, show the words.
-            | Action::MakeAnchorKey
+            // The key actions themselves: build an identity, import, delete an identity, back up to a file, show
+            // the words.
             | Action::SetPrimary { .. }
             | Action::ExportBackup { .. }
             | Action::RestoreBackup { how: RestoreHow::FirstRun | RestoreHow::Settings { .. }, .. }
@@ -693,8 +690,7 @@ impl Action {
     pub fn feature(&self) -> Feature {
         match self {
             Action::Show(_) | Action::SelfCheck | Action::Quit => Feature::H1,
-            Action::MakeAnchorKey
-            | Action::SwitchRole
+            Action::SwitchRole
             | Action::ReadIdentities
             | Action::NewIdentity
             | Action::ConfirmIdentity { .. }
@@ -790,7 +786,6 @@ impl Action {
             Action::SelfCheck => None,
             Action::Measure => None,
             Action::Quit => None,
-            Action::MakeAnchorKey => None,
             Action::SwitchRole => None,
             Action::ReadIdentities => None,
             Action::NewIdentity => None,
@@ -962,8 +957,7 @@ impl Action {
     pub fn is_legal(&self) -> bool {
         matches!(
             self,
-            Action::MakeAnchorKey
-                | Action::Genesis { .. }
+            Action::Genesis { .. }
                 | Action::Annotate { .. }
                 | Action::Retract { .. }
                 | Action::RecordWork { .. }
@@ -979,7 +973,6 @@ impl Action {
     /// The command-line verb this action is equivalent to. No legal action returns `None` (the tests check).
     pub fn verb(&self) -> Option<&'static str> {
         match self {
-            Action::MakeAnchorKey => Some("keygen"),
             Action::Genesis { .. } => Some("init"),
             Action::Annotate { .. } => Some("annotate"),
             Action::Retract { .. } => Some("retract"),
@@ -1019,8 +1012,6 @@ pub enum Applied {
     Started(Kind),
     Refused(Kind),
     Stopped(Reaped),
-    /// The anchor key is in place; its address.
-    AnchorKey(Address),
     /// Switched seat.
     Seated(crate::roles::Role),
     /// Read the identities; how many.
@@ -1282,15 +1273,18 @@ pub fn apply(shell: &mut Shell, a: Action) -> Applied {
     if let Some(k) = held_back(shell, &a) {
         return shell.trouble(crate::fault::Fault::known(k, String::new()));
     }
-    // Actions that carry a passcode pass `keybox::unlock` here: one gate, one failure count. Each failure is
-    // recorded on disk, and five lock the vault, leaving only recovery.
+    // Actions that carry a passcode pass `keybox::check_pin` here: one gate, one failure count. Each failure is
+    // recorded on disk, and five lock the vault, leaving only recovery. The check opens nothing: the vault is
+    // already open (a locked vault refuses these actions above), and a lock that comes while the passcode is
+    // being checked stays.
     //
     // This comes after the locked check: a locked vault still refuses every key-using action, and this gate
     // re-identifies the person on an open vault (someone at an unlocked machine cannot export the key or
     // delete an identity).
     //
-    // Key derivation runs in the background: the unlock runs in a `Kind::Vault` task, and only on success does
-    // the action body run where the result lands (`vault_landed`, then `body`); the passcode field is wiped
+    // Key derivation runs in the background: the check runs in a `Kind::Vault` task, and only on success does
+    // the action body run where the result lands (`vault_landed`, then `body`, after the same entry check as
+    // here); the passcode field is wiped
     // before the action is handed on. The passcode is moved out of the action into the task (`hand_pin`), never
     // copied: the action handed on carries none.
     if a.pin_asked().is_some() {
@@ -1298,7 +1292,7 @@ pub fn apply(shell: &mut Shell, a: Action) -> Applied {
         let pin = rest.hand_pin().unwrap_or_default();
         rest.forget_pin();
         return vault(shell, move || {
-            crate::keybox::unlock(pin.expose())?;
+            crate::keybox::check_pin(pin.expose())?;
             Ok(crate::task::Vault::Gate(Box::new(rest)))
         });
     }
@@ -1336,8 +1330,17 @@ pub fn vault_landed(shell: &mut Shell, got: Result<crate::task::Vault, crate::fa
             shell.after_unlock();
             Applied::Recovered
         }
+        // The passcode was checked and nothing was opened. The vault may have locked while it was checked (the
+        // lock key, the idle lock, a lock waiting for a write): read where it stands now and pass the same entry
+        // check `apply` made; held back, the action is refused by name and not done.
         Ok(Vault::Gate(a)) => {
-            shell.after_unlock();
+            shell.reread_vault();
+            if shell.lock_pending {
+                return shell.trouble(crate::fault::Fault::known(crate::fault::Known::Locked, String::new()));
+            }
+            if let Some(k) = held_back(shell, &a) {
+                return shell.trouble(crate::fault::Fault::known(k, String::new()));
+            }
             body(shell, *a)
         }
         // A new master key took effect: every copy in hand was read under the old one, so the shell drops them
@@ -1548,15 +1551,11 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             Applied::Stopped(shell.tasks.shutdown())
         }
 
-        Action::MakeAnchorKey => match make_anchor_key(shell) {
-            Ok(a) => Applied::AnchorKey(a),
-            Err(f) => shell.trouble(f),
-        },
         Action::SwitchRole => match switch_role(shell) {
             Ok(r) => Applied::Seated(r),
             Err(f) => shell.trouble(f),
         },
-        Action::ReadIdentities => match crate::register::view(shell.settings.role) {
+        Action::ReadIdentities => match crate::register::view() {
             Ok(r) => {
                 let n = r.rows.len();
                 shell.seat_identities(Some(r));
@@ -1616,8 +1615,7 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
                 crate::keybox::set_pin(pin.expose()).map(|_| crate::task::Vault::Opened)
             })
         }
-        // After opening, in the same task: staged files settle, plain files from older versions are sealed, and
-        // an older vault's primary identity is settled (`local::after_open`).
+        // After opening, in the same task: staged files of a master key change settle (`local::after_open`).
         Action::Unlock { pin } => vault(shell, move || {
             crate::keybox::unlock(pin.expose())?;
             crate::local::after_open();
@@ -2057,11 +2055,10 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
                     crate::lang::t(crate::lang::Key::Tail004).to_string(),
                 ));
             };
-            let flags = shell.settings.exclusive.clone();
             let r#gen = shell.grants_gen;
             match shell.tasks.spawn(Kind::Grants, move || {
                 let home = crate::home::Home::open(&root)?;
-                Ok(Done::Grants { r#gen, rows: crate::grantx::table(&home, &flags)? })
+                Ok(Done::Grants { r#gen, rows: crate::grantx::table(&home)? })
             }) {
                 Spawned::Started => Applied::Started(Kind::Grants),
                 Spawned::InFlight => Applied::Refused(Kind::Grants),

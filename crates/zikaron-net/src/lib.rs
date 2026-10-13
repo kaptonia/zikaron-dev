@@ -10,12 +10,17 @@
 //! every read get only the time left, and running out anywhere is a deadline failure. No wait for the peer (to
 //! resolve, connect, answer or finish a handshake or tunnel) lasts longer than one [`SLICE`] before it looks
 //! whether the transport is shutting down, so shutting down cuts an exchange in flight within a slice on every
-//! system, without relying on the system waking a blocked read. A write the peer does not take is bounded by
+//! system, without relying on the system waking a blocked read. Over TLS the same holds per socket operation,
+//! not per record: the handshake and every read take one socket step at a time (`Tls`), so a peer that
+//! trickles a record a byte at a time meets the deadline and the shutdown as a silent one does. A write the peer does not take is bounded by
 //! the time left only, not sliced (a sliced write would break a request the peer is slow to take); shutting
 //! down shuts its socket, and that is what ends it. Every resolved address is tried (`dial`). A connection
 //! whose response ended cleanly and whose peer left it open is kept for the next request to the same place
 //! (`keep`); an idempotent request ([`Ask::Read`]) is retried once on a new connection if the connection breaks
 //! before any response byte arrives.
+
+// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+#![forbid(unsafe_code)]
 
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
@@ -375,28 +380,85 @@ fn tls_fail(e: &std::io::Error) -> Fail {
     }
 }
 
+/// One TLS connection over its socket, driven one socket operation at a time. Each step writes once or reads
+/// once and returns, so whoever drives it looks at shutdown and the deadline between any two socket operations:
+/// a peer that trickles a record (or a handshake) a byte at a time is cut at the deadline like a silent one,
+/// never waited on until it stops.
+pub(crate) struct Tls {
+    conn: rustls::ClientConnection,
+    sock: std::net::TcpStream,
+}
+
+impl Tls {
+    /// One step: one write of what TLS has to send, when it has any; otherwise one read from the socket and the
+    /// records it completed processed. Returns the socket bytes moved (`0`: the peer closed, or took nothing).
+    /// A record the peer sent that does not verify is an `InvalidData` error carrying the TLS error, after the
+    /// alert describing it is offered to the peer once.
+    fn step(&mut self) -> std::io::Result<usize> {
+        if self.conn.wants_write() {
+            return self.conn.write_tls(&mut self.sock);
+        }
+        let n = self.conn.read_tls(&mut self.sock)?;
+        if let Err(e) = self.conn.process_new_packets() {
+            let _ = self.conn.write_tls(&mut self.sock);
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
+        }
+        Ok(n)
+    }
+
+    /// Plaintext already decrypted first; otherwise one [`Tls::step`], then what it decrypted. A step that
+    /// completed no record says `WouldBlock`, so the reader's loop looks at shutdown and the deadline before
+    /// the next socket operation. The peer's clean close is `Ok(0)`; a close without it, `UnexpectedEof`.
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self.conn.reader().read(buf) {
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            other => return other,
+        }
+        self.step()?;
+        self.conn.reader().read(buf)
+    }
+
+    /// The whole request encrypted and written; each socket write is bounded by the socket's write timeout
+    /// (the time left), as a plain write is.
+    fn send(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        let mut rest = bytes;
+        while !rest.is_empty() || self.conn.wants_write() {
+            let took = if rest.is_empty() { 0 } else { self.conn.writer().write(rest)? };
+            rest = &rest[took..];
+            if !self.conn.wants_write() {
+                if took == 0 {
+                    return Err(std::io::ErrorKind::WriteZero.into());
+                }
+                continue;
+            }
+            if self.conn.write_tls(&mut self.sock)? == 0 {
+                return Err(std::io::ErrorKind::WriteZero.into());
+            }
+        }
+        self.sock.flush()
+    }
+}
+
 /// Perform the TLS handshake over a connected TCP stream, completing it before the stream is used so a bad
-/// certificate is reported at once. Each round gets only the time left; running out is a deadline failure,
-/// not a handshake failure.
-fn tls_connect(
-    host: &str,
-    mut tcp: std::net::TcpStream,
-    clock: &Clock,
-) -> Result<rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>, Fail> {
+/// certificate is reported at once. One socket operation per turn ([`Tls::step`]); each turn looks at shutdown
+/// and gets only the time left, and running out is a deadline failure, not a handshake failure.
+fn tls_connect(host: &str, tcp: std::net::TcpStream, clock: &Clock) -> Result<Tls, Fail> {
     let name = rustls::pki_types::ServerName::try_from(host.to_string()).map_err(|e| Fail::Name(format!("{host}: {e}")))?;
-    let mut conn = rustls::ClientConnection::new(tls_config()?, name).map_err(|e| Fail::Handshake(e.to_string()))?;
-    while conn.is_handshaking() {
+    let conn = rustls::ClientConnection::new(tls_config()?, name).map_err(|e| Fail::Handshake(e.to_string()))?;
+    let mut tls = Tls { conn, sock: tcp };
+    // Until the handshake is done and its last flight is written.
+    while tls.conn.is_handshaking() || tls.conn.wants_write() {
         if keep::closing() {
             return Err(keep::cut());
         }
-        clock.bound(&tcp)?;
-        let round = conn.complete_io(&mut tcp);
+        clock.bound(&tls.sock)?;
+        let step = tls.step();
         // Cut by shutdown during the handshake: reported as closed, not as a handshake failure.
         if keep::closing() {
             return Err(keep::cut());
         }
-        match round {
-            Ok((0, 0)) if conn.is_handshaking() => return Err(Fail::Handshake("the peer closed the connection during the handshake".to_string())),
+        match step {
+            Ok(0) => return Err(Fail::Handshake("the peer closed the connection during the handshake".to_string())),
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
             // A slice passed: back to the loop head, where shutdown and the deadline are checked.
@@ -404,7 +466,7 @@ fn tls_connect(
             Err(e) => return Err(tls_fail(&e)),
         }
     }
-    Ok(rustls::StreamOwned::new(conn, tcp))
+    Ok(tls)
 }
 
 // ───────────────────────── The exchange ─────────────────────────
@@ -412,7 +474,7 @@ fn tls_connect(
 /// One stream: plain TCP or TLS over it.
 pub(crate) enum Stream {
     Plain(std::net::TcpStream),
-    Tls(Box<rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>>),
+    Tls(Box<Tls>),
 }
 
 impl Stream {
@@ -426,7 +488,7 @@ impl Stream {
     fn send(&mut self, bytes: &[u8]) -> std::io::Result<()> {
         match self {
             Stream::Plain(s) => s.write_all(bytes).and_then(|_| s.flush()),
-            Stream::Tls(s) => s.write_all(bytes).and_then(|_| s.flush()),
+            Stream::Tls(s) => s.send(bytes),
         }
     }
 

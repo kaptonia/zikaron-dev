@@ -243,14 +243,6 @@ impl Win {
             let more = if rang.len() > 1 { fill1(Key::SaidMoreAlerts, &(rang.len() - 1).to_string()) } else { String::new() };
             self.toasts.say_full(first.clone(), &more, "", Tone::Alert, now);
         }
-        // The first unlock after an upgrade settled the primary identity: say so once, naming what recovers it.
-        if self.shell.primary_settled.take().is_some() {
-            let k = match self.shell.primary {
-                Some((_, crate::keybox::PrimaryKind::KeyFile)) => Key::PrimaryOnlyKeyFile,
-                _ => Key::PrimaryOnlyWords,
-            };
-            self.toasts.say_full(t(k).to_string(), "", "", Tone::Note, now);
-        }
         // On a new alert, request the system's attention (the dock icon bounces), once per alert.
         if std::mem::take(&mut self.shell.attention) && !quiet {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Critical));
@@ -564,7 +556,6 @@ impl Win {
             }
             Applied::Refused(k) => (fill1(Key::SaidInFlight, t(self.task_word(k))), Tone::Bad),
             Applied::Stopped(r) => (fill1(Key::SaidReaped, &r.joined.to_string()), Tone::Note),
-            Applied::AnchorKey(_) => (t(Key::SaidAnchorKeyPlain).to_string(), Tone::Note),
             Applied::Seated(r) => (fill1(Key::SaidSeated, t(id_seat_key(r))), Tone::Note),
             // Reading identities, generating or wiping new words, showing or hiding: the result is on the sheet, no
             // toast.
@@ -1164,6 +1155,12 @@ struct Ux {
     confirm_genesis: bool,
     /// Whether the language from settings has been applied.
     lang_applied: bool,
+    /// The shell's page the window last followed or set itself (`chrome` follows a change to it; `entered`
+    /// records the page it sets, so following never loops back on the window's own move).
+    page_seen: Option<Page>,
+    /// Whether the page drawn this frame takes dropped files in its own zones (set by the page as it draws;
+    /// the whole-window drop stands aside for it).
+    page_drops: bool,
     /// This frame's interface time.
     now: f64,
     /// Inputs opened in settings sections.

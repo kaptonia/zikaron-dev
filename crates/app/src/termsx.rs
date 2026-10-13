@@ -13,9 +13,6 @@
 //!    refuses when it exists, and the product has no other writer or action to change it (changing
 //!    exclusivity means revoking and issuing again). It is local bookkeeping, not part of the grant bytes (law
 //!    §6.3's grant fields have no exclusivity field); the UI marks it "local record only".
-//!
-//! The older exclusivity list in the settings file (`settings.exclusive`) is kept read-only: read, never
-//! changed, and marked "no terms document" in the UI. The double-sale check reads both (`grantx::table`).
 
 use crate::fault::{Fault, Known};
 use crate::home::{Home, Slot};
@@ -185,22 +182,17 @@ pub fn doc_bytes(home: &Home, r: &Record) -> Result<Option<(String, Vec<u8>)>, c
     Ok(crate::local::read(&doc_path(home, &r.terms)?, crate::local::Doc::TermsDoc)?.map(|b| (rel, b)))
 }
 
-/// Where exclusivity comes from: the record at signing, or the older list in the settings file (no terms
-/// document).
+/// Whether a grant is exclusive: recorded so at signing, or not. Closed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Exclusive {
     No,
     Signed,
-    Legacy,
 }
 
-/// Whether a grant is exclusive, read in one place. The issuance record first; only without a record is the
-/// old list consulted.
-pub fn exclusive_of(records: &[Record], legacy: &[String], grant: &str) -> Exclusive {
+/// Whether a grant is exclusive, read in one place: its issuance record (a grant without one is not).
+pub fn exclusive_of(records: &[Record], grant: &str) -> Exclusive {
     match records.iter().find(|r| r.grant.eq_ignore_ascii_case(grant)) {
         Some(r) if r.exclusive => Exclusive::Signed,
-        Some(_) => Exclusive::No,
-        None if legacy.iter().any(|x| x.eq_ignore_ascii_case(grant)) => Exclusive::Legacy,
-        None => Exclusive::No,
+        _ => Exclusive::No,
     }
 }

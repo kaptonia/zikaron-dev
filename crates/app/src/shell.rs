@@ -626,8 +626,6 @@ pub struct Shell {
     pub proofs_rows: Option<String>,
     /// Chain time read back on a chain round trip (see `note_chain_time`).
     pub chain_time: Option<u64>,
-    /// The primary identity settled by the first unlock after an upgrade (shown once, then taken).
-    pub primary_settled: Option<String>,
     /// The primary identity and its kind (the vault header, readable while locked; read with `vault`, never in
     /// the frame). The lock screen offers words or a key file by it; the identity menus mark it.
     pub primary: Option<(String, crate::keybox::PrimaryKind)>,
@@ -797,7 +795,6 @@ impl Shell {
             chain_read_at: None,
             proofs_rows: None,
             chain_time: None,
-            primary_settled: None,
             primary: primary_reading(),
             rekeying: false,
             swapping: false,
@@ -857,9 +854,6 @@ impl Shell {
         // What the passes right after opening found (`local::after_open`, run in the unlock's own task).
         if let Some(o) = crate::local::take_opened() {
             self.faults.extend(o.troubles);
-            if o.primary.is_some() {
-                self.primary_settled = o.primary;
-            }
         }
         // Local data opens only now: the home is closed while locked, so land on the seat and open its home as
         // the window does at start.
@@ -874,7 +868,7 @@ impl Shell {
         if let Err(f) = self.refresh_anchor() {
             self.faults.push(f);
         }
-        match crate::register::view(self.settings.role) {
+        match crate::register::view() {
             Ok(v) => self.seat_identities(Some(v)),
             Err(f) => self.faults.push(f),
         }
@@ -1463,7 +1457,6 @@ impl Shell {
             vetted: _,
             vault: _,
             vault_recoverable: _,
-            primary_settled: _,
             primary: _,
             rekeying: _,
             swapping: _,
@@ -1991,15 +1984,15 @@ impl Shell {
                     self.reread_kits();
                     self.kit = Some(d.clone())
                 }
-                Ok(Done::Keystore(crate::task::Keystore::BackedUp { id, seat, path, .. })) => {
+                Ok(Done::Keystore(crate::task::Keystore::BackedUp { id, path, .. })) => {
                     // The location is recorded with the flag: the flag says it was done, the location says
                     // where, so whether the backup is really on disk can be asked (`identity::backup_seen`).
                     if let Some(id) = id {
-                        if let Err(f) = crate::register::change(*seat, |reg| crate::identity::mark(reg, id, false, true, Some(path))) {
+                        if let Err(f) = crate::register::change(|reg| crate::identity::mark(reg, id, false, true, Some(path))) {
                             self.faults.push(f);
                         }
                     }
-                    match crate::register::view(*seat) {
+                    match crate::register::view() {
                         Ok(v) => self.seat_identities(Some(v)),
                         Err(f) => self.faults.push(f),
                     }

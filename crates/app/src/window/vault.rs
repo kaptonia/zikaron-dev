@@ -385,6 +385,8 @@ impl Win {
     /// Sublicense (opened from a held grant): the upstream's record, issuer and validity, then the grant form
     /// with that record fixed. Without a key or a ledger, says what to do first.
     pub(super) fn relicense_page(&mut self, ui: &mut egui::Ui, now: f64) {
+        // Its terms file zone takes dropped files.
+        self.takes_drops();
         let upstream = self.typed.g_upstream.trim().to_string();
         let held = self.shell.held.clone().unwrap_or_default().into_iter().find(|h| h.id.eq_ignore_ascii_case(&upstream));
         let name = self.held_record_name(&upstream);

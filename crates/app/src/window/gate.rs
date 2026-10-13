@@ -40,17 +40,20 @@ impl Win {
         let empty_out = locked_out && !self.shell.vault_recoverable;
         let busy = self.shell.tasks.in_flight(crate::task::Kind::Vault);
         let recover = self.ux.gate_recover;
-        // The recovery way follows the primary identity's kind, read from the vault header before unlocking.
-        // Vaults written before the primary was recorded offer both ways.
+        // The recovery way follows the primary identity's kind, read from the vault header before unlocking: a
+        // recovery-word primary recovers with its words, or (folded under them) with a key file either of its
+        // roles exported; an imported-key primary with the key file it exported. Without a primary there is no
+        // recovery seal, and only a whole-machine backup remains.
         let (by_words, by_file) = match self.shell.primary.as_ref().map(|(_, k)| *k) {
-            Some(crate::keybox::PrimaryKind::Words) => (true, false),
+            Some(crate::keybox::PrimaryKind::Words) => (true, true),
             Some(crate::keybox::PrimaryKind::KeyFile) => (false, true),
-            None => (true, true),
+            None => (false, false),
         };
         let mut from_backup = false;
         let len = crate::keybox::PIN_LEN;
         let mut first_pin = false;
         let mut act: Option<Action> = None;
+        let mut lang_to: Option<crate::lang::Lang> = None;
         full::cover(ctx, "gate", |ui, drop| {
             let rect = ui.max_rect();
             full::centered(ui, "gate", rect, tk::SHEET_W, drop, |ui| {
@@ -65,6 +68,9 @@ impl Win {
                         Key::PinRecoverTitle
                     };
                     paint::text(ui, t(title), Type::Page, c(C::Ink));
+                    // The language, switchable before anything is unlocked (kept on this machine).
+                    ui.add_space(10.0);
+                    lang_to = lang_pick(ui, "gate-lang");
                 });
                 if !recover {
                     ui.vertical_centered(|ui| {
@@ -92,7 +98,7 @@ impl Win {
                     ui.add_space(6.0);
                     if empty_out {
                         paint::text(ui, t(Key::PinEmptySay), Type::Note, c(C::Ink2));
-                    } else {
+                    } else if by_words || by_file {
                         let how = t(if by_words { Key::GateByWords } else { Key::GateByFile });
                         let say = if locked_out { format!("{}{}", t(Key::GateLockedFive), how) } else { how.to_string() };
                         paint::text(ui, &say, Type::Note, c(C::Ink2));
@@ -140,7 +146,7 @@ impl Win {
                     gate_message(ui, busy, self.ux.gate_trouble.as_deref(), 4.0);
                 }
                 // An imported-key primary recovers with the key file it exported and that file's password (shown
-                // open; folded under the words only for vaults written before the primary was recorded).
+                // open); a recovery-word primary's key files are folded under its words.
                 let file_way = |me: &mut Self, ui: &mut egui::Ui, first_pin: &mut bool, act: &mut Option<Action>| {
                     ui.spacing_mut().item_spacing.y = tk::S3;
                     paint::text(ui, t(Key::GateDropKeyFile), Type::Note, c(C::Ink2));
@@ -218,6 +224,9 @@ impl Win {
         });
         if from_backup {
             self.bk_open(Bk::Restore(RestoreFrom::Locked));
+        }
+        if let Some(lang) = lang_to {
+            let _ = self.act(Action::SetLang { lang }, now);
         }
         if first_pin {
             self.take_first_pin(now, true);

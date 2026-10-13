@@ -9,3 +9,5 @@ license = "MIT"
 # embeds are the ones in `fonts/`.
 [dependencies]
 egui = { version = "0.33", default-features = false }
+# Wiping secrets in place: the platform piece's one implementation (this crate forbids `unsafe`).
+zikaron-os = { path = "../zikaron-os" }

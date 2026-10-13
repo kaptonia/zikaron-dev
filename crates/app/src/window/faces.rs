@@ -1002,6 +1002,7 @@ pub fn probe_title_swap(ctx: &egui::Context, shell: Shell, from: Place, to: Plac
 }
 
 /// What the window did with files dropped on it as a whole.
+#[derive(Clone, Debug)]
 pub struct DropReading {
     /// The route drawn after the drop.
     pub route: String,
@@ -1014,6 +1015,9 @@ pub struct DropReading {
     pub verify_path: String,
     /// The toast on screen.
     pub toast: Option<String>,
+    /// Whether the page drawn declared that it takes drops in its own zones (`Win::takes_drops`), so the
+    /// whole-window drop stood aside.
+    pub page_drops: bool,
 }
 
 /// Drop `paths` on the window over `place` in a few windowless frames. A place without its own drop area (the
@@ -1048,6 +1052,7 @@ pub fn probe_drop(ctx: &egui::Context, shell: Shell, place: Place, paths: &[Stri
         name: win.typed.work_note.clone(),
         verify_path: win.typed.vf_path.clone(),
         toast: win.toasts.showing().map(|s| s.to_string()),
+        page_drops: win.ux.page_drops,
     };
     (win.shell, reading)
 }
@@ -1133,6 +1138,226 @@ pub fn probe_wizard_exit(ctx: &egui::Context, shell: Shell, place: Place, step: 
         place_after: format!("{}:{:?}:{:?}", win.shell.settings.role.as_str(), win.ux.stack, win.ux.place),
     };
     (win.shell, reading)
+}
+
+/// What pressing the wizard's "back" key did, read from the window's own state after each press.
+#[derive(Clone, Debug, Default)]
+pub struct WizardBack {
+    /// Whether the key was drawn (and so pressed) on the words' check page.
+    pub pressed_on_check: bool,
+    /// The step and whether the words' check was showing after that press.
+    pub step_after_check: String,
+    pub checking_after: bool,
+    /// Whether the new words in hand were the same before and after (none dropped, none made anew).
+    pub same_words: bool,
+    /// Whether the key was drawn on the words' page, and the step after pressing it there.
+    pub pressed_on_words: bool,
+    pub step_after_words: String,
+}
+
+/// The wizard on the identity step with new words in hand and their check showing (as after "I have copied
+/// them"); then "back" pressed the way a click presses it (at the drawn key), twice: from the check, then
+/// from the words. The shell needs new words in hand (`Action::NewIdentity`).
+pub fn probe_wizard_back(ctx: &egui::Context, shell: Shell, place: Place, width: f32, height: f32) -> (Shell, WizardBack) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    let (stack, h) = crate::nav::history_of(place, role);
+    ux.stack = stack;
+    ux.hist.insert(stack, h);
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run(input, |c| win.draw(c))
+    };
+    let words = |win: &Win| win.shell.new_words.as_ref().map(|f| f.words().iter().map(|w| w.expose().to_string()).collect::<Vec<_>>());
+    let before = words(&win);
+    win.wizard_open(crate::nav::Step::Key);
+    win.ux.id_confirming = true;
+    // Press the drawn "back" key; whether it was drawn to be pressed.
+    let mut press_back = |win: &mut Win| -> bool {
+        let mut out = run(win, Vec::new());
+        for _ in 0..6 {
+            out = run(win, Vec::new());
+        }
+        let Some(at) = texts_of(&out).iter().find(|d| d.text == t(Key::WizPrev)).map(|d| d.rect.center()) else { return false };
+        let _ = run(win, vec![egui::Event::PointerMoved(at)]);
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(win, vec![press(true), press(false)]);
+        let _ = run(win, vec![egui::Event::PointerGone]);
+        for _ in 0..4 {
+            let _ = run(win, Vec::new());
+        }
+        true
+    };
+    let step_of = |win: &Win| win.ux.wizard.map(|s| format!("{s:?}")).unwrap_or_default();
+    let pressed_on_check = press_back(&mut win);
+    let step_after_check = step_of(&win);
+    let checking_after = win.ux.id_confirming;
+    let same_words = before.is_some() && words(&win) == before;
+    let pressed_on_words = press_back(&mut win);
+    let step_after_words = step_of(&win);
+    let reading = WizardBack { pressed_on_check, step_after_check, checking_after, same_words, pressed_on_words, step_after_words };
+    (win.shell, reading)
+}
+
+/// What clicking the other language on the first-run wizard's or the passcode gate's switch did.
+#[derive(Clone, Debug, Default)]
+pub struct LangPick {
+    /// Whether the other language's cell was drawn (and so clicked).
+    pub drawn: bool,
+    /// The language spoken before and after the click (`lang::lang`), and the one this machine keeps after it.
+    pub before: String,
+    pub after: String,
+    pub machine_after: String,
+    /// Whether the wizard (or the gate) was still up after the click.
+    pub still_up: bool,
+}
+
+/// The first-run wizard opened at `step` (`gate`: false), or the passcode gate (`gate`: true, the vault locked);
+/// then the other language's cell on its switch clicked the way a click presses it.
+pub fn probe_lang_pick(ctx: &egui::Context, shell: Shell, place: Place, gate: bool, step: crate::nav::Step, width: f32, height: f32) -> (Shell, LangPick) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    let (stack, h) = crate::nav::history_of(place, role);
+    ux.stack = stack;
+    ux.hist.insert(stack, h);
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run(input, |c| win.draw(c))
+    };
+    if !gate {
+        win.wizard_open(step);
+    }
+    let mut out = run(&mut win, Vec::new());
+    for _ in 0..6 {
+        out = run(&mut win, Vec::new());
+    }
+    let before = crate::lang::lang();
+    let other = crate::lang::Lang::ALL.into_iter().find(|l| *l != before).unwrap_or(before);
+    let at = texts_of(&out).iter().find(|d| d.text == other.label()).map(|d| d.rect.center());
+    if let Some(at) = at {
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(at)]);
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(&mut win, vec![press(true), press(false)]);
+        let _ = run(&mut win, vec![egui::Event::PointerGone]);
+        for _ in 0..4 {
+            let _ = run(&mut win, Vec::new());
+        }
+    }
+    let still_up = if gate { !win.shell.unlocked() } else { win.ux.wizard.is_some() };
+    let reading = LangPick {
+        drawn: at.is_some(),
+        before: before.label().to_string(),
+        after: crate::lang::lang().label().to_string(),
+        machine_after: crate::machine::read().ok().and_then(|m| m.lang).map(|l| l.label().to_string()).unwrap_or_default(),
+        still_up,
+    };
+    (win.shell, reading)
+}
+
+/// What typing at the passcode gate did, with nothing over it and with the lock screen's restore sheet over it.
+#[derive(Clone, Debug, Default)]
+pub struct TypedUnder {
+    /// Characters the gate's passcode row held after three were typed with nothing over it.
+    pub bare: usize,
+    /// Whether the restore sheet was drawn over the gate, and its title pressed (a press on no control).
+    pub sheet_up: bool,
+    pub pressed: bool,
+    /// Characters the gate's passcode row held after three were typed with the sheet over it.
+    pub under: usize,
+    /// Whether the vault stayed locked throughout.
+    pub locked: bool,
+}
+
+/// The passcode gate (the vault locked): three characters typed with nothing over it; the row emptied, the lock
+/// screen's restore sheet opened over the gate the way its key opens it, a press on the sheet's title (no control
+/// there, so nobody holds focus after it), and three characters typed again.
+pub fn probe_typed_under(ctx: &egui::Context, shell: Shell, width: f32, height: f32) -> (Shell, TypedUnder) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    let (stack, h) = crate::nav::history_of(Place::Home, role);
+    ux.stack = stack;
+    ux.hist.insert(stack, h);
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run(input, |c| win.draw(c))
+    };
+    let typed = || vec![egui::Event::Text("123".into())];
+    for _ in 0..6 {
+        let _ = run(&mut win, Vec::new());
+    }
+    let _ = run(&mut win, typed());
+    let _ = run(&mut win, Vec::new());
+    let bare = win.ux.pin.chars();
+    win.ux.pin = crate::secret::Secret::default();
+    win.bk_open(Bk::Restore(RestoreFrom::Locked));
+    let mut out = run(&mut win, Vec::new());
+    for _ in 0..6 {
+        out = run(&mut win, Vec::new());
+    }
+    let title = texts_of(&out).iter().find(|d| d.text == t(Key::BackupRestoreTitle)).map(|d| d.rect.center());
+    if let Some(at) = title {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(at), press(true), press(false)]);
+        for _ in 0..3 {
+            let _ = run(&mut win, Vec::new());
+        }
+    }
+    let _ = run(&mut win, typed());
+    for _ in 0..3 {
+        let _ = run(&mut win, Vec::new());
+    }
+    let reading = TypedUnder { bare, sheet_up: win.ux.bk.is_some(), pressed: title.is_some(), under: win.ux.pin.chars(), locked: !win.shell.unlocked() };
+    (win.shell, reading)
+}
+
+/// The window over `place`, then the shell's page set from outside the window (`Action::Show`, as a link or the
+/// command-line door sets it) and a few frames drawn: the route drawn before and after, and the shell's page
+/// after (the window's following never moves it back).
+pub fn probe_show_follow(ctx: &egui::Context, shell: Shell, place: Place, page: Page, width: f32, height: f32) -> (Shell, String, String, String) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    let (stack, h) = crate::nav::history_of(place, role);
+    ux.stack = stack;
+    ux.hist.insert(stack, h);
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win| {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), ..Default::default() };
+        let _ = ctx.run(input, |c| win.draw(c));
+    };
+    for _ in 0..4 {
+        run(&mut win);
+    }
+    let before = zikaron_ui::probe::route_drawn(ctx);
+    let _ = crate::action::apply(&mut win.shell, Action::Show(page));
+    for _ in 0..4 {
+        run(&mut win);
+    }
+    let after = zikaron_ui::probe::route_drawn(ctx);
+    let page_after = format!("{:?}", win.shell.page);
+    (win.shell, before, after, page_after)
 }
 
 fn t_void() -> &'static str {

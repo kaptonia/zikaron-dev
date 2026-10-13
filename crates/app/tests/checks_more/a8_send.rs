@@ -148,10 +148,8 @@ fn bench(name: &str, nodes: &[&Node]) -> app::shell::Shell {
     let _ = std::fs::remove_dir_all(&dir);
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
+    super::seated(&mut shell, &dir.join("home"));
     answers!(apply(&mut shell, Action::OpenHome { root: dir.join("home").display().to_string() }), Applied::Homed { .. });
-    if shell.anchor.is_none() {
-        answers!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_));
-    }
     let _ = apply_settled(&mut shell, Action::Genesis { statement: "a8".into() });
     let probe = dir.join("probe.txt");
     std::fs::write(&probe, name.as_bytes()).expect("a file");

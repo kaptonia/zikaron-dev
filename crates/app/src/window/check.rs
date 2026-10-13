@@ -5,6 +5,8 @@ use super::*;
 
 impl Win {
     pub(super) fn check_page(&mut self, ui: &mut egui::Ui, now: f64) {
+        // Its grant and record zones take dropped files.
+        self.takes_drops();
         // An empty basis borrows the home's nodes and registry (shown, so the person sees what the verdict
         // stands on).
         if self.typed.ck_endpoints.trim().is_empty() && !self.shell.endpoints.is_empty() {

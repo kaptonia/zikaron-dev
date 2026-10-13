@@ -454,9 +454,15 @@ impl Form {
             }
         }
         let room = (rx - x).max(0.0);
-        let ty = rect.center().y - (Type::Row.line() + 3.0 + Type::Small.line()) / 2.0;
-        paint::at(&p, ui, pos2(x, ty), egui::Align2::LEFT_TOP, title, Type::Row, c(C::Ink), room);
-        paint::at(&p, ui, pos2(x, ty + Type::Row.line() + 3.0), egui::Align2::LEFT_TOP, note, Type::Small, c(C::Ink2), room);
+        // The words are centred on the lines there are: the title alone with no note, the title and its note
+        // otherwise.
+        if note.is_empty() {
+            paint::at(&p, ui, pos2(x, rect.center().y), egui::Align2::LEFT_CENTER, title, Type::Row, c(C::Ink), room);
+        } else {
+            let ty = rect.center().y - (Type::Row.line() + 3.0 + Type::Small.line()) / 2.0;
+            paint::at(&p, ui, pos2(x, ty), egui::Align2::LEFT_TOP, title, Type::Row, c(C::Ink), room);
+            paint::at(&p, ui, pos2(x, ty + Type::Row.line() + 3.0), egui::Align2::LEFT_TOP, note, Type::Small, c(C::Ink2), room);
+        }
         self.bottom = rect.bottom();
         if nav {
             crate::probe::row(ui.ctx(), rect);

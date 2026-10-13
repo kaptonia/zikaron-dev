@@ -601,6 +601,11 @@
    "home": [
     "crates/zikaron-anchor/src/scan.rs"
    ],
+   "symbols": [
+    "zikaron_anchor::scan::logs_over_window",
+    "zikaron_anchor::scan::LogFilter",
+    "zikaron_anchor::scan::Topic"
+   ],
    "tests": [
     {
      "path": "crates/zikaron-anchor/src/scan.rs",

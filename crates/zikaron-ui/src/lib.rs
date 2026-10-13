@@ -8,6 +8,10 @@
 //! egui enters only through this crate and the app's `window` module. No protocol decision is made here:
 //! this crate knows colors, shapes and rectangles, not entries, ledgers or kits.
 
+// `unsafe` lives in the platform piece (`zikaron-os`) alone: in the shipped build it does not compile here. The
+// crate's own tests read past a secret's length to check it was zeroed, which only raw memory can show.
+#![cfg_attr(not(test), forbid(unsafe_code))]
+
 pub mod button;
 pub mod card;
 pub mod datepick;

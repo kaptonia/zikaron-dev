@@ -54,7 +54,15 @@ A User can also write a **sublicense** in their own ledger, passing an upstream 
 
 Version 0.1.2 comes as packages for macOS with Apple silicon and for x86_64 Linux, and as a zip for x86_64 Windows. Every package carries the third-party licences (on macOS in `ZIKARON.app/Contents/Resources/THIRD-PARTY-LICENSES.txt`, on Linux in `/usr/share/doc/zikaron-desk/THIRD-PARTY-LICENSES.txt`, on Windows in the unpacked folder); in the app they are under "About".
 
-**Upgrading from 0.1.1.** Install the new version; existing data folders and the machine folder open as before. Encrypted local files written by 0.1.2 cannot be read by 0.1.1, so do not open the same data with 0.1.1 after upgrading.
+**Upgrading from an earlier version.** This version reads only the encrypted form it writes itself. A file an earlier version left in an older form is not read: it is named as not encrypted in this version's form and left as it is. That holds for the machine folder any earlier version wrote (key store, identity registry, settings), so this version starts from an empty machine folder; ledgers kept by 0.1.0 and 0.1.1 also hold their entries in an older form. To bring a Recorder's ledger across:
+
+1. In 0.1.2, "Export ledger mirror…" (see "Ledger mirror") to a folder outside the machine folder, then quit.
+2. Move the earlier version's machine folder aside, together with its pointer file (Appendix B says where both are), so that this version finds neither. Data folders kept inside the machine folder move with it; the mirror is what comes across.
+3. Start this version: it begins with an empty machine folder. Set a passcode, then import the identity with the same recovery phrase.
+4. "Adopt existing ledger folder", then "Adopt in place" on the mirror's `author` folder: every entry is checked again, and the ledger is checked against this key's records on chain.
+5. Run the ledger check on the Ledger page and see it come back "OK".
+
+Encrypted local files written by this version cannot be read by earlier versions.
 
 **macOS**
 
@@ -131,6 +139,8 @@ Without a passcode, the wizard stays on step 1. With a passcode but no identity,
 **Bottom buttons**
 
 - On the left: "Back", and "Later" on steps that may be skipped. On the last step this key reads "Do it later" and closes the wizard with the same message as "Finish".
+- "Back" goes to the page before: from the check of the copied words to the same twelve words (the check boxes emptied), and from a step's first page to the step before.
+- Under the steps on the left, "中文" | "English" switches the interface language from the first step on. The choice is kept on this machine and used on the passcode gate too; the gate carries the same switch under its title.
 - On the right: the step's own action key until the step is done (step 1 has none; filling the boxes submits), then a blue "Next". The last step has "Finish", which shows "First run complete; remaining items are in Settings > About".
 
 **Leaving the wizard.** "Exit setup" at the bottom of the step list, or Esc, returns you to where you were before the wizard opened. Finished steps stay finished. At the next start the wizard opens again only if the passcode or identity is still missing, or a Recorder's ledger has not been created; for the other unfinished steps, use "Run wizard again" in Settings > About.
@@ -233,7 +243,7 @@ The sidebar is on the left and the page is on the right. Across the top of the p
    | Recorder | User |
    |---|---|
    | Home | Home |
-   | **Entries**: Records, Grant | **Grant**: My grants |
+   | **Entry**: Records, Grant | **Grant**: My grants |
    | **Look up**: Verify, Ledger, Alerts | **Look up**: Verify, Alerts |
 
    - The number next to "Alerts" counts the amber and red rows on the Alerts page.
@@ -385,12 +395,13 @@ On the passcode gate, press "Forgot passcode" to reach "Recover". Only the **pri
 - **The primary is a recovery-phrase identity**: the card reads "Enter the primary identity's recovery words to reset the passcode." Fill in the 12 words.
   - You can paste the whole phrase into any box; it spreads out from that box onward.
   - Every box shows dots, and a word not on the word list is marked red.
+  - Below the boxes, the fold "Recover with a key file" takes a key file exported from either role of the primary identity ("Export key file…" in Settings > Identity key), with its "Password", instead of the words: "Or use a key file exported from either role of the primary identity, and the file's password."
 - **The primary is an imported local-key identity**: the card reads "Use the primary identity's key file to reset the passcode." Press "Choose a file…" to pick the key file exported from the primary identity, and enter the "File password". A wrong password gives "Incorrect password."; a file that is not a key file, or whose encryption parameters are out of bounds, is refused before any decryption work starts ("The keystore file format is not recognised.", "The keystore file has invalid encryption parameters.").
 
 Then set a new passcode, entering it twice ("Set a passcode", then "Enter it again"). On success the wrong-try count is cleared, the old passcode no longer works, and the toast reads "Recovered, passcode reset".
 
 - A secondary identity's words or key file are refused: "This belongs to a secondary identity." and "Only the primary identity recovers the passcode; use the primary's, or restore from a backup."
-- If the key store has not yet recorded which identity is primary, both ways are offered: the twelve boxes, and below them the fold "Recover with a key file" (key file and "Password"). The primary is recorded at this unlock.
+- Without a primary identity (no identity on this machine yet) there is nothing to recover with; a machine locked out like this offers to reset the empty key store instead.
 - "Cancel" returns to the passcode card. Once the gate is "Locked" there is no "Cancel": only recovery remains.
 
 #### 5.4 Restoring from a backup at the gate
@@ -474,7 +485,7 @@ The "All" segment, top to bottom:
 
 - The drop zone "New record".
 - The search field "Find by record name or content fingerprint", with "Start date" and "End date" beside it filtering by first anchor block time. To see whether a file is in this ledger, type its SHA-256 into the search field.
-- The record table, with the columns "Entries", "On-chain state", "First anchor block time" and "Entry number", newest first. Deleted records are struck through. With no records yet it reads "No records yet. Drop a file to start."
+- The record table, with the columns "Entry", "On-chain state", "First anchor block time" and "Entry number", newest first. Deleted records are struck through. With no records yet it reads "No records yet. Drop a file to start."
 
 #### New record
 
@@ -571,7 +582,7 @@ For the entry's format and how it is read, see Appendix C.
 
 All entries in a batch travel in one transaction.
 
-**The gas cap** is worked out from the chain's actual fees: (base fee × 2 + tip) × the gas limit this transaction carries. The limit is one and a half times the gas the nodes estimate (rounded up), at most 200,000; an estimate above 200,000 is refused and nothing is sent. The base fee is read at the block every node has reached (the lowest height when nodes differ), and nodes are compared on the base fee alone. The tip is the median, over the 20 blocks up to that block, of each block's median paid tip (blocks whose median is zero are left out unless all are zero), at most 1 gwei; when the nodes give no answer, refuse, disagree or answer in another shape, it is 1 gwei. If the base fee cannot be read, the whole pair falls back (a 3 gwei cap and a 1 gwei tip; the limit still follows the estimate, so at most 0.0006 ETH): the cap on the confirmation card is then the fallback's, the card says "No base fee from the nodes; cap at the fallback", and the chain is asked again the next time the card opens. Nodes serving another chain are not read for fees, and the card names them. The gas estimate takes its block by the same rule (the lowest block every node has reached). Only this chain's nodes are asked. On the layer-two networks Arbitrum One and OP Mainnet the tip is likewise what the chain actually paid, usually far below 1 gwei, so what is set aside and what is paid are a small fraction of mainnet's.
+**The gas cap** is worked out from the chain's actual fees: (base fee × 2 + tip) × the gas limit this transaction carries. The limit is one and a half times the gas the nodes estimate (rounded up), at most 200,000; an estimate above 200,000 is refused and nothing is sent. The base fee is read at the block every node has reached (the lowest height when nodes differ), and nodes are compared on the base fee alone. The tip is the median, over the 20 blocks up to that block, of each block's median paid tip (blocks whose median is zero are left out unless all are zero), at most 1 gwei; when the nodes give no answer, refuse, disagree or answer in another shape, it is 1 gwei. If the base fee cannot be read, the whole pair falls back (a 3 gwei cap and a 1 gwei tip; the limit still follows the estimate, so at most 0.0006 ETH): the cap on the confirmation card is then the fallback's, the card says "No base fee from the nodes; cap at the fallback", and the chain is asked again the next time the card opens. Nodes serving another chain are not read for fees, and the card names them. The gas estimate takes its block by the same rule (the lowest block every node has reached); when the nodes estimate different amounts, the largest any node gives is taken, and above 200,000 it is still refused. Only this chain's nodes are asked. On the layer-two networks Arbitrum One and OP Mainnet the tip is likewise what the chain actually paid, usually far below 1 gwei, so what is set aside and what is paid are a small fraction of mainnet's.
 
 **Checks before sending**
 
@@ -625,7 +636,7 @@ The switch applies to every kind of write: records, grants, revocations and so o
 "Ledger" in the sidebar. On the right of the toolbar:
 
 - The "More" menu: "Import existing records…", "Change key or hand over…", "Add note…" and "Sign a claim for someone…".
-- The segmented control "All", "Pending" and "Grant". "Pending" lists every entry that is not yet confirmed.
+- The segmented control "All", "Unconfirmed" and "Grant". "Unconfirmed" lists every entry the chain has not yet confirmed: those in the queue (queued, sent and awaiting the receipt, reverted, refused), those included but not yet counted by a ledger check, and those recorded without being queued. It is a wider set than "Pending" on Records, which counts the queue.
 
 **The ledger status line** at the top of the page: "Ledger status · OK/Problems · N total". Before the first check it reads "Never checked", or "Never checked: no network set yet" when nodes, chain ID or registry contract are missing.
 
@@ -643,7 +654,7 @@ Below it is the search field "Find by number, type or summary", with "Start date
 
 **Entry detail.** Click a row:
 
-- A record shows "Entries" (its name), "On-chain state" and "First anchor block time", with the buttons "Export record kit" and "Use for grant" (only when confirmed); a deleted record has neither.
+- A record shows "Entry" (its name), "On-chain state" and "First anchor block time", with the buttons "Export record kit" and "Use for grant" (only when confirmed); a deleted record has neither.
 - A grant: see "Grant detail" under "Grant list".
 - Other entries show "Summary", "On-chain state" and "First anchor block time".
 - Buttons any entry may have:
@@ -734,7 +745,7 @@ The note says "The new key must have no ledger, and this cannot be undone." The 
 **The grant list**
 
 - Search: "Find by grantee, record or state", with "Start date" and "End date" beside it filtering by the block time the grant entry was anchored at.
-- The table columns are "Entries" (the record), "Validity", "Grant no." and "State", plus a light for the on-chain state.
+- The table columns are "Entry", "Validity", "Grant no." and "State", plus a light for the on-chain state.
 - The state is judged by chain time: "Active", "Expired", "Not yet active", "Revoked" or "Unknown".
 - With no grants it reads "No grants yet".
 
@@ -771,7 +782,7 @@ Addresses and hashes in the grantee, terms file fingerprint and upstream fields 
 **Signing**
 
 1. Press "Add to ledger" (or "Send to chain now"); beside it the form says "Once signed, a grant can only be revoked". It works once the grantee, the record and the terms file fingerprint are all filled in, and, with a preset validity, once there is chain time.
-2. The confirmation card "Sign grant" shows "Entries" (the record), "Validity", "Terms file" (the file's name, or "Terms fingerprint typed by hand") and "Cost"; the grantee and the fingerprints are under "Details". The note says "After signing it can only be revoked".
+2. The confirmation card "Sign grant" shows "Entry", "Validity", "Terms file" (the file's name, or "Terms fingerprint typed by hand") and "Cost"; the grantee and the fingerprints are under "Details". The note says "After signing it can only be revoked".
 3. Press it again on the card to sign. The toast reads "Issued #N. N pending". Then put it on chain as described under "Pending queue".
 
 If the same record already has an exclusive grant with an overlapping period, signing is refused and the card "Exclusive grant conflict" lists the grants that clash; "Cancel" closes it.
@@ -790,8 +801,8 @@ Click a row in the grant list. The title is "#N · Grant".
 
 **"Basic information"**
 
-- "Entries" (the record), "Validity", "State", "On-chain state", "First anchor block time".
-- "Exclusive": "Yes · recorded on this machine only", "Yes · recorded on this machine only · no terms file" (an exclusive mark from an earlier version), or "No".
+- "Entry", "Validity", "State", "On-chain state", "First anchor block time".
+- "Exclusive": "Yes · recorded on this machine only" or "No".
 - "Attached terms file": the file name, or "No terms file".
 
 "Details" holds the grantee, the terms file fingerprint and the entry's machine values, plus "Show revocations", which lists "Revocation #N" for each revocation or says "No revocations".
@@ -810,7 +821,7 @@ Click a row in the grant list. The title is "#N · Grant".
 
 "Revoke grant…" opens the card "Revoke this grant":
 
-- The card shows "Entries" (the record) and "Original validity". "Details" holds the grantee and a field "Ruling file fingerprint (optional)".
+- The card shows "Entry" and "Original validity". "Details" holds the grantee and a field "Ruling file fingerprint (optional)".
 - The note says "This cannot be undone. The grantee will be alerted".
 
 Press "Revoke" to write the revocation entry and queue it; the toast reads "Revoked #N. N pending". Once it is on chain, the grantee's revocation watch will find it.
@@ -981,7 +992,7 @@ The other party verifies it by pasting the text into Verify > Verify grant.
 
 **Starting.** A grant that this session's re-verification has passed on all six checks has "Sublicense to others" on its detail page:
 
-1. A confirmation card "Sublicense" shows "Entries" (the record), "Issuer" and "Upstream validity", with the note "The sublicense ends when the upstream grant is revoked or expires."
+1. A confirmation card "Sublicense" shows "Entry", "Issuer" and "Upstream validity", with the note "The sublicense ends when the upstream grant is revoked or expires."
 2. "Draft…" opens the sublicense page. Nothing is written at this point.
 
 **The sublicense page.** The upper half shows the upstream grant; the lower half is the same form as "Draft a grant":
@@ -1231,7 +1242,7 @@ A User does due diligence on the "Look up a ledger" page, which has more under "
 
 #### 11.1 Language and time
 
-- **"Language"**: "中文" or "English". The passcode gate uses the language chosen last.
+- **"Language"**: "中文" or "English". The choice is kept on this machine (the passcode gate and the first-run wizard use it, and switch it too) and, with a data folder open, in that folder's settings; a data folder that can only be read refuses the change.
 - **"Time zone"**: "UTC" (the default) or "Follow the system".
   - Every time in the window is shown in it. The full form is `2026-09-24 23:46:12`; narrow places show only the date or `MM-DD HH:MM`.
   - If the system time zone cannot be read: "The system time zone could not be read; moments show in UTC".
@@ -1277,7 +1288,7 @@ If the current role's key cannot be found, an extra "Key address" row explains w
 
 **The "Export" group**
 
-- **"Export key file…"**: a standard keystore file for use in other wallets. For a local-key identity that is primary, it is also how the passcode is recovered. Steps:
+- **"Export key file…"**: a standard keystore file for use in other wallets. A key file exported from the primary identity (either role) also recovers the passcode at the gate. Steps:
   1. Enter this machine's passcode.
   2. Enter a file password in "Password, at least 8 characters" and again in "Confirm password". The strength reading is only a guide and never blocks you.
   3. Choose the folder under "Saved to" and press "Export key file".
@@ -1291,7 +1302,6 @@ If the current role's key cannot be found, an extra "Key address" row explains w
 - **"New identity…"**: an optional "Label", then under it "Network" for the network this identity uses, then generate, write down and check 12 words, as in wizard step 2.
   - "Network" lists each preset network of Appendix A, then "Custom"; the one this machine last chose in the wizard is selected first, Ethereum mainnet if it never chose.
   - The chosen network fills both roles' data folders of this identity; both roles use it.
-  - An identity made by an earlier version has no network recorded: the first time a data folder is opened after upgrading, the one this machine chose in the wizard is recorded for it (nothing is recorded if that was "Custom", if this machine never chose, or if the identity's data folders already hold another chain). From then on both roles use it, and a later choice on this machine does not change it.
   - With "Custom", this identity's data folders have no network, and reading the chain or anchoring says it is not configured, until it is filled in and saved in Settings > Network (by hand or from a preset). Saved in one role, the other role takes the same network when it opens; other identities are not affected.
 - **"Import key…"**: three tabs, "Recovery phrase", "Private key" and "Key file".
   - Recovery phrase: 12 boxes; the whole phrase can be pasted.
@@ -1582,20 +1592,17 @@ Each preset node was measured to hold the registry's complete logs since its sta
 
 To use the testnet: choose "Sepolia testnet" under "Network" when making the identity; or choose "Custom" in wizard step 3, then in Settings > Network press "Edit nodes…", pick "Sepolia testnet" under "Preset", and press "Save nodes" and "Save chain settings".
 
-The mainnet node shipped with 0.1.0, `https://rpc.flashbots.net`, keeps only the last ten or twenty thousand blocks of logs and answers older ones empty, so syncing said "Nodes returned different results." After upgrading, a data folder whose nodes are still exactly the pair 0.1.0 shipped (letter for letter, in order) is switched to the pair above when it is opened for writing; nodes you changed are left alone.
-
 ## Appendix B · Files on this machine and encryption
 
 **The machine folder** holds the key store, the identity registry, the machine settings `machine.json`, the record kit index and so on.
 
 - Its location is given by the pointer file `~/.zikaron-desk` (one line holding an absolute path), which the app writes each time it starts. Without a pointer it is `~/.zikaron-desk.d/`. On Windows both sit in `%LOCALAPPDATA%\ZIKARON\`: `%LOCALAPPDATA%\ZIKARON\.zikaron-desk` and `%LOCALAPPDATA%\ZIKARON\.zikaron-desk.d\`.
-- Earlier versions on macOS kept the machine folder at `~/Library/Application Support/ZIKARON`. If there is no pointer and that folder exists, the app keeps using it.
 
 **The data folders**, one for each role of each identity, hold the ledger, settings, pending queue, received grants and so on, in the subfolders `ledger`, `kits`, `grants-held` and `settings`. By default they sit in the machine folder: one folder per identity, its name computed with this machine's key, holding `author` (Recorder) and `grantee` (User).
 
 **Local encryption.** Ledger entries, settings, the pending queue, the identity registry, the record index, hand-filled record kit links, the record of checked facts (`checked/facts.json` in the machine folder), the index of what the last whole-machine backup holds, and received grants (with their last verification results and kept grant files) and terms files are all encrypted with a local data key derived from the master key (XChaCha20-Poly1305). While the app is locked none of it can be read, and someone who copies this machine's files cannot read it without the passcode. File names, and the part of each file's header that says which file it is, are computed with this machine's key, so someone holding the disk cannot tell from entry or grant numbers which entries or grants this machine keeps.
 
-Files are written only in the current encrypted format. Files written by earlier versions are read as they are and change format only when they are next written; nothing is converted in bulk. A file that cannot be opened (written by a newer version, or damaged) is never overwritten: it is named with the reason and left as it is. Files written by 0.1.2 cannot be read by 0.1.1.
+Files are written and read only in the current encrypted format. A file in any other form (a plain file, or one an earlier version wrote in an older form) is not read, and nothing converts it (see "Upgrading from an earlier version" in section 2). A file that cannot be opened (written by a newer version, or damaged, or in an older form) is never overwritten: it is named with the reason and left as it is. Files written by this version cannot be read by earlier versions.
 
 **Files that are not encrypted this way**
 

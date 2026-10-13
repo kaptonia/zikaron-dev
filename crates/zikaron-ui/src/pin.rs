@@ -24,10 +24,13 @@ pub fn pin_row(ui: &mut egui::Ui, id_salt: &str, value: &mut crate::secret::Secr
     let (rect, resp) = ui.push_id(("zikaron-pin", id_salt), |ui| ui.allocate_exact_size(vec2(w, ch), egui::Sense::click())).inner;
     // Focus is real focus and keys are taken only with it; `active` only means "take focus when nobody holds
     // it", and a holder is never displaced. A row that takes focus this frame does not take this frame's keys.
-    let held = resp.has_focus();
+    // Both ask first whether the row lies on top (`layer::on_top`): under an overlay it neither takes focus
+    // nor takes keys, so what is typed on the overlay never lands in a row nobody can see.
+    let top = crate::layer::on_top(ui, rect);
+    let held = resp.has_focus() && top;
     if resp.clicked() {
         resp.request_focus();
-    } else if active && ui.memory(|m| m.focused().is_none()) {
+    } else if active && top && ui.memory(|m| m.focused().is_none()) {
         resp.request_focus();
     }
     let mut changed = false;

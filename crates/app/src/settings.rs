@@ -57,12 +57,6 @@ pub struct Settings {
     pub audit_every: u64,
     /// The registered git repository.
     pub repo: Option<RepoRecord>,
-    /// The former local exclusivity list, kept read-only for older homes.
-    ///
-    /// Exclusivity is now carried by the issuance record written once at signing (`termsx`). This list is
-    /// read but never changed; the UI marks its entries "no terms document", and the double-sale check still
-    /// reads it (`legacy` in `grantx::table`).
-    pub exclusive: Vec<String>,
     /// Address book, purely local: only what the person pasted in. This layer never discovers or enumerates
     /// addresses, so it never becomes a directory.
     pub book: Vec<String>,
@@ -117,7 +111,6 @@ impl Default for Settings {
             from_block: 0,
             audit_every: AUDIT_EVERY_DEFAULT,
             repo: None,
-            exclusive: Vec::new(),
             book: Vec::new(),
             upstreams: Vec::new(),
             review_every: REVIEW_EVERY_DEFAULT,
@@ -136,8 +129,8 @@ impl Default for Settings {
 }
 
 /// The members this version reads and writes; any other is kept as it came (`Settings::extra`).
-const MEMBERS: [&str; 22] = [
-    "alarmed", "auditEvery", "autoAnchor", "book", "capBytes", "chainId", "endpoints", "exclusive", "fromBlock", "grantNotes",
+const MEMBERS: [&str; 21] = [
+    "alarmed", "auditEvery", "autoAnchor", "book", "capBytes", "chainId", "endpoints", "fromBlock", "grantNotes",
     "hideLocalDeletions", "issuerNotes", "lang", "mirror", "network", "publish", "registry", "repo", "reviewEvery", "role",
     "upstreams", "zone",
 ];
@@ -239,16 +232,6 @@ impl Settings {
                     .collect(),
                 _ => Vec::new(),
             },
-            exclusive: match field(&v, "exclusive") {
-                Some(Value::Arr(a)) => a
-                    .iter()
-                    .filter_map(|x| match x {
-                        Value::Str(s) => Some(s.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            },
             upstreams: match field(&v, "upstreams") {
                 Some(Value::Arr(a)) => a
                     .iter()
@@ -341,15 +324,6 @@ impl Settings {
             ids.sort();
             ids.dedup();
             m.push(("book".to_string(), Value::Arr(ids.into_iter().map(Value::Str).collect())));
-        }
-        if !self.exclusive.is_empty() {
-            let mut ids = self.exclusive.clone();
-            ids.sort();
-            ids.dedup();
-            m.push((
-                "exclusive".to_string(),
-                Value::Arr(ids.into_iter().map(Value::Str).collect()),
-            ));
         }
         if let Some(r) = &self.repo {
             m.push((

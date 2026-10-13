@@ -1,6 +1,9 @@
 //! `zkg`: a small driver binary for disclosure kit output. Two verbs: `pack` (write a kit) and `verify` (ask the
 //! kit core whether a kit is valid). Entry selection lives in `select`, layout and self-verification in `pack`.
 
+// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+#![forbid(unsafe_code)]
+
 use std::process::ExitCode;
 use zikaron::json::{canon_bytes, Value};
 use zikaron_glue::names::Key;

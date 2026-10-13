@@ -21,6 +21,9 @@
 //!   requesting administrator rights only through the OS's own dialog.
 //! - [`door`]: a local IPC endpoint for other processes of the same user (a socket file on unix, a named pipe on
 //!   Windows), with the peer's user checked on both sides.
+//! - [`wipe`] / [`wipe_string`] / [`wipe_string_tail`]: zero secret bytes in place with writes the compiler
+//!   cannot drop. The one place outside the platform implementations that writes through a raw pointer: every
+//!   other crate of the product forbids `unsafe` and wipes through these.
 //!
 //! The OS split lives only here: unix (macOS, Linux) in `unix.rs`, Windows in `windows.rs`.
 //!
@@ -369,8 +372,74 @@ pub fn system_proxies() -> Option<Proxies> {
     proxy::system()
 }
 
+
+// ───────────────────────── Wiping secrets ─────────────────────────
+
+/// Zero `b` in place. Volatile writes and a fence, so the compiler cannot drop them as dead stores before the
+/// memory is freed or reused.
+pub fn wipe(b: &mut [u8]) {
+    for x in b.iter_mut() {
+        // SAFETY: `x` is a valid, aligned, exclusive reference to one byte.
+        unsafe { std::ptr::write_volatile(x, 0) };
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Zero a string's whole allocation (its text and the capacity past it, where removed characters were) and
+/// leave it empty.
+pub fn wipe_string(s: &mut String) {
+    // SAFETY: only zeros are written, within the allocation; zero bytes are valid UTF-8, and the length is then
+    // set to zero.
+    let v = unsafe { s.as_mut_vec() };
+    let (p, cap) = (v.as_mut_ptr(), v.capacity());
+    for i in 0..cap {
+        unsafe { std::ptr::write_volatile(p.add(i), 0) };
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+    v.clear();
+}
+
+/// After a string shrank from `old` bytes to its length now, zero the bytes it let go of (`[len, old)`, within
+/// capacity, so nothing moves); its text stays.
+pub fn wipe_string_tail(s: &mut String, old: usize) {
+    let new = s.len();
+    // SAFETY: only zeros are written, only within capacity and past the length, and the length stays.
+    let v = unsafe { s.as_mut_vec() };
+    let p = v.as_mut_ptr();
+    for i in new..old.min(v.capacity()) {
+        unsafe { std::ptr::write_volatile(p.add(i), 0) };
+    }
+    std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+}
+
 #[cfg(test)]
 mod tests {
+
+    /// The three wipes leave zeros where the secret was: a slice whole; a string's whole allocation, past its
+    /// length too, and the string empty; a string's let-go tail, its text kept.
+    #[test]
+    fn a_wipe_leaves_zeros_where_the_secret_was() {
+        let mut b = *b"secret bytes";
+        wipe(&mut b);
+        assert_eq!(b, [0u8; 12]);
+        let mut s = String::with_capacity(32);
+        s.push_str("passphrase words here");
+        let (p, cap) = (s.as_ptr(), s.capacity());
+        wipe_string(&mut s);
+        assert!(s.is_empty());
+        assert_eq!(s.as_ptr(), p, "the allocation stays where it was");
+        // SAFETY: reading the string's own allocation, which it still owns.
+        assert!((0..cap).all(|i| unsafe { *p.add(i) } == 0), "the whole allocation is zero");
+        let mut t = String::from("keep this, drop that");
+        let old = t.len();
+        t.truncate(9);
+        wipe_string_tail(&mut t, old);
+        assert_eq!(t, "keep this");
+        let q = t.as_ptr();
+        // SAFETY: as above, within the capacity the string still owns.
+        assert!((9..old).all(|i| unsafe { *q.add(i) } == 0), "the tail let go is zero");
+    }
+
     use super::*;
 
     fn scratch(tag: &str) -> std::path::PathBuf {

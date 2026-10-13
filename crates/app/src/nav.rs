@@ -407,6 +407,27 @@ impl Step {
     }
 }
 
+/// A wizard step's page. The identity step has two once words are made: copying them, then checking the copy;
+/// every other step has one.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Sub {
+    /// The step's first page (for the identity step: the words to copy).
+    First,
+    /// The identity step's check of the copied words.
+    Check,
+}
+
+/// Where "back" goes from `step` at `sub`, the one place it is decided: a later page of a step goes to the
+/// step's first page (the check of the words goes back to the words, unchanged), a first page to the step
+/// before it; `None` on the first step's first page.
+pub fn prev(step: Step, sub: Sub) -> Option<(Step, Sub)> {
+    if sub != Sub::First {
+        return Some((step, Sub::First));
+    }
+    let at = Step::ALL.iter().position(|s| *s == step)?;
+    at.checked_sub(1).map(|i| (Step::ALL[i], Sub::First))
+}
+
 /// Whether each wizard step is complete, read from real state rather than from which buttons were pressed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Progress {
@@ -623,4 +644,21 @@ pub fn history_of(place: Place, role: Role) -> (Stack, History) {
         other => History::at(other),
     };
     (stack_of(place), h)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// "Back" from every page of every step: a later page of a step goes to that step's first page (the words'
+    /// check to the words), a first page to the step before; nothing before the first step's first page.
+    #[test]
+    fn back_goes_to_the_page_before_then_the_step_before() {
+        assert_eq!(prev(Step::Key, Sub::Check), Some((Step::Key, Sub::First)));
+        assert_eq!(prev(Step::Pin, Sub::First), None);
+        for pair in Step::ALL.windows(2) {
+            assert_eq!(prev(pair[1], Sub::First), Some((pair[0], Sub::First)), "{:?}", pair[1]);
+            assert_eq!(prev(pair[1], Sub::Check), Some((pair[1], Sub::First)), "{:?}", pair[1]);
+        }
+    }
 }

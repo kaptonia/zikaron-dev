@@ -68,7 +68,8 @@ pub fn estimate_call(from: &[u8; 20], to: &[u8; 20], data: &[u8]) -> Value {
 }
 
 /// One gas estimate, the one rule the app and the command line both take; each brings its own way of asking
-/// (the app its endpoints' agreement, the command line its one node). The estimate is asked at one pinned
+/// (the app its endpoints, whose estimates the judging table reads by the largest: an estimate is a quantity
+/// each node works out, not a fact, `judge::rule_of`; the command line its one node). The estimate is asked at one pinned
 /// block, `head` (the app's smallest head every endpoint has reached): asked at `latest`, two endpoints a block
 /// apart estimate over two different states and disagree over a call neither refuses. A failure the caller
 /// judges of the network kind says nothing about the call; any other refusal means the call would revert. The

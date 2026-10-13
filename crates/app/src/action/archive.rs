@@ -187,7 +187,7 @@ pub(super) fn remember_custom(shell: &mut Shell) -> Result<(), crate::fault::Fau
         None => Ok(false),
     })?;
     if changed == Some(true) {
-        shell.seat_identities(Some(crate::register::view(shell.settings.role)?));
+        shell.seat_identities(Some(crate::register::view()?));
     }
     Ok(())
 }

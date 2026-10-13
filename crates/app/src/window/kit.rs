@@ -5,6 +5,8 @@ impl Win {
     /// "check and export" runs in the background. Beside it: how the recipient checks, the depth reading, and
     /// the kits exported on this machine.
     pub(super) fn kit_page(&mut self, ui: &mut egui::Ui, now: f64) {
+        // Its attachment zone takes dropped files.
+        self.takes_drops();
         self.ensure_rows(now);
         if self.typed.kit_out.trim().is_empty() {
             if let Some(h) = self.shell.home.as_ref() {

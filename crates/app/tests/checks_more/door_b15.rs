@@ -59,13 +59,11 @@ fn boot() -> Shell {
     shell
 }
 
-/// A home with its first entry, signed by the identity's anchor key (made once).
+/// A home with its first entry, signed by the identity's key (the identity made once), the seat's own.
 fn home_with_genesis(shell: &mut Shell, at: &Path) -> PathBuf {
+    super::seated(shell, at);
     let opened = apply(shell, Action::OpenHome { root: at.display().to_string() });
     assert!(matches!(opened, Applied::Homed { .. }), "{opened:?}");
-    if shell.anchor.is_none() {
-        apply(shell, Action::MakeAnchorKey);
-    }
     let made = apply(shell, Action::Genesis { statement: "一本账的开端".into() });
     assert!(matches!(made, Applied::Genesised { .. }), "{made:?}");
     std::fs::canonicalize(at).expect("home")
@@ -192,7 +190,8 @@ fn a_request_is_done_by_the_action_layer_as_a_click_is() {
     let Applied::Annotated(pressed_id) = pressed else { panic!("{pressed:?}") };
     let pressed_bytes = entry_bytes(&shell, &pressed_id);
     assert_ne!(twin, first);
-    // Through the door, in the first home.
+    // Through the door, in the first home (the seat's home again).
+    super::seat_home(&first);
     let _ = apply(&mut shell, Action::OpenHome { root: first.display().to_string() });
     settle(&mut shell);
     shell.door_told.clear();

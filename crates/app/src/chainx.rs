@@ -448,13 +448,20 @@ impl rpc::Endpoint for Https {
     }
 }
 
-/// The refusal when no endpoint answered: the first failure that actually reached a node is classified by
-/// [`said_fault`] (refusals, TLS and timeouts each named); if none reached a node (malformed address,
-/// unparseable answer), `UNREACHABLE`. The evidence tail is every endpoint's original message joined by ` · `,
-/// unchanged.
-fn none_answered(first: Option<Fault>, refused: &[String]) -> Fault {
-    let k = first.and_then(|f| f.which()).unwrap_or(Known::Unreachable);
+/// The refusal when no endpoint gave a reading: the first failure that actually reached a node is classified by
+/// [`said_fault`] (refusals, TLS and timeouts each named). When no node failed, every node reached answered:
+/// if any answered something that is not `null` and does not read (`shapeless`), the refusal is the chain's
+/// shape (`CHAIN_SHAPE`); answers that are all `null` are the nodes' own word that they have none, and the
+/// reading could not be had (`UNREACHABLE`). Addresses that do not read at all are refused before this
+/// ([`no_address_reads`]). The evidence tail is every endpoint's original message joined by ` · `, unchanged.
+fn none_answered(first: Option<Fault>, shapeless: bool, refused: &[String]) -> Fault {
+    let k = first.and_then(|f| f.which()).unwrap_or(if shapeless { Known::ChainShape } else { Known::Unreachable });
     Fault::known(k, refused.join(" · "))
+}
+
+/// A node passed over for an answer that is not `null` and that the judging table could not read.
+fn shapeless(m: &zikaron_anchor::judge::Missing) -> bool {
+    matches!(m, zikaron_anchor::judge::Missing::Unreadable(text) if text != "null")
 }
 
 /// Default backoff when sending is rate-limited: retry the same endpoint after each of these delays, then move
@@ -558,7 +565,7 @@ fn ask_with(eps: &[Endpoint], method: &str, params: &Value) -> Result<Reading, (
                 if unread.len() == asked {
                     return Err((no_address_reads(&refused), false));
                 }
-                return Err((none_answered(first.map(|(u, t)| said_fault(u, t)), &refused), call));
+                return Err((none_answered(first.map(|(u, t)| said_fault(u, t)), missing.iter().any(|(_, m)| shapeless(m)), &refused), call));
             }
         }
     }
@@ -622,7 +629,7 @@ pub fn head_block(eps: &[Endpoint], chain: u64) -> Result<(u64, usize), Fault> {
                     _ => None,
                 });
                 let refused: Vec<String> = unread.iter().cloned().chain(wide.iter().cloned()).chain(j.missing.iter().map(|(u, m)| said_height(u, m))).collect();
-                return Err(none_answered(first, &refused));
+                return Err(none_answered(first, !wide.is_empty() || j.missing.iter().any(|(_, m)| shapeless(m)), &refused));
             };
             if let Some((_, high)) = heights.iter().max_by_key(|(_, h)| *h) {
                 if high - low > MAX_HEAD_LAG {
@@ -640,7 +647,7 @@ pub fn head_block(eps: &[Endpoint], chain: u64) -> Result<(u64, usize), Fault> {
             if unread.len() == asked {
                 return Err(no_address_reads(&refused));
             }
-            Err(none_answered(first, &refused))
+            Err(none_answered(first, missing.iter().any(|(_, m)| shapeless(m)), &refused))
         }
         Err(_) => Err(Fault::known(Known::Unreachable, String::new())),
     }
@@ -667,6 +674,8 @@ pub fn head_time(eps: &[Endpoint], chain: u64) -> Result<(u64, u64, usize), Faul
     let mut seen: Vec<(u64, u64)> = Vec::new();
     let mut refused: Vec<String> = unread.clone();
     let mut first: Option<Fault> = None;
+    // A node answered something that is not `null` and is not a block with its time and number.
+    let mut shape = false;
     for (url, got) in answers {
         match got {
             Ok(w) => match wire::to_core(&w) {
@@ -679,10 +688,16 @@ pub fn head_time(eps: &[Endpoint], chain: u64) -> Result<(u64, u64, usize), Faul
                     };
                     match (take("timestamp"), take("number")) {
                         (Some(t), Some(n)) => seen.push((t, n)),
-                        _ => refused.push(crate::lang::filln(crate::lang::Key::Tail098, &[&zikaron_net::sayable(&url)])),
+                        _ => {
+                            shape = true;
+                            refused.push(crate::lang::filln(crate::lang::Key::Tail098, &[&zikaron_net::sayable(&url)]))
+                        }
                     }
                 }
-                _ => refused.push(crate::lang::filln(crate::lang::Key::Tail094, &[&zikaron_net::sayable(&url)])),
+                other => {
+                    shape |= !matches!(other, Some(Value::Null));
+                    refused.push(crate::lang::filln(crate::lang::Key::Tail094, &[&zikaron_net::sayable(&url)]))
+                }
             },
             Err(t) => {
                 first.get_or_insert_with(|| said_fault(&url, &t));
@@ -694,7 +709,7 @@ pub fn head_time(eps: &[Endpoint], chain: u64) -> Result<(u64, u64, usize), Faul
     match seen.iter().max_by_key(|(t, n)| (*n, *t)) {
         Some((t, n)) => Ok((*t, *n, seen.len())),
         None if unread.len() == asked => Err(no_address_reads(&refused)),
-        None => Err(none_answered(first, &refused)),
+        None => Err(none_answered(first, shape, &refused)),
     }
 }
 

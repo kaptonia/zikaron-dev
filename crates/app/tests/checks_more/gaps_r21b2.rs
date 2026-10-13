@@ -49,14 +49,14 @@ fn a_key_file_written_is_never_below_the_backup_floor() {
     if super::alone_in(module_path!(), "a_key_file_written_is_never_below_the_backup_floor") {
         return;
     }
-    use app::action::{apply, Action, Applied};
+    use app::action::Action;
     super::vault_open();
     let floor = app::keystore::BACKUP_FLOOR;
     assert_eq!(app::keystore::Params::standard(), floor, "the level written is the floor");
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    answers!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_));
     let dir = std::env::temp_dir().join(format!("zk-r21b2-keyfile-{}", std::process::id()));
+    super::seated(&mut shell, &dir.join("home"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("dir");
     let pw = "a backup password";
@@ -335,7 +335,7 @@ fn every_keyed_kind_is_renamed_by_the_one_naming() {
     }
 }
 
-/// Both the out-of-date name check and the naming function read `Doc::keyed`; neither keeps its own list of kinds.
+/// The naming function reads `Doc::keyed`; it keeps no list of kinds of its own.
 #[test]
 fn which_kinds_are_renamed_is_judged_once() {
     let code = super::code_only(&super::read_src_file("local.rs").expect("local.rs"));
@@ -343,7 +343,6 @@ fn which_kinds_are_renamed_is_judged_once() {
         let at = code.find(head).unwrap_or_else(|| panic!("{head}"));
         code[at..at + code[at..].find("\n}\n").expect("end")].to_string()
     };
-    assert!(body("fn names_out_of_date(").contains(".keyed()"), "the out-of-date check reads the kinds table");
     let naming = body("pub fn disk_rel(");
     assert!(naming.contains("doc.keyed()") && !naming.contains("_ => logical.to_string()"), "naming asks the table first and lets no keyed kind through unnamed");
     assert_eq!(code.matches("Doc::Entry | Doc::Held | Doc::Verdict | Doc::KeptGrant | Doc::TermsDoc | Doc::TermsRecord").count(), 1, "the list is spelled once, in `keyed`");

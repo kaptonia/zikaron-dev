@@ -94,6 +94,37 @@ fn vault_open() {
     });
 }
 
+/// What signing needs: an identity (without a register there is none, and nothing signs). Without a current
+/// one, a fresh existing key becomes the current identity on the author seat. Its current seat's home moves
+/// to `home` (opened next by the caller); the shell reads the key back and the seat's address comes back.
+fn seated(shell: &mut app::shell::Shell, home: &Path) -> app::key::Address {
+    if app::register::now_row_listed().expect("the register").is_none() {
+        let s = app::key::generate().expect("a fresh key");
+        app::register::change(|reg| app::identity::add_existing(reg, &s, app::roles::Role::Author, false, "")).expect("an identity");
+    }
+    seat_home(home);
+    assert!(shell.refresh_anchor().expect("the key reads back"), "the key is in the vault");
+    let (row, seat) = app::register::now_row_listed().expect("the register").expect("an identity");
+    row.address(seat).expect("a seated key")
+}
+
+/// A new identity of its own for `home`: a fresh existing key becomes the current identity on the author
+/// seat, its author home at `home` (opened next by the caller). For tests that keep several homes on the
+/// machine at once, each counted as a seat's home.
+fn seated_anew(shell: &mut app::shell::Shell, home: &Path) -> app::key::Address {
+    let s = app::key::generate().expect("a fresh key");
+    app::register::change(|reg| app::identity::add_existing(reg, &s, app::roles::Role::Author, false, "")).expect("an identity");
+    seated(shell, home)
+}
+
+/// The current identity's current seat's home moves to `home`, the register following as after a moved home,
+/// so a home a test opens there is that seat's own.
+fn seat_home(home: &Path) {
+    let (row, seat) = app::register::now_row_listed().expect("the register").expect("an identity");
+    let old = row.home(seat).expect("a seated home");
+    app::register::change_listed(|reg| Ok(app::identity::rehome(reg, &old, home))).expect("the register follows");
+}
+
 /// This process's machine directory: under the temp directory, or `/tmp` when that path is long (the
 /// desktop's command-line door is a local socket there, and socket paths have a small limit).
 fn checks_machine() -> PathBuf {
@@ -262,13 +293,12 @@ fn the_known_table_is_closed_and_each_member_has_a_sentence() {
 
 // ───────────────────── Actions and verbs ─────────────────────
 
-/// Every legal action names its equivalent CLI verb. Exactly the nine legal actions are passed in, each first
+/// Every legal action names its equivalent CLI verb. Exactly these eight legal actions are passed in, each first
 /// asserted legal, so the assertion cannot pass vacuously.
 #[test]
 fn every_legal_action_names_the_verb_it_equals() {
     use app::action::Action;
     let legal = [
-        Action::MakeAnchorKey,
         Action::Genesis { statement: "s".into() },
         Action::Annotate { subject: "0x00".into(), note_md: "n".into() },
         Action::RecordWork { note_md: "n".into(), files: Vec::new(), for_: None },
@@ -293,7 +323,7 @@ fn every_legal_action_names_the_verb_it_equals() {
         assert!(a.verb().is_some(), "{a:?} is a legal action but names no equivalent CLI verb");
         asked += 1;
     }
-    assert_eq!(asked, 9, "这一腿要真的问过九枚,不是一枚也没问");
+    assert_eq!(asked, 8, "这一腿要真的问过八枚,不是一枚也没问");
     // Conversely, actions that create no legal fact (landing place, local preferences) name no verb.
     for a in [Action::SelfCheck, Action::Quit] {
         assert!(!a.is_legal(), "{a:?} 不该是法律动作");
@@ -606,10 +636,9 @@ fn nothing_inside_the_home_records_where_the_home_is() {
         path: "/somewhere/the/user/picked".into(),
         at: 1_700_000_000,
     });
-    // Fill the three tables too: endpoints, remembered addresses and exclusive flags all live in tables.
+    // Fill the two tables too: endpoints and remembered addresses live in tables.
     s.endpoints = vec!["31337=http://127.0.0.1:8545".to_string()];
     s.book = vec!["0x1111111111111111111111111111111111111111".to_string()];
-    s.exclusive = vec!["0x22".to_string()];
     s.write(&h).expect("写设置");
     // Settings are sealed local data: read the document through the one sealing entry point.
     let at = h.dir(app::home::Slot::Settings).join(app::settings::FILE);
@@ -620,8 +649,8 @@ fn nothing_inside_the_home_records_where_the_home_is() {
         "设置档里写了它自己在哪:{text}"
     );
     // Check every string cell for this home's path, walking the whole document including arrays: exempting a
-    // field named `path` would also exempt `repo`, and walking only objects would miss the `endpoints`, `book`
-    // and `exclusive` tables.
+    // field named `path` would also exempt `repo`, and walking only objects would miss the `endpoints` and
+    // `book` tables.
     let v = zikaron::json::parse(&bytes).expect("设置是 JSON");
     let mine = dir.display().to_string();
     let mut seen = 0usize;
@@ -733,7 +762,7 @@ fn every_legal_action_names_a_verb_that_the_contract_table_carries() {
         Action::Show(Page::FirstRun),
         Action::SelfCheck,
         Action::Quit,
-        Action::MakeAnchorKey,
+        Action::Genesis { statement: "s".into() },
         Action::SwitchRole,
         Action::OpenHome { root: "x".into() },
         Action::MigrateHome { to: "x".into() },
@@ -1158,7 +1187,6 @@ fn every_legal_action_names_a_verb_from_the_contract_six_table() {
         Action::SelfCheck,
         Action::Measure,
         Action::Quit,
-        Action::MakeAnchorKey,
         Action::SwitchRole,
         Action::OpenHome { root: String::new() },
         Action::MigrateHome { to: String::new() },
@@ -1263,7 +1291,7 @@ fn every_legal_action_names_a_verb_from_the_contract_six_table() {
             assert!(verbs.iter().any(|x| x == v), "{a:?} 说的 {v:?} 不在契约 6 的表里");
         }
     }
-    assert!(legal >= 9, "法律动作只数出 {legal} 条");
+    assert!(legal >= 8, "法律动作只数出 {legal} 条");
     // These actions each name their verb.
     assert_eq!(Action::Annotate { subject: String::new(), note_md: String::new() }.verb(), Some("annotate"));
     assert_eq!(
@@ -1555,11 +1583,10 @@ fn the_first_window_checklist_refuses_a_skipped_step() {
     let put = |b: &[u8]| app::local::put(&home.dir(app::home::Slot::Settings), app::wizard::FILE, app::local::Doc::FirstWindow, b).expect("写得下");
     put(br#"{"marks":[{"said":"","step":"anchor"}]}"#);
     assert!(Wizard::read(&home).is_err(), "乱了次序的清单不许被读成一份清单");
-    // Older files with lines for removed steps (`bond`, `undertaking`): those lines are skipped and the rest
-    // continue in the current order.
+    // A line for a step this version does not have (`bond`, `undertaking`, steps an earlier version had) is
+    // refused by name, as any unknown step is.
     put(br#"{"marks":[{"said":"a","step":"terms"},{"said":"b","step":"bond"},{"said":"c","step":"undertaking"}]}"#);
-    let old = Wizard::read(&home).expect("留着撤下那几步的旧档照读得开");
-    assert_eq!((old.done(), old.next()), (1, Some(Step::Anchor)), "旧档停在原处");
+    assert!(Wizard::read(&home).is_err(), "清单里有本版没有的步骤即拒");
     assert!(Step::parse("undertaking").is_none(), "撤下的那一步认不出");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -1780,32 +1807,52 @@ fn every_alias_name_resolves_to_a_place() {
     assert!(place_named("Settings.nowhere").is_none());
 }
 
-/// The language setting is saved to settings and read back after reopening; without a home it is refused by
-/// name and the language does not switch.
+/// The language is a machine preference: with no home open it is kept in this machine's settings and spoken
+/// at once (the first-run wizard and the passcode gate switch it before any home is open); with a home open and
+/// writable it is kept there too and read back; with a home open that cannot be written it is refused by name,
+/// and neither the language spoken nor this machine's choice changes. Runs in its own process ([`alone`]).
 #[test]
-fn the_language_choice_is_written_to_the_home_and_read_back() {
+fn the_language_choice_is_kept_on_the_machine_and_in_an_open_home() {
+    if alone("the_language_choice_is_kept_on_the_machine_and_in_an_open_home") {
+        return;
+    }
     vault_open();
     use app::action::{apply, Action, Applied};
-    use app::lang::{set, Lang};
+    use app::lang::{lang, set, Lang};
     let dir = std::env::temp_dir().join(format!("zk-test-lang-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
+    shell.home = None;
+    shell.lock = None;
     set(Lang::Zh);
-    match apply(&mut shell, Action::SetLang { lang: Lang::En }) {
-        Applied::Trouble(f) => assert!(f.said().starts_with("NO_HOME"), "没有家该具名拒:{}", f.said()),
-        other => panic!("没有家却换成了:{other:?}"),
-    }
-    assert_eq!(shell.settings.lang, None, "记不下来就不换");
-    let home = app::home::Home::open_or_create(&dir).expect("建家");
-    shell.lock = Some(app::lock::take(&home).expect("取锁"));
-    shell.home = Some(home);
+    // No home: kept on this machine, spoken at once.
     match apply(&mut shell, Action::SetLang { lang: Lang::En }) {
         Applied::Spoken(Lang::En) => {}
-        other => panic!("该换成英文:{other:?}"),
+        other => panic!("没有家也该换成英文:{other:?}"),
+    }
+    assert_eq!(lang(), Lang::En, "说的是英文");
+    assert_eq!(app::machine::read().expect("机器设置").lang, Some(Lang::En), "这台机器记着英文");
+    assert_eq!(shell.settings.lang, None, "没有家,家里那一份不动");
+    // A home open but not writable (no writer lock): refused by name, nothing changes.
+    let home = app::home::Home::open_or_create(&dir).expect("建家");
+    shell.home = Some(home);
+    match apply(&mut shell, Action::SetLang { lang: Lang::Zh }) {
+        Applied::Trouble(f) => assert!(f.said().starts_with("READ_ONLY"), "写不了的家该具名拒:{}", f.said()),
+        other => panic!("写不了的家却换成了:{other:?}"),
+    }
+    assert_eq!(lang(), Lang::En, "拒了就不换");
+    assert_eq!(app::machine::read().expect("机器设置").lang, Some(Lang::En), "机器那一份也不动");
+    // A home open and writable: kept on the machine and in the home, read back.
+    let lock = app::lock::take(shell.home.as_ref().unwrap()).expect("取锁");
+    shell.lock = Some(lock);
+    match apply(&mut shell, Action::SetLang { lang: Lang::Zh }) {
+        Applied::Spoken(Lang::Zh) => {}
+        other => panic!("该换成中文:{other:?}"),
     }
     let back = app::settings::Settings::read(shell.home.as_ref().unwrap()).expect("读回");
-    assert_eq!(back.lang, Some(Lang::En), "盘上那一份记着英文");
+    assert_eq!(back.lang, Some(Lang::Zh), "盘上那一份记着中文");
+    assert_eq!(app::machine::read().expect("机器设置").lang, Some(Lang::Zh), "这台机器也记着中文");
     set(Lang::Zh);
     drop(shell);
     let _ = std::fs::remove_dir_all(&dir);
@@ -1870,7 +1917,7 @@ fn alone(test: &str) -> bool {
 }
 
 /// What came after the last whole-machine backup is counted one way everywhere (`machine::backup_behind`),
-/// including older or foreign indexes and after a restore; the read-only networks table round-trips.
+/// including an unreadable or foreign index and after a restore; the read-only networks table round-trips.
 #[test]
 fn what_came_after_the_backup_is_behind_it() {
     if alone("what_came_after_the_backup_is_behind_it") {
@@ -1884,10 +1931,11 @@ fn what_came_after_the_backup_is_behind_it() {
     let behind = |m: &app::machine::Machine| app::machine::backup_behind(m.backup.as_ref(), app::backup::measured(m.backup.as_ref()).ok());
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_)));
-    // A home with one entry of its own (the first entry is recorded on the spot; no task to wait for).
+    // A home with one entry of its own (the first entry is recorded on the spot; no task to wait for), an
+    // identity's own.
     let home = |shell: &mut app::shell::Shell, name: &str| {
         let dir = base.join(name);
+        seated_anew(shell, &dir);
         assert!(matches!(apply(shell, Action::OpenHome { root: dir.display().to_string() }), Applied::Homed { .. }));
         let made = apply(shell, Action::Genesis { statement: format!("{name} 的开端") });
         assert!(matches!(made, Applied::Genesised { .. }), "{made:?}");
@@ -1901,7 +1949,7 @@ fn what_came_after_the_backup_is_behind_it() {
     let first = app::backup::export(&base.join("out"), "zikaron-backup-probe", 1_800_000_000).expect("备份");
     let m = app::machine::read().expect("机器设置");
     let last = m.backup.clone().expect("记下了这一次备份");
-    assert!(last.indexed && first.path.exists() && last.count == 2, "{last:?}");
+    assert!(first.path.exists() && last.count == 2, "{last:?}");
     assert_eq!(behind(&m), Some(0), "刚备份");
 
     home(&mut shell, "c");
@@ -1913,11 +1961,7 @@ fn what_came_after_the_backup_is_behind_it() {
     home(&mut shell, "d");
     assert_eq!(behind(&m), Some(2), "删去一处之后再记一条");
 
-    // An older backup record (no index): the old count, until the next backup (3 now against 2: one, not two).
     let now = app::backup::count_now().expect("现数");
-    let older = app::machine::Backed { indexed: false, ..last.clone() };
-    assert_eq!(app::backup::measured(Some(&older)).ok(), Some(now));
-    assert_eq!(app::machine::backup_behind(Some(&older), Some(now)), Some(1));
     // An index that does not read: the old count.
     let index_at = app::backup::index_path().expect("索引处");
     let index = std::fs::read(&index_at).expect("索引在");
@@ -1939,16 +1983,13 @@ fn what_came_after_the_backup_is_behind_it() {
     drop(shell);
     app::backup::restore(&first.path, "zikaron-backup-probe", app::backup::From::Settings("27618394")).expect("恢复");
     let m = app::machine::read().expect("恢复后的机器设置");
-    assert_eq!(m.backup.as_ref().map(|b| (b.at, b.indexed)), Some((1_800_000_000, true)));
+    assert_eq!(m.backup.as_ref().map(|b| b.at), Some(1_800_000_000));
     assert_eq!(behind(&m), Some(0), "恢复之后");
-    // The restored machine's index is sealed under the new key; no plain index sits beside the settings.
+    // The restored machine's index is sealed under the new key.
     let restored_index = std::fs::read(app::backup::index_path().expect("索引处")).expect("恢复写下了索引");
     assert!(app::local::is_sealed(&restored_index) && restored_index != index, "恢复之后的索引封在新钥下");
-    assert!(!machine_dir.join(app::backup::PLAIN_INDEX_FILE).exists());
     assert_eq!(app::readnets::read(&machine_dir).expect("表落回"), vec![net.clone()]);
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    // The anchoring key belongs to this machine, not the backup: it is made again for the restored vault.
-    assert!(matches!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_)));
     home(&mut shell, "e");
     assert_eq!(behind(&m), Some(1), "恢复之后再记一条");
     drop(shell);
@@ -1969,7 +2010,7 @@ fn a_backup_without_the_table_leaves_this_machines_table() {
     let machine_dir = app::home::machine_dir().expect("机器目录");
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_)));
+    seated(&mut shell, &base.join("a"));
     assert!(matches!(apply(&mut shell, Action::OpenHome { root: base.join("a").display().to_string() }), Applied::Homed { .. }));
     assert!(matches!(apply(&mut shell, Action::Genesis { statement: "a".into() }), Applied::Genesised { .. }));
     assert!(!app::readnets::path_in(&machine_dir).exists());
@@ -2530,7 +2571,7 @@ fn a_subject_written_another_way_is_its_shape_not_its_absence() {
     let _ = std::fs::remove_dir_all(&base);
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-    assert!(matches!(apply(&mut shell, Action::MakeAnchorKey), Applied::AnchorKey(_)));
+    seated(&mut shell, &base.join("home"));
     assert!(matches!(apply(&mut shell, Action::OpenHome { root: base.join("home").display().to_string() }), Applied::Homed { .. }));
     assert!(matches!(apply(&mut shell, Action::Genesis { statement: "subjects".into() }), Applied::Genesised { .. }));
     let file = base.join("work.txt");
@@ -2885,13 +2926,11 @@ fn one_key_sits_on_one_seat_and_the_old_shape_cannot_be_built() {
     let both = Row { keys: Keys::Both { author: a, grantee: g }, author_home: "/x/a".into(), ..one.clone() };
     assert_eq!(both.kind(), app::identity::Kind::Words);
     assert_eq!(one.kind(), app::identity::Kind::Existing);
-    assert_eq!(both.slot(), app::identity::Slot::Own);
     // Canonical byte round trip: an empty seat's address and home cells are UNSEATED, and the row reads back
     // the same.
     let reg = Registry { current: Some((one.id.clone(), Role::Grantee)), rows: vec![one.clone()], left: Vec::new() };
     assert_eq!(Registry::parse(&reg.to_bytes()).expect("读得回"), reg);
-    // Rows written by older versions with both seats at one address and a home for each: read back, only the
-    // recorder seat is occupied and the user seat is left empty.
+    // A row with both seats at one address (no shape this version writes) is refused by name.
     let before_this_change = format!(
         concat!(
             "{{\"current\":{{\"identity\":\"{id}\",\"seat\":\"author\"}},",
@@ -2902,22 +2941,15 @@ fn one_key_sits_on_one_seat_and_the_old_shape_cannot_be_built() {
         ),
         id = a.hex()
     );
-    let back = Registry::parse(before_this_change.as_bytes()).expect("旧形读得回");
-    assert_eq!(back.rows.len(), 1);
-    assert_eq!(back.rows[0].keys, Keys::One { seat: Role::Author, addr: a }, "两席同址那一行读回来只占记录者那一席");
-    assert_eq!(back.rows[0].address(Role::Grantee), None, "使用方那一席就此留空");
-    assert_eq!(back.rows[0].label, app::identity::NO_LABEL);
-    assert_eq!(back.rows[0].created, app::identity::NO_CREATED);
-    assert_eq!(back.rows[0].backup_at, app::identity::NO_BACKUP_AT);
-    // Missing `label`, `created` and `backup.at` cells default without crashing.
-    let stripped = String::from_utf8(reg.to_bytes()).expect("utf8")
-        .replace("\"created\":\"\",", "")
-        .replace("\"label\":\"\",", "")
-        .replace("\"at\":\"\",", "");
-    let old_row = Registry::parse(stripped.as_bytes()).expect("缺三栏也读得回");
-    assert_eq!(old_row.rows[0].label, app::identity::NO_LABEL);
-    assert_eq!(old_row.rows[0].created, app::identity::NO_CREATED);
-    assert_eq!(old_row.rows[0].backup_at, app::identity::NO_BACKUP_AT);
+    assert!(Registry::parse(before_this_change.as_bytes()).is_err(), "两席同址那一行具名拒");
+    // A row missing any of the `label`, `created` and `backup.at` cells this version always writes is refused
+    // by name, each one alone.
+    let text = String::from_utf8(reg.to_bytes()).expect("utf8");
+    for cell in ["\"created\":\"\",", "\"label\":\"\",", "\"at\":\"\","] {
+        let stripped = text.replace(cell, "");
+        assert_ne!(stripped, text, "{cell}");
+        assert!(Registry::parse(stripped.as_bytes()).is_err(), "缺 {cell} 即拒");
+    }
     // The name cell carries no weight: changing it affects no check, only that cell's bytes.
     let named = Row { label: "工作室主号".into(), ..one.clone() };
     assert_eq!(named.kind(), one.kind());
@@ -3090,10 +3122,10 @@ fn the_key_store_is_written_only_with_its_lock_in_hand() {
     let writes = code.matches("write_book(&held").count() + code.matches("write_book(held,").count();
     assert_eq!(code.matches("write_book(").count(), writes + 1, "有一处写库没有把手里那一把递进去(+1 是定义那一处)");
     // Every exit that changes the vault starts by taking the lock (lock-taking places equal the number of exits).
-    // Sixteen exits: set passcode, unlock, reseal at the lower bound, change passcode, recover, settle the
-    // primary of an older vault, upgrade an older vault's names, record recovery seal, remove recovery seal,
-    // place slot, remove slot, remove every slot, reset empty vault, stage a new vault, commit it, drop a staged one.
-    assert_eq!(code.matches("lock_book()?").count(), 16, "要改库的那几口各拿一次锁");
+    // Fifteen exits: set passcode, unlock, check the passcode (it counts tries), reseal at the lower bound,
+    // change passcode, recover, record recovery seals, remove recovery seals, place slot, remove slot, remove
+    // every slot, reset empty vault, stage a new vault, commit it, drop a staged one.
+    assert_eq!(code.matches("lock_book()?").count(), 15, "要改库的那几口各拿一次锁");
     // The vault lock and the home's writer lock are separate: the vault lock lives in the machine directory,
     // named in one place by `places`.
     assert!(code.contains("crate::places::keybox_lock_file()"), "锁座那一份档的名由 places 一处给");
@@ -3615,10 +3647,11 @@ fn the_primary_key_reads_the_auto_anchor_setting_in_one_place() {
     assert!(!window.contains("anchor_queue_only"), "表单里那一枚内存态单选撤了");
 }
 
-/// The queue file's seven states read back from disk ("resent" with every transaction of its batch); files
-/// written by older versions, without state cells or block tables, still read as "queued".
+/// The queue file's seven states read back from disk ("resent" with every transaction of its batch); a file
+/// without the state cells, the block table or a signed batch's nonce, as earlier versions wrote, is refused by
+/// name.
 #[test]
-fn the_queue_file_keeps_each_step_and_reads_old_files() {
+fn the_queue_file_keeps_each_step_and_refuses_old_files() {
     vault_open();
     use app::queue::{Queue, Step};
     let dir = std::env::temp_dir().join(format!("zk-test-queue-steps-{}", std::process::id()));
@@ -3636,7 +3669,7 @@ fn the_queue_file_keeps_each_step_and_reads_old_files() {
     q.included_out(&[id(5)], &id(7), 11155111, 16);
     // Resent: every transaction of the batch, first sent first.
     q.push(&id(6), 6);
-    q.mark(&[id(6)], Step::Resent { txs: vec![id(10), id(11)], chain: 11155111, nonce: None });
+    q.mark(&[id(6)], Step::Resent { txs: vec![id(10), id(11)], chain: 11155111, nonce: Some(8) });
     q.write(&h).expect("写");
     let back = Queue::read(&h).expect("读");
     assert_eq!(back.step_of(&id(1)), Some(&Step::Queued));
@@ -3645,7 +3678,7 @@ fn the_queue_file_keeps_each_step_and_reads_old_files() {
     assert_eq!(back.step_of(&id(4)), Some(&Step::Refused { said: "INSUFFICIENT_FUNDS".into() }));
     assert_eq!(back.block_of(&id(5)).map(|b| b.block), Some(16));
     assert!(back.anchored_here(&id(5)) && !back.has(&id(5)));
-    assert_eq!(back.step_of(&id(6)), Some(&Step::Resent { txs: vec![id(10), id(11)], chain: 11155111, nonce: None }));
+    assert_eq!(back.step_of(&id(6)), Some(&Step::Resent { txs: vec![id(10), id(11)], chain: 11155111, nonce: Some(8) }));
     assert_eq!(back.submitted(), vec![(vec![id(9)], 11155111, vec![id(2)]), (vec![id(10), id(11)], 11155111, vec![id(6)])]);
     // In flight, submitted or resent: never picked for another batch, never counted as sendable.
     assert!(!back.take_ids(10).contains(&id(2)) && !back.take_ids(10).contains(&id(6)));
@@ -3657,13 +3690,16 @@ fn the_queue_file_keeps_each_step_and_reads_old_files() {
         app::local::put(&h.dir(app::home::Slot::Settings), app::queue::FILE, app::local::Doc::Queue, bad.as_bytes()).expect("写坏档");
         assert_eq!(Queue::read(&h).err().and_then(|f| f.which()), Some(app::fault::Known::QueueShape), "{n} transactions");
     }
-    // An older file: only `queued` and `anchored`, with no state cell in rows.
-    let old = format!("{{\"anchored\":[],\"queued\":[{{\"at\":1,\"id\":\"{}\"}}]}}", id(1));
-    // An older version's shape, sealed as the queue file is now (the shape is under test, not the seal).
-    app::local::put(&h.dir(app::home::Slot::Settings), app::queue::FILE, app::local::Doc::Queue, old.as_bytes()).expect("写旧档");
-    let old = Queue::read(&h).expect("旧档读得回");
-    assert_eq!(old.step_of(&id(1)), Some(&Step::Queued));
-    assert!(old.blocks.is_empty());
+    // Earlier versions' shapes, sealed as the queue file is now (the shape is under test, not the seal): rows
+    // with no state cell, no block table, a submitted row with no nonce.
+    for old in [
+        format!("{{\"anchored\":[],\"blocks\":[],\"queued\":[{{\"at\":1,\"id\":\"{}\"}}]}}", id(1)),
+        format!("{{\"anchored\":[],\"queued\":[{{\"at\":1,\"id\":\"{}\",\"state\":\"queued\"}}]}}", id(1)),
+        format!("{{\"anchored\":[],\"blocks\":[],\"queued\":[{{\"at\":1,\"chain\":1,\"id\":\"{}\",\"state\":\"submitted\",\"tx\":\"{}\"}}]}}", id(1), id(9)),
+    ] {
+        app::local::put(&h.dir(app::home::Slot::Settings), app::queue::FILE, app::local::Doc::Queue, old.as_bytes()).expect("写旧档");
+        assert_eq!(Queue::read(&h).err().and_then(|f| f.which()), Some(app::fault::Known::QueueShape), "{old}");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -3800,8 +3836,8 @@ fn every_grey_light_says_what_is_missing() {
     assert!(checkx.contains("if state != State::Unknown.as_str()"), "只对未定那一态答");
 }
 
-/// Exclusivity is written once at signing and read-only afterwards: no action flips the flag, only issuing
-/// writes it, and the older list in the settings file is read-only.
+/// Exclusivity is written once at signing and read-only afterwards: no action flips the flag, and only
+/// issuing writes it.
 #[test]
 fn the_exclusive_flag_is_written_once_at_signing() {
     let action = code_only(&read_src_file("action.rs").expect("读不出 action.rs"));
@@ -3812,12 +3848,10 @@ fn the_exclusive_flag_is_written_once_at_signing() {
         assert!(!t.contains("s.exclusive.push"), "{name} 还在写那份旧名单");
         assert!(!t.contains("exclusive.retain"), "{name} 还在改那份旧名单");
     }
-    // A three-state closed table: recorded at signing, the older list (no terms document), or none.
-    let legacy = vec!["0xaa".to_string()];
+    // A two-state closed table: recorded at signing, or none.
     let rec = app::termsx::Record { grant: "0xbb".into(), terms: "0xcc".into(), exclusive: true, doc: None, name: None };
-    assert_eq!(app::termsx::exclusive_of(&[rec.clone()], &legacy, "0xBB"), app::termsx::Exclusive::Signed);
-    assert_eq!(app::termsx::exclusive_of(&[], &legacy, "0xAA"), app::termsx::Exclusive::Legacy);
-    assert_eq!(app::termsx::exclusive_of(&[], &legacy, "0xdd"), app::termsx::Exclusive::No);
+    assert_eq!(app::termsx::exclusive_of(&[rec.clone()], "0xBB"), app::termsx::Exclusive::Signed);
+    assert_eq!(app::termsx::exclusive_of(&[rec], "0xdd"), app::termsx::Exclusive::No);
     // The document's in-kit path is assembled in one place and satisfies kit law §7.2.
     let rel = app::termsx::doc_rel("0xAB12", "授权条款.pdf").expect("拼得出");
     assert!(rel.starts_with(&format!("{}/ab12/", app::termsx::ROOM)) && zikaron_kit::kitdir::is_kit_path(&rel), "{rel}");
@@ -4438,10 +4472,10 @@ fn a_file_put_in_another_home_or_under_another_name_is_another_file() {
     let _ = std::fs::remove_dir_all(b.root());
 }
 
-/// A file in the first envelope format (written by older versions) reads, and reading rewrites nothing; only
-/// a write converts it to the second envelope.
+/// A file in the first envelope format (as earlier versions wrote) is not sealed by this version's terms: read,
+/// it is refused by name and left as it is; a write over it is refused too (never written over).
 #[test]
-fn an_older_envelope_reads_and_is_rewritten_only_by_a_write() {
+fn an_earlier_envelope_is_refused_and_never_written_over() {
     let home = labelled_home("old-env");
     let at = home.dir(app::home::Slot::Settings).join(app::settings::FILE);
     let key = app::keybox::local_key().expect("库开着");
@@ -4456,10 +4490,12 @@ fn an_older_envelope_reads_and_is_rewritten_only_by_a_write() {
     old.extend_from_slice(&nonce);
     old.extend_from_slice(&app::cryptx::xchacha_seal(key.bytes(), &nonce, &head, plain).unwrap());
     std::fs::write(&at, &old).unwrap();
-    assert_eq!(app::local::read(&at, app::local::Doc::Settings).expect("旧封照开"), Some(plain.to_vec()));
+    let read = app::local::read(&at, app::local::Doc::Settings).expect_err("旧封具名拒");
+    assert_eq!(app::local::Unread::of(&read), Some(app::local::Unread::NotSealed), "{read:?}");
     assert_eq!(std::fs::read(&at).unwrap(), old, "读不重写");
-    app::local::put(&at.parent().unwrap(), app::settings::FILE, app::local::Doc::Settings, b"{\"capBytes\":4}").expect("写");
-    assert!(std::fs::read(&at).unwrap().starts_with(app::local::MAGIC_V2), "写过即新版");
+    let wrote = app::local::put(&at.parent().unwrap(), app::settings::FILE, app::local::Doc::Settings, b"{\"capBytes\":4}").expect_err("不盖");
+    assert_eq!(app::local::Unread::of(&wrote), Some(app::local::Unread::NotSealed), "{wrote:?}");
+    assert_eq!(std::fs::read(&at).unwrap(), old, "写也不盖");
     let _ = std::fs::remove_dir_all(home.root());
 }
 
@@ -4525,9 +4561,12 @@ fn a_writer_labels_a_home_and_a_label_of_another_identity_is_refused() {
 }
 
 /// A background task whose source has moved on writes nothing and ends with `HOME_UNREACHABLE`; kinds that do
-/// not follow the source are not stopped.
+/// not follow the source are not stopped. Runs in its own process ([`alone`]): it makes an identity.
 #[test]
 fn a_task_whose_home_moved_on_writes_nothing() {
+    if alone("a_task_whose_home_moved_on_writes_nothing") {
+        return;
+    }
     vault_open();
     let dir = std::env::temp_dir().join(format!("zk-std-ticket-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -4568,7 +4607,7 @@ fn a_task_whose_home_moved_on_writes_nothing() {
         let _ = std::fs::remove_dir_all(&src);
         let ctx = zikaron_ui::egui::Context::default();
         let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
-        let _ = apply(&mut shell, Action::MakeAnchorKey);
+        seated(&mut shell, &src);
         assert!(matches!(apply(&mut shell, Action::OpenHome { root: src.display().to_string() }), Applied::Homed { .. }));
         assert!(matches!(apply(&mut shell, Action::Genesis { statement: "票".into() }), Applied::Genesised { .. }));
         let got = shell.home.as_ref().and_then(|h| h.ledger().ok()).and_then(|l| l.pile().ok()).and_then(|p| p.items.first().cloned());
@@ -4996,3 +5035,15 @@ mod a8_send;
 mod a8_skeleton;
 #[path = "checks_more/gaps_r21b2.rs"]
 mod gaps_r21b2;
+#[path = "checks_more/local_writes.rs"]
+mod local_writes;
+#[path = "checks_more/gate_landing.rs"]
+mod gate_landing;
+#[path = "checks_more/seat_landing.rs"]
+mod seat_landing;
+#[path = "checks_more/unsafe_confined.rs"]
+mod unsafe_confined;
+#[path = "checks_more/recovery_seals.rs"]
+mod recovery_seals;
+#[path = "checks_more/window_habits.rs"]
+mod window_habits;

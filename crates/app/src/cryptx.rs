@@ -29,12 +29,8 @@ use crate::family::ENTROPY_BYTES;
 
 type HmacSha512 = Hmac<Sha512>;
 
-/// Zeroes a byte range with volatile writes, so the compiler cannot drop them as dead stores.
-fn wipe(b: &mut [u8]) {
-    for x in b.iter_mut() {
-        unsafe { std::ptr::write_volatile(x, 0) };
-    }
-}
+/// Zeroes a byte range in place: the platform piece's one wipe (`zikaron_os::wipe`).
+use zikaron_os::wipe;
 
 thread_local! {
     /// How many password derivations ([`scrypt`], [`pbkdf2_sha256`]) this thread has run. Observation only:
@@ -181,7 +177,7 @@ pub fn derive(entropy: &[u8; ENTROPY_BYTES], path: &[u32]) -> Option<[u8; 32]> {
     let mut seed = [0u8; 64];
     pbkdf2::pbkdf2_hmac::<Sha512>(phrase.as_bytes(), b"mnemonic", 2048, &mut seed);
     // This copy of the phrase is zeroed once used.
-    unsafe { wipe(phrase.as_bytes_mut()) };
+    zikaron_os::wipe_string(&mut phrase);
     let out = walk(&seed, path, |k| {
         k256::SecretKey::from_slice(k).ok().map(|sk| sk.public_key().to_encoded_point(true).as_bytes().to_vec())
     });

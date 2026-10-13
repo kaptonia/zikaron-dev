@@ -17,6 +17,9 @@
 //! or a declined scan is the absence of an answer ([`codes::Exit::Unanswered`]); only a failing subject is a
 //! negative answer ([`codes::Exit::Denied`]).
 
+// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+#![forbid(unsafe_code)]
+
 /// The component code this crate carries in its trace marks.
 pub const V1: &str = "V1";
 

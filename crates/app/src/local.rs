@@ -22,23 +22,22 @@
 //!
 //! ─── Envelope ───
 //!
-//! [`MAGIC_V2`] · algorithm (1 byte, [`ALG`] or [`ALG_KEYED`]) · kind length (1 byte) · kind · format version
-//! (2 bytes, big-endian) · identity digest (16 bytes: 8 from the owner, 8 from the place's logical name;
-//! [`Ident::digest`]) · nonce (24 bytes) · ciphertext and tag. The whole head, nonce included, is the AEAD
+//! [`MAGIC_V2`] · algorithm (1 byte, [`ALG_KEYED`]) · kind length (1 byte) · kind · format version (2 bytes,
+//! big-endian) · identity digest (16 bytes: 8 from the owner, 8 from the place's logical name keyed under the
+//! local data key; [`Ident::digest_keyed`]) · nonce (24 bytes) · ciphertext and tag. The whole head, nonce included, is the AEAD
 //! additional data, so a changed head byte, or a file moved to another place or home, does not open. The
 //! owner and place are repeated as text inside the ciphertext and checked after opening.
 //!
-//! Reading accepts both this envelope and the older [`MAGIC`] one (kind and version bound, no identity),
-//! permanently. A file that cannot be read fails with `LOCAL_SEAL`, whose details name one of six reasons
+//! Reading accepts only this envelope under the algorithm written ([`ALG_KEYED`]): anything an earlier version
+//! wrote (the first envelope, [`MAGIC`], or the unkeyed algorithm 1) is not sealed by this version's terms and is
+//! refused as such. A file that cannot be read fails with `LOCAL_SEAL`, whose details name one of six reasons
 //! ([`Unread`]): not sealed, truncated head, another kind, a newer version, another file (identity digest
 //! mismatch), or does not open (another key, or altered). The digest is compared before decrypting, so a
 //! swapped file and a wrong key are distinguishable.
 //!
-//! Writing produces only the new envelope. There is no bulk migration: a file moves to the new envelope when
-//! it is next written, and ledger entries, which are never rewritten, stay as they are. A home without a label
-//! (from an older version) gets one the first time a writer opens or writes into it. An existing file that
-//! cannot be read is never overwritten ([`put`]): the error tells the user to move it aside so the next write
-//! recreates it.
+//! A home gets its label the first time its writer opens or writes into it (a home is laid without one). An
+//! existing file that cannot be read is never overwritten ([`put`]): the error tells the user to move it aside so
+//! the next write recreates it.
 //!
 //! Known limits: putting an older copy of a file back in its place is not detected (that would need a counter
 //! stored elsewhere; the ledger has its signature chain). Swapping two whole homes, labels included, is not
@@ -56,15 +55,13 @@ use crate::keybox::LocalKey;
 use std::path::{Path, PathBuf};
 use zikaron_store::{EntryName, LedgerDir, Pile, Skip, Stored, Survey};
 
-/// Magic bytes of the old envelope (read only) and of the current one (written).
+/// Magic bytes of the envelope an earlier version wrote (refused, kept as a family literal) and of the one
+/// read and written.
 pub use zikaron_glue::sealed::{MAGIC, MAGIC_V2};
 const NONCE: usize = 24;
 /// Length of the identity digest in the envelope head.
 pub const DIGEST: usize = 16;
-/// Algorithm 1: XChaCha20-Poly1305 with an unkeyed place half in the identity digest (also the old envelope's
-/// cipher). Read only; [`ALG_KEYED`] is written.
-pub const ALG: u8 = 1;
-/// Algorithm 2, the one written: XChaCha20-Poly1305 with the place half of the identity digest keyed (HMAC
+/// Algorithm 2, the one read and written (an earlier version's algorithm 1, unkeyed, is refused as not sealed): XChaCha20-Poly1305 with the place half of the identity digest keyed (HMAC
 /// under a key derived from the local data key, [`PLACE_KEY_INFO`]), so the heads on a locked disk cannot be
 /// matched against public logical names (entry and grant ids). Future algorithms take new numbers under the
 /// same magic.
@@ -315,13 +312,9 @@ pub struct Ident {
 
 impl Ident {
     /// The place half of the identity digest, from the logical name only (the kind is already bound as part of
-    /// the head, which is the additional data). Unkeyed under [`ALG`]; under [`ALG_KEYED`] the first 8 bytes of
-    /// `HMAC-SHA256(K, PLACE_DOMAIN ‖ 0 ‖ logical)`, with `K` derived from the local data key `key` under
-    /// [`PLACE_KEY_INFO`].
-    fn place_half(logical: &str, alg: u8, key: &[u8; 32]) -> [u8; DIGEST / 2] {
-        if alg == ALG {
-            return half_of(PLACE_DOMAIN, &[logical.as_bytes()]);
-        }
+    /// the head, which is the additional data): the first 8 bytes of `HMAC-SHA256(K, PLACE_DOMAIN ‖ 0 ‖
+    /// logical)`, with `K` derived from the local data key `key` under [`PLACE_KEY_INFO`].
+    fn place_half(logical: &str, key: &[u8; 32]) -> [u8; DIGEST / 2] {
         let mut k = [0u8; 32];
         crate::cryptx::hkdf_sha256(key, PLACE_KEY_INFO.as_bytes(), &mut k);
         let mut msg = PLACE_DOMAIN.as_bytes().to_vec();
@@ -334,22 +327,12 @@ impl Ident {
         out
     }
 
-    /// The unkeyed identity digest ([`ALG`]): 8 owner bytes, then 8 place bytes. Read only;
-    /// [`Ident::digest_keyed`] is written.
-    pub fn digest(&self) -> [u8; DIGEST] {
-        self.digest_as(ALG, &[0u8; 32])
-    }
-
-    /// The keyed identity digest ([`ALG_KEYED`]): 8 owner bytes, then 8 place bytes keyed under the local data
-    /// key `key`.
+    /// The identity digest ([`ALG_KEYED`]): 8 owner bytes, then 8 place bytes keyed under the local data key
+    /// `key`.
     pub fn digest_keyed(&self, key: &[u8; 32]) -> [u8; DIGEST] {
-        self.digest_as(ALG_KEYED, key)
-    }
-
-    fn digest_as(&self, alg: u8, key: &[u8; 32]) -> [u8; DIGEST] {
         let mut d = [0u8; DIGEST];
         d[..DIGEST / 2].copy_from_slice(&self.owner.half());
-        d[DIGEST / 2..].copy_from_slice(&Ident::place_half(&self.logical, alg, key));
+        d[DIGEST / 2..].copy_from_slice(&Ident::place_half(&self.logical, key));
         d
     }
 }
@@ -366,14 +349,11 @@ pub struct Expect {
 
 /// A parsed head.
 struct Head<'a> {
-    v2: bool,
     tag: &'a [u8],
     version: u16,
-    /// The algorithm number ([`ALG`] or [`ALG_KEYED`]; the old envelope reads as [`ALG`]).
-    alg: u8,
     digest: [u8; DIGEST],
     nonce: [u8; NONCE],
-    /// The additional data: the old envelope's head without its nonce, or the current envelope's whole head.
+    /// The additional data: the whole head.
     aad: &'a [u8],
     sealed: &'a [u8],
 }
@@ -384,16 +364,19 @@ fn take<'a>(bytes: &'a [u8], i: &mut usize, n: usize) -> Result<&'a [u8], Unread
     Ok(s)
 }
 
+/// The head of the envelope this version writes. Bytes without its magic (a plain file, or the first envelope
+/// an earlier version wrote) are not sealed; an algorithm below the one written (an earlier version's) is not
+/// sealed either, one above it is a newer version's.
 fn parse_head(bytes: &[u8]) -> Result<Head<'_>, Unread> {
-    let (v2, mut i) = if bytes.starts_with(MAGIC_V2) {
-        (true, MAGIC_V2.len())
-    } else if bytes.starts_with(MAGIC) {
-        (false, MAGIC.len())
-    } else {
+    if !bytes.starts_with(MAGIC_V2) {
         return Err(Unread::NotSealed);
-    };
-    let alg = if v2 { take(bytes, &mut i, 1)?[0] } else { ALG };
-    if alg != ALG && alg != ALG_KEYED {
+    }
+    let mut i = MAGIC_V2.len();
+    let alg = take(bytes, &mut i, 1)?[0];
+    if alg < ALG_KEYED {
+        return Err(Unread::NotSealed);
+    }
+    if alg > ALG_KEYED {
         return Err(Unread::NewerVersion);
     }
     let len = take(bytes, &mut i, 1)?[0] as usize;
@@ -401,18 +384,14 @@ fn parse_head(bytes: &[u8]) -> Result<Head<'_>, Unread> {
     let v = take(bytes, &mut i, 2)?;
     let version = u16::from_be_bytes([v[0], v[1]]);
     let mut digest = [0u8; DIGEST];
-    if v2 {
-        digest.copy_from_slice(take(bytes, &mut i, DIGEST)?);
-    }
-    let aad_end = i;
+    digest.copy_from_slice(take(bytes, &mut i, DIGEST)?);
     let mut nonce = [0u8; NONCE];
     nonce.copy_from_slice(take(bytes, &mut i, NONCE)?);
     // An AEAD tag is 16 bytes: anything shorter is truncated.
     if bytes.len() < i + 16 {
         return Err(Unread::Truncated);
     }
-    let aad = if v2 { &bytes[..i] } else { &bytes[..aad_end] };
-    Ok(Head { v2, tag, version, alg, digest, nonce, aad, sealed: &bytes[i..] })
+    Ok(Head { tag, version, digest, nonce, aad: &bytes[..i], sealed: &bytes[i..] })
 }
 
 /// The current envelope's plaintext: the owner and the logical name, each prefixed by a 2-byte length, then
@@ -461,34 +440,18 @@ pub fn envelope(key: &[u8; 32], id: &Ident, nonce: &[u8; NONCE], plain: &[u8]) -
 }
 
 /// The head prefix for this kind up to its version: magic, algorithm ([`ALG_KEYED`]), kind, version. Opening
-/// compares it in full, using the algorithm the file names ([`ALG`] is accepted too); this is what binds a
-/// file to its kind.
+/// compares it in full; this is what binds a file to its kind.
 fn head(doc: Doc) -> Vec<u8> {
-    head_alg(doc, ALG_KEYED)
-}
-
-fn head_alg(doc: Doc, alg: u8) -> Vec<u8> {
     let tag = doc.tag().as_bytes();
     let mut h = MAGIC_V2.to_vec();
-    h.push(alg);
+    h.push(ALG_KEYED);
     h.push(tag.len() as u8);
     h.extend_from_slice(tag);
     h.extend_from_slice(&doc.version().to_be_bytes());
     h
 }
 
-/// The old envelope's head for this kind (read only).
-fn head_v1(doc: Doc) -> Vec<u8> {
-    let tag = doc.tag().as_bytes();
-    let mut h = MAGIC.to_vec();
-    h.push(tag.len() as u8);
-    h.extend_from_slice(tag);
-    h.extend_from_slice(&doc.version().to_be_bytes());
-    h
-}
-
-/// Open under raw key bytes, checking against `ex` (see the module header for the order of checks). Accepts
-/// both envelopes; the old one carries no identity and is checked for kind and version only.
+/// Open under raw key bytes, checking against `ex` (see the module header for the order of checks).
 pub fn unseal(key: &[u8; 32], ex: &Expect, bytes: &[u8], what: &str) -> Result<Vec<u8>, Fault> {
     unseal_headed(key, ex, &head(ex.doc), bytes, what)
 }
@@ -498,12 +461,7 @@ fn unseal_headed(key: &[u8; 32], ex: &Expect, h: &[u8], bytes: &[u8], what: &str
     let no = |u: Unread| u.fault(ex.doc, what);
     let p = parse_head(bytes).map_err(no)?;
     // Head mismatch: another kind, a newer version, or something this format never wrote.
-    let expected = match (p.v2, p.alg == ALG_KEYED) {
-        (true, true) => h.to_vec(),
-        (true, false) => head_alg(ex.doc, p.alg),
-        (false, _) => head_v1(ex.doc),
-    };
-    if !bytes.starts_with(&expected) {
+    if !bytes.starts_with(h) {
         return Err(no(if p.tag != ex.doc.tag().as_bytes() {
             Unread::OtherKind
         } else if p.version > ex.doc.version() {
@@ -513,9 +471,6 @@ fn unseal_headed(key: &[u8; 32], ex: &Expect, h: &[u8], bytes: &[u8], what: &str
         }));
     }
     let h = p;
-    if !h.v2 {
-        return crate::cryptx::xchacha_open(key, &h.nonce, h.aad, h.sealed).ok_or_else(|| no(Unread::Unopenable));
-    }
     // Check the digest first, so a swapped file is reported before any key is tried.
     let Some(owner) = &ex.owner else { return Err(no(Unread::Swapped)) };
     if h.digest[..DIGEST / 2] != owner.half() {
@@ -525,11 +480,7 @@ fn unseal_headed(key: &[u8; 32], ex: &Expect, h: &[u8], bytes: &[u8], what: &str
     // Check the place half before decrypting. A keyed half also differs under a wrong key, so a mismatch is
     // resolved by trying to open: if it does not open, it is another key (or altered); if it opens, it is
     // another file.
-    let place_differs = fixed.is_some_and(|rel| h.digest[DIGEST / 2..] != Ident::place_half(rel, h.alg, key));
-    // An unkeyed half that differs means another file, whatever the key.
-    if place_differs && h.alg == ALG {
-        return Err(no(Unread::Swapped));
-    }
+    let place_differs = fixed.is_some_and(|rel| h.digest[DIGEST / 2..] != Ident::place_half(rel, key));
     let mut body = crate::cryptx::xchacha_open(key, &h.nonce, h.aad, h.sealed).ok_or_else(|| no(Unread::Unopenable))?;
     if place_differs {
         zikaron_ui::secret::wipe(&mut body);
@@ -538,20 +489,20 @@ fn unseal_headed(key: &[u8; 32], ex: &Expect, h: &[u8], bytes: &[u8], what: &str
     let checked = (|| -> Result<Vec<u8>, Unread> {
         let (o, logical, plain) = unframe(&body).ok_or(Unread::Unopenable)?;
         let id = Ident { owner: Owner::parse(&o).ok_or(Unread::Swapped)?, doc: ex.doc, logical };
-        if &id.owner != owner || id.digest_as(h.alg, key) != h.digest {
+        if &id.owner != owner || id.digest_keyed(key) != h.digest {
             return Err(Unread::Swapped);
         }
         if ex.doc.keyed() {
             // A keyed kind's place comes from its content: the logical name inside must match the content, and
-            // the on-disk name must match the logical name (keyed under the names key, or unkeyed as written
-            // before names were keyed).
+            // the on-disk name must be the logical name keyed under the names key (a name as an earlier version
+            // wrote it, unkeyed, is another file's place).
             let from_content = logical_rel(ex.doc, ex.rel.as_deref().unwrap_or(&id.logical), plain).map_err(|_| Unread::Swapped)?;
             if from_content != id.logical {
                 return Err(Unread::Swapped);
             }
             if let Some(rel) = &ex.rel {
                 let keyed = crate::names::key().ok().and_then(|nk| disk_rel(ex.doc, &id.logical, &nk).ok());
-                if *rel != id.logical && keyed.as_deref() != Some(rel.as_str()) {
+                if keyed.as_deref() != Some(rel.as_str()) {
                     return Err(Unread::Swapped);
                 }
             }
@@ -579,9 +530,6 @@ fn open_staged(key: &LocalKey, doc: Doc, bytes: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let mut body = crate::cryptx::xchacha_open(key.bytes(), &h.nonce, h.aad, h.sealed)?;
-    if !h.v2 {
-        return Some(body);
-    }
     let out = unframe(&body).map(|(_, _, p)| p.to_vec());
     zikaron_ui::secret::wipe(&mut body);
     out
@@ -593,7 +541,7 @@ fn nonce() -> Result<[u8; NONCE], Fault> {
     Ok(n)
 }
 
-/// Whether bytes carry a sealed envelope (a plain file left by an older version does not).
+/// Whether bytes carry the envelope this version writes (a plain file, or one an earlier version wrote, does not).
 pub fn is_sealed(bytes: &[u8]) -> bool {
     zikaron_glue::sealed::is_sealed(bytes)
 }
@@ -1280,18 +1228,6 @@ pub fn homes_on_record() -> Vec<PathBuf> {
     uniq
 }
 
-/// The register as stored: sealed, or plain if an older version left it (used only by passes that run before
-/// plain files are sealed: settling and migration).
-fn registry_any() -> Result<Option<crate::identity::Registry>, Fault> {
-    let at = crate::register::path()?;
-    match std::fs::read(&at) {
-        Ok(b) if !is_sealed(&b) => Ok(Some(
-            crate::identity::Registry::parse(&b).map_err(|why| Fault::known(Known::IdentitiesShape, format!("{}: {why}", at.display())))?,
-        )),
-        _ => crate::register::read(),
-    }
-}
-
 /// With `strict`, a registered home whose parent directory is also missing (a detached disk, a moved folder)
 /// is an error instead of being skipped; a home whose parent exists but which was never created is still
 /// skipped. Two roles sharing one home (older register rows) count it once.
@@ -1420,11 +1356,8 @@ pub fn logical_rel(doc: Doc, rel: &str, plain: &[u8]) -> Result<String, Fault> {
         Doc::Entry => format!("{}/{}{}", Slot::Ledger.as_str(), hex_id(&zikaron::entry::entry_id(plain)), zikaron_store::layout::ENTRY_SUFFIX),
         Doc::Held => format!("{}/{}{}", Slot::GrantsHeld.as_str(), hex_id(&zikaron::entry::entry_id(plain)), zikaron_store::layout::ENTRY_SUFFIX),
         Doc::Verdict => {
-            // The grant id is inside; caches from older versions were named by the grant id instead.
-            let id = match text_of("grant") {
-                Some(g) => g,
-                None => rel.rsplit('/').next().and_then(|n| n.strip_suffix(crate::lastread::VERDICT_SUFFIX)).map(str::to_string).ok_or_else(shape)?,
-            };
+            // The grant id is inside; a verdict without it is not one this version wrote.
+            let id = text_of("grant").ok_or_else(shape)?;
             format!("{}/{id}{}", Slot::GrantsHeld.as_str(), crate::lastread::VERDICT_SUFFIX)
         }
         Doc::KeptGrant => {
@@ -1556,13 +1489,6 @@ pub fn restage(old: &LocalKey, new: &LocalKey, nk: &crate::names::NameKey) -> Re
             }
             plain = r.to_bytes();
         }
-        if f.doc == Doc::Verdict {
-            // A cache from an older version is named only by its grant: add the grant inside before the name is
-            // keyed.
-            let lr = logical_rel(Doc::Verdict, &f.rel, &plain)?;
-            let id = lr.rsplit('/').next().and_then(|n| n.strip_suffix(crate::lastread::VERDICT_SUFFIX)).unwrap_or_default().to_string();
-            plain = crate::lastread::with_grant(&plain, &id)?;
-        }
         let root = root_of(&f);
         let new_root = homes.iter().find(|(a, _)| crate::home::same_place(a, &root)).map(|(_, b)| b.clone()).unwrap_or_else(|| root.clone());
         let to = new_root.join(disk_rel(f.doc, &logical_rel(f.doc, &f.rel, &plain)?, nk)?);
@@ -1609,210 +1535,11 @@ fn root_of(f: &Found) -> PathBuf {
     root
 }
 
-/// Whether any local file is not at its name under the vault's current names key: data from an older version
-/// (names that reveal ids), or a names change interrupted halfway.
-fn names_out_of_date(nk: &crate::names::NameKey) -> Result<bool, Fault> {
-    let key = crate::keybox::local_key()?;
-    let reg = crate::register::read()?;
-    if let Some(r) = &reg {
-        for row in &r.rows {
-            for seat in crate::roles::Role::ALL {
-                if let Some(h) = row.home(seat) {
-                    if home_under(nk, &row.id, seat, &h) != h {
-                        return Ok(true);
-                    }
-                }
-            }
-        }
-        for (id, seat, h) in &r.left {
-            let h = PathBuf::from(h);
-            if home_under(nk, id, *seat, &h) != h {
-                return Ok(true);
-            }
-        }
-    }
-    for f in all_files()? {
-        if f.doc.keyed() {
-            let raw = std::fs::read(&f.at).map_err(|e| classify(&e, &f.at.display().to_string()))?;
-            let mut plain = open_with(&key, &expect_found(&f)?, &raw, &f.rel)?;
-            let want = disk_rel(f.doc, &logical_rel(f.doc, &f.rel, &plain)?, nk)?;
-            let old_verdict = f.doc == Doc::Verdict && !plain.windows(7).any(|w| w == b"\"grant\"");
-            zikaron_ui::secret::wipe(&mut plain);
-            if want != f.rel || old_verdict {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
-}
-
-/// On the first unlock after upgrading (or after an interrupted names change): move every local file whose
-/// name still reveals an identity, entry or grant id to its keyed name. Uses the same staged pass as a master
-/// key change (old names are removed only once every new file is staged), so an interruption at any point is
-/// resumed at the next unlock and no file is lost. Returns how many files moved.
-pub fn migrate_names() -> Result<usize, Fault> {
-    let nk = crate::names::key()?;
-    // First bring in what older versions left outside the register (homes of deleted identities) and outside
-    // the homes (set-aside trees under their old paths).
-    if let Err(f) = flatten_old_aside() {
-        note_trouble(f);
-    }
-    // Clear id-named strays (an empty role directory, files this key cannot open) first, so what remains is a
-    // role home that `adopt_left_homes` can list and the renaming below can rename.
-    match crate::keybox::local_key().and_then(|k| clear_strays(&k, true)) {
-        Ok((0, _)) => {}
-        Ok((n, at)) => note_trouble(Fault::known(Known::LocalSetAside, format!("{n} · {}", at.map(|p| p.display().to_string()).unwrap_or_default()))),
-        Err(f) => note_trouble(f),
-    }
-    if let Err(f) = adopt_left_homes() {
-        note_trouble(f);
-    }
-    if !names_out_of_date(&nk)? {
-        return Ok(0);
-    }
-    let key = crate::keybox::local_key()?;
-    let m = crate::home::machine_dir()?;
-    stage_plan(PLAN_OPEN, &[])?;
-    let staged = match restage(&key, &key, &nk) {
-        Ok(s) => s,
-        Err(f) => {
-            // Never took effect: drop what was staged (now, or at the next unlock).
-            let _ = settle_pending();
-            return Err(f);
-        }
-    };
-    cut_point(Cut::BeforeCommit)?;
-    let n = staged.gone.len();
-    std::fs::remove_file(plan_path(&m, PLAN_OPEN)).map_err(|e| classify(&e, PLAN_OPEN))?;
-    cut_point(Cut::AfterCommit)?;
-    let s = settle_pending()?;
-    if s.held > 0 {
-        return Err(Fault::known(Known::MigrateMismatch, format!("{} held", s.held)));
-    }
-    Ok(n)
-}
-
-// ───────────────────────── Migrating plain files ─────────────────────────
-
-static MIGRATE_FAULT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-
-/// Make one file's sealed copy read back different during migration (test hooks only, to show a mismatch
-/// stops migration with every plain file kept).
-pub fn set_migrate_fault(at: PathBuf) -> bool {
-    MIGRATE_FAULT.set(at).is_ok()
-}
-
-/// The suffix of a sealed copy written beside a plain file during migration.
-pub const SEALED_BESIDE: &str = ".zk-sealed";
-
-/// What a migration pass did.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Migrated {
-    /// How many plain files were sealed.
-    pub sealed: usize,
-}
-
+/// The path `at` with `suffix` added to its file name.
 fn beside(at: &Path, suffix: &str) -> PathBuf {
     let mut s = at.as_os_str().to_owned();
     s.push(suffix);
     PathBuf::from(s)
-}
-
-/// Seal a list of plain files, all or none. Each gets a sealed copy beside it, which is read back, opened and
-/// compared byte for byte with the plain file; only when all match is each copy renamed over its plain file.
-/// On the first failure every copy is removed, no plain file is deleted, and the error names the file
-/// (`MIGRATE_MISMATCH`).
-fn seal_plain(list: &[Found]) -> Result<usize, Fault> {
-    let key = crate::keybox::local_key()?;
-    let mut done: Vec<(PathBuf, PathBuf)> = Vec::new();
-    let undo = |done: &[(PathBuf, PathBuf)]| {
-        for (_, copy) in done {
-            let _ = std::fs::remove_file(copy);
-        }
-    };
-    // Labels first, so each home's number is known before its other files are sealed.
-    let mut list: Vec<&Found> = list.iter().collect();
-    list.sort_by_key(|f| f.doc != Doc::HomeLabel);
-    for f in list.iter().filter(|f| f.doc == Doc::HomeLabel) {
-        if let Some(l) = std::fs::read(&f.at).ok().filter(|b| !is_sealed(b)).and_then(|b| Label::parse(&b)) {
-            remember_label(&root_of(f), &l.number);
-        }
-    }
-    for f in list {
-        let plain = std::fs::read(&f.at).map_err(|e| classify(&e, &f.at.display().to_string()))?;
-        if is_sealed(&plain) {
-            continue;
-        }
-        let copy = beside(&f.at, SEALED_BESIDE);
-        let step = (|| -> Result<(), Fault> {
-            let sealed = seal_with(&key, &ident_at(&f.at, f.doc, &plain)?, &plain)?;
-            // The envelope makes an entry longer; one that would exceed the ledger's size cap is refused here
-            // rather than written and making the whole ledger unreadable.
-            if f.doc == Doc::Entry && sealed.len() > zikaron_store::ENTRY_MAX {
-                return Err(Fault::known(Known::Ledger, format!("{}: {} > {}", f.at.display(), sealed.len(), zikaron_store::ENTRY_MAX)));
-            }
-            let dir = copy.parent().map(Path::to_path_buf).unwrap_or_default();
-            let name = copy.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-            crate::home::put_at(&dir, &name, &sealed)?;
-            let mut back = std::fs::read(&copy).map_err(|e| classify(&e, &copy.display().to_string()))?;
-            // Injected read-back fault for test hooks (never set in the shipped app).
-            if MIGRATE_FAULT.get().map(|p| p == &f.at).unwrap_or(false) {
-                if let Some(b) = back.last_mut() {
-                    *b ^= 1;
-                }
-            }
-            // A copy that does not open is as much a mismatch as one that opens to other bytes.
-            let opened = expect_at(&f.at, f.doc)
-                .and_then(|ex| open_with(&key, &ex, &back, &f.rel))
-                .map_err(|_| Fault::known(Known::MigrateMismatch, f.at.display().to_string()))?;
-            if opened != plain {
-                return Err(Fault::known(Known::MigrateMismatch, f.at.display().to_string()));
-            }
-            Ok(())
-        })();
-        if let Err(e) = step {
-            let _ = std::fs::remove_file(&copy);
-            undo(&done);
-            // Keep the specific reason (too large, unreadable, mismatch) and name the file, rather than folding
-            // everything into "did not match" and misleading the user about the cause.
-            let named = match e.which() {
-                Some(Known::MigrateMismatch) | None => e,
-                Some(k) => Fault::known(k, format!("{} · {}", f.at.display(), e.tail())),
-            };
-            return Err(named);
-        }
-        done.push((f.at.clone(), copy));
-    }
-    for (at, copy) in &done {
-        crate::home::rename_over(copy, at)?;
-    }
-    Ok(done.len())
-}
-
-/// On the first unlock after upgrading: seal every plain local file on this machine in one all-or-nothing pass
-/// (the register may still be plain and is read as is to find the homes). Already sealed files are skipped,
-/// so a second pass does nothing. Leftover sealed copies from an interrupted pass are removed first (their
-/// plain files were never deleted).
-pub fn migrate_plain() -> Result<Migrated, Fault> {
-    let _ = crate::keybox::local_key()?;
-    let m = crate::home::machine_dir()?;
-    drop_leftovers(&m);
-    let mut list = machine_files()?;
-    for (w, h) in homes_of(registry_any()?, false)? {
-        drop_leftovers(&h);
-        list.extend(home_files(&h, &w));
-    }
-    Ok(Migrated { sealed: seal_plain(&list)? })
-}
-
-fn drop_leftovers(root: &Path) {
-    let mut all = Vec::new();
-    walk(root, "", &mut all);
-    for (at, rel) in all {
-        if rel.ends_with(SEALED_BESIDE) {
-            let _ = std::fs::remove_file(at);
-        }
-    }
 }
 
 // ───────────────────────── Files under a master key that is gone ─────────────────────────
@@ -2064,9 +1791,6 @@ pub const PLAN_ASIDE: &str = "change-set-aside";
 /// under the new key, since they contain on-disk names.
 pub const PLAN_GONE: &str = "change-gone";
 pub const PLAN_MOVED: &str = "change-moved-homes";
-/// A names change under the same key (a migration) has no vault rename to commit it. This marker exists while
-/// staging; removing it is the commit.
-pub const PLAN_OPEN: &str = "change-open";
 
 /// Stage one plan file (replacing any staged under that name).
 pub fn stage_plan(name: &str, paths: &[PathBuf]) -> Result<(), Fault> {
@@ -2093,10 +1817,6 @@ fn read_plan_sealed(machine: &Path, name: &str, key: &LocalKey) -> Vec<String> {
         }
         Err(_) => Vec::new(),
     }
-}
-
-fn plan_there(machine: &Path, name: &str) -> bool {
-    plan_path(&machine, name).exists()
 }
 
 /// Remove empty directories upward from `from` (itself included), stopping below `stop` or at the first
@@ -2387,7 +2107,7 @@ pub fn settle_swap() -> Result<(), Fault> {
     }
     // Remove fresh homes staged by a pass that stopped before writing its plan; they were never swapped in.
     // (A register that cannot be read now, still sealed under a key being replaced, is retried next unlock.)
-    if let Ok(Some(reg)) = registry_any() {
+    if let Ok(Some(reg)) = crate::register::read() {
         for row in &reg.rows {
             for seat in crate::roles::Role::ALL {
                 if let Some(h) = row.home(seat) {
@@ -2410,52 +2130,6 @@ pub fn carry_settings(from_root: &Path, into: &crate::home::Home) -> Result<(), 
         Some(plain) => put(&into.dir(crate::home::Slot::Settings), crate::settings::FILE, Doc::Settings, &plain),
         None => Ok(()),
     }
-}
-
-/// Whether a set-aside directory is already flat: no subdirectories, and every file named by a number (dot
-/// files left by the system's file browser are ignored).
-fn aside_is_flat(dir: &Path) -> bool {
-    std::fs::read_dir(dir)
-        .map(|d| {
-            d.flatten().all(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
-                !e.path().is_dir() && (name.starts_with('.') || name.bytes().all(|b| b.is_ascii_digit()))
-            })
-        })
-        .unwrap_or(true)
-}
-
-/// Older versions set files aside inside each root under their original paths (which may contain entry or
-/// grant ids). Flatten every such tree, in the machine directory and every home, into the machine directory's
-/// `set-aside` (numbered) and remove it. Idempotent; an interruption leaves each file in one place or the
-/// other.
-fn flatten_old_aside() -> Result<usize, Fault> {
-    let m = crate::home::machine_dir()?;
-    let mut roots = vec![m.clone()];
-    roots.extend(homes_of(crate::register::read()?, false)?.into_iter().map(|(_, h)| h));
-    let mut n = 0usize;
-    for root in roots {
-        let Ok(list) = std::fs::read_dir(&root) else { continue };
-        for e in list.flatten() {
-            let p = e.path();
-            if !e.file_name().to_string_lossy().starts_with(SET_ASIDE) || !p.is_dir() {
-                continue;
-            }
-            if root == m && aside_is_flat(&p) {
-                continue;
-            }
-            let mut files = Vec::new();
-            walk(&p, "", &mut files);
-            let files: Vec<PathBuf> = files.into_iter().map(|(at, _)| at).collect();
-            if !files.is_empty() {
-                aside_flat(&files)?;
-                n += files.len();
-            }
-            prune_empty_under(&p);
-            let _ = std::fs::remove_dir(&p);
-        }
-    }
-    Ok(n)
 }
 
 /// Directories that contain homes: the machine directory, the parents of the current home and of previously
@@ -2488,7 +2162,7 @@ fn home_places() -> Vec<PathBuf> {
 /// The identity directory of every home the register names (role homes, on disk or not, and homes left by
 /// deleted identities), reading the register as stored.
 fn known_identity_dirs() -> Vec<PathBuf> {
-    let Ok(Some(reg)) = registry_any() else { return Vec::new() };
+    let Ok(Some(reg)) = crate::register::read() else { return Vec::new() };
     let mut homes: Vec<PathBuf> = reg.rows.iter().flat_map(|r| crate::roles::Role::ALL.iter().filter_map(|s| r.home(*s)).collect::<Vec<_>>()).collect();
     homes.extend(reg.left.iter().map(|(_, _, h)| PathBuf::from(h)));
     homes.iter().filter_map(|h| identity_dir_of(h)).collect()
@@ -2496,13 +2170,10 @@ fn known_identity_dirs() -> Vec<PathBuf> {
 
 /// Ensure nothing remains named by an id. In every directory that contains homes, a directory laid out like an
 /// identity's homes (an id-named directory with role subdirectories) that the register does not know is a
-/// stray, whatever its origin (an older version, an interruption, a manual copy). Its files that are plain or
-/// do not open under the vault's key are set aside unchanged, numbered flat in the machine directory, and its
-/// empty directories are removed. With `adopt`, a role directory whose local files open under the key is kept
-/// for `adopt_left_homes` to list and the names change to rename; without it (after a change took effect,
-/// when every home to keep is already registered) everything is set aside. Staged files of a change in
-/// progress are left alone. Returns how many files were set aside, and where.
-pub fn clear_strays(key: &LocalKey, adopt: bool) -> Result<(usize, Option<PathBuf>), Fault> {
+/// stray, whatever its origin (an interruption, a manual copy). Its files are set aside unchanged, numbered flat
+/// in the machine directory, and its empty directories are removed: every home to keep is registered. Staged
+/// files of a change in progress are left alone. Returns how many files were set aside, and where.
+pub fn clear_strays() -> Result<(usize, Option<PathBuf>), Fault> {
     let known = known_identity_dirs();
     let seat_named = |p: &Path| crate::roles::Role::ALL.iter().any(|r| p.join(r.as_str()).is_dir());
     let mut aside: Vec<PathBuf> = Vec::new();
@@ -2520,31 +2191,7 @@ pub fn clear_strays(key: &LocalKey, adopt: bool) -> Result<(usize, Option<PathBu
             }
             let mut files = Vec::new();
             walk(&d, "", &mut files);
-            let opens = |at: &Path| std::fs::read(at).map(|b| is_sealed(&b) && opens_under(key, &b)).unwrap_or(false);
-            // Within a role directory (`<seat>/<rel in the home>`), local files that open are kept for adoption,
-            // and so are non-local files (lock file, exported bundles) when that role keeps at least one local
-            // file; everything else is set aside.
-            let in_seat = |rel: &str| -> Option<(String, String)> {
-                let (seat, rest) = rel.split_once('/')?;
-                crate::roles::Role::ALL.iter().any(|r| r.as_str() == seat).then(|| (seat.to_string(), rest.to_string()))
-            };
-            let seats_kept: Vec<String> = files
-                .iter()
-                .filter_map(|(at, rel)| in_seat(rel).filter(|(_, rest)| home_doc(rest).is_some() && opens(at)).map(|(seat, _)| seat))
-                .collect();
-            for (at, rel) in files {
-                if is_staged(&rel) {
-                    continue;
-                }
-                let keep = adopt
-                    && match in_seat(&rel) {
-                        Some((seat, rest)) => seats_kept.contains(&seat) && (home_doc(&rest).is_none() || opens(&at)),
-                        None => false,
-                    };
-                if !keep {
-                    aside.push(at);
-                }
-            }
+            aside.extend(files.into_iter().filter(|(_, rel)| !is_staged(rel)).map(|(at, _)| at));
             strays.push(d);
         }
     }
@@ -2554,46 +2201,6 @@ pub fn clear_strays(key: &LocalKey, adopt: bool) -> Result<(usize, Option<PathBu
         let _ = std::fs::remove_dir(d);
     }
     Ok((aside.len(), to))
-}
-
-/// Role homes that older versions left on disk for deleted identities without recording them: laid out as
-/// `<place>/<identity id>/<seat>` next to known homes, but neither registered nor listed as left. Each whose
-/// local files all open under the vault's key is recorded as left, so it is renamed with the rest and found
-/// again if the identity is imported again. Returns how many were recorded.
-fn adopt_left_homes() -> Result<usize, Fault> {
-    let Some(mut reg) = crate::register::read()? else { return Ok(0) };
-    let key = crate::keybox::local_key()?;
-    let mut known: Vec<PathBuf> = reg.rows.iter().flat_map(|r| crate::roles::Role::ALL.iter().filter_map(|s| r.home(*s)).collect::<Vec<_>>()).collect();
-    known.extend(reg.left.iter().map(|(_, _, h)| PathBuf::from(h)));
-    let mut added = 0usize;
-    for h in homes_on_record() {
-        let Some(d) = identity_dir_of(&h) else { continue };
-        let Some(seat) = h.file_name().and_then(|n| crate::roles::Role::ALL.into_iter().find(|r| r.as_str() == n.to_string_lossy())) else { continue };
-        if known.iter().any(|k| crate::home::same_place(k, &h)) {
-            continue;
-        }
-        // Require at least one local file, all sealed and opening under this vault's key. A home of plain files
-        // (deleted before sealing existed) or of another vault is not this machine's to rename.
-        let mut files = Vec::new();
-        walk(&h, "", &mut files);
-        let local: Vec<&(PathBuf, String)> = files.iter().filter(|(_, rel)| home_doc(rel).is_some()).collect();
-        let all_open = !local.is_empty()
-            && local.iter().all(|(at, _)| match std::fs::read(at) {
-                Ok(b) => is_sealed(&b) && opens_under(&key, &b),
-                Err(_) => false,
-            });
-        if !all_open {
-            continue;
-        }
-        let id = format!("0x{}", d.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default());
-        reg.left.push((id, seat, h.display().to_string()));
-        known.push(h);
-        added += 1;
-    }
-    if added > 0 {
-        crate::register::write(&reg)?;
-    }
-    Ok(added)
 }
 
 fn read_plan(machine: &Path, name: &str) -> Vec<PathBuf> {
@@ -2690,8 +2297,7 @@ pub fn settle_pending() -> Result<Settled, Fault> {
         note_trouble(f);
     }
     let m = crate::home::machine_dir()?;
-    // A migration whose marker is still present never took effect either (`PLAN_OPEN`).
-    let never = crate::keybox::drop_staged()? | plan_there(&m, PLAN_OPEN);
+    let never = crate::keybox::drop_staged()?;
     let mut out = Settled::default();
     let machine_doc_or = |rel: &str| -> Option<Doc> {
         if rel == crate::machine::FILE {
@@ -2715,7 +2321,7 @@ pub fn settle_pending() -> Result<Settled, Fault> {
         }
     }
     settle_in(&m, &machine_doc_or, &key, never, &mut out, &mut kept)?;
-    let homes = homes_of(registry_any()?, false)?;
+    let homes = homes_of(crate::register::read()?, false)?;
     for (_, h) in &homes {
         settle_in(h, &home_doc, &key, never, &mut out, &mut kept)?;
     }
@@ -2767,10 +2373,10 @@ pub fn settle_pending() -> Result<Settled, Fault> {
             }
         }
     }
-    // After a change that took effect and completed (names, master key, restore), no id-named directory that
-    // is not a registered home may remain (`clear_strays`).
+    // After a change that took effect and completed (master key, restore), no id-named directory that is not a
+    // registered home may remain (`clear_strays`).
     if !never && changed && kept.is_empty() {
-        match clear_strays(&key, false) {
+        match clear_strays() {
             Ok((0, _)) => {}
             Ok((n, at)) => note_trouble(Fault::known(Known::LocalSetAside, format!("{n} · {}", at.map(|p| p.display().to_string()).unwrap_or_default()))),
             Err(f) => note_trouble(f),
@@ -2799,49 +2405,22 @@ static OPENED: std::sync::Mutex<Option<Opened>> = std::sync::Mutex::new(None);
 #[derive(Clone, Debug, Default)]
 pub struct Opened {
     pub settled: Settled,
-    pub migrated: usize,
-    /// Local files moved to their keyed names (on the first unlock of an older version's data).
-    pub renamed: usize,
-    /// The primary identity chosen for an older vault (shown once on screen).
-    pub primary: Option<String>,
     pub troubles: Vec<Fault>,
 }
 
 /// Run right after the vault opens (unlock, reseal, recovery), in the same background task: settle staged
-/// files of a master key change, seal plain files left by an older version, settle the primary identity of an
-/// older vault, and key old file names. Errors are collected for the shell; none undoes the unlock.
+/// files of a master key change. Errors are collected for the shell; none undoes the unlock. Nothing an
+/// earlier version left is taken in here: a file this version did not write is refused where it is read.
 pub fn after_open() {
     let mut o = Opened::default();
     match settle_pending() {
         Ok(s) => o.settled = s,
         Err(f) => o.troubles.push(f),
     }
-    match migrate_plain() {
-        Ok(m) => o.migrated = m.sealed,
-        Err(f) => o.troubles.push(f),
-    }
-    match crate::register::read().and_then(|listed| crate::identity::settle_primary(listed.as_ref())) {
-        Ok(p) => o.primary = p,
-        Err(f) => o.troubles.push(f),
-    }
-    // Upgrade an older key store's layout in place (after the primary is settled) so its file names reveal no
-    // identity (`keybox::upgrade_names`).
-    if let Err(f) = crate::keybox::upgrade_names() {
-        o.troubles.push(f);
-    }
-    // Then key local file names that still reveal identity, entry or grant ids (`migrate_names`; an
-    // interrupted run resumes here at the next unlock).
-    match migrate_names() {
-        Ok(n) => o.renamed = n,
-        Err(f) => o.troubles.push(f),
-    }
     // Merge rather than replace, so troubles noted during the passes (`note_trouble`) are reported too.
     if let Ok(mut g) = OPENED.lock() {
         let was = g.get_or_insert_with(Opened::default);
         was.settled = o.settled;
-        was.migrated = o.migrated;
-        was.renamed = o.renamed;
-        was.primary = o.primary;
         was.troubles.extend(o.troubles);
     }
 }

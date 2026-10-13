@@ -454,7 +454,7 @@ fn noting(
             if w.registries.is_empty() || w.senders.is_empty() {
                 continue;
             }
-            let logs = logs_over_window(&mut chain, w, &t0)?;
+            let logs = paged(&mut chain, &anchor_filter(w, &t0), w.from_block, w.to_block)?;
             for log in &logs {
                 let Some(rec) = registry_record(&mut chain, w, log, &t0, known, &mut seen)? else { continue };
                 if let Some(at) = emitter_of(log) {
@@ -507,19 +507,53 @@ fn padded(a: &[u8; 20]) -> [u8; 32] {
     out
 }
 
-/// The `eth_getLogs` query, built in one place for the whole range and for every sub-range: the window's
-/// registries, the range, topic 0, and as topic 1 the window's senders in one "any of" list (each left-padded
-/// to 32 bytes as the log carries it). §9.4 reads only logs whose sender the window lists, so asking for those
-/// alone reads the same records; the node's filtering is never trusted for that, every log that comes back is
-/// still judged here (`registry_record`). One question per window range, never one per sender.
-fn log_filter(w: &Window, from: u64, to: u64, t0: &[u8; 32]) -> Value {
-    let senders: Vec<Value> = w.senders.iter().map(|a| Value::Str(hexfmt::encode(&padded(a)))).collect();
-    Value::Obj(vec![
-        ("address".into(), Value::Arr(w.registries.iter().map(|r| Value::Str(hex20(r))).collect())),
-        ("fromBlock".into(), Value::Str(hex_quantity(from))),
-        ("toBlock".into(), Value::Str(hex_quantity(to))),
-        ("topics".into(), Value::Arr(vec![Value::Str(hexfmt::encode(t0)), Value::Arr(senders)])),
-    ])
+/// What one log question asks for besides its block range: the contracts that emitted the logs, and the topics
+/// position by position, in `eth_getLogs`'s own terms. Built into the question in one place ([`LogFilter::at`])
+/// for the whole range and for every sub-range.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LogFilter {
+    /// The emitting contracts: any of these (empty: any contract).
+    pub addresses: Vec<[u8; 20]>,
+    /// The topics, by position; positions past the last are any.
+    pub topics: Vec<Topic>,
+}
+
+/// One topic position of a log question. Closed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Topic {
+    /// Any topic here.
+    Any,
+    /// This one.
+    One([u8; 32]),
+    /// Any of these.
+    AnyOf(Vec<[u8; 32]>),
+}
+
+impl LogFilter {
+    /// The `eth_getLogs` filter object over blocks `from` to `to`: `address` (the list), `fromBlock`,
+    /// `toBlock`, `topics` (`null`, one value, or a list, by position).
+    pub fn at(&self, from: u64, to: u64) -> Value {
+        let topic = |t: &Topic| match t {
+            Topic::Any => Value::Null,
+            Topic::One(x) => Value::Str(hexfmt::encode(x)),
+            Topic::AnyOf(xs) => Value::Arr(xs.iter().map(|x| Value::Str(hexfmt::encode(x))).collect()),
+        };
+        Value::Obj(vec![
+            ("address".into(), Value::Arr(self.addresses.iter().map(|r| Value::Str(hex20(r))).collect())),
+            ("fromBlock".into(), Value::Str(hex_quantity(from))),
+            ("toBlock".into(), Value::Str(hex_quantity(to))),
+            ("topics".into(), Value::Arr(self.topics.iter().map(topic).collect())),
+        ])
+    }
+}
+
+/// The anchor scan's filter for one window: the window's registries, topic 0, and as topic 1 the window's
+/// senders in one "any of" list (each left-padded to 32 bytes as the log carries it). §9.4 reads only logs whose
+/// sender the window lists, so asking for those alone reads the same records; the node's filtering is never
+/// trusted for that, every log that comes back is still judged here (`registry_record`). One question per
+/// window range, never one per sender.
+fn anchor_filter(w: &Window, t0: &[u8; 32]) -> LogFilter {
+    LogFilter { addresses: w.registries.clone(), topics: vec![Topic::One(*t0), Topic::AnyOf(w.senders.iter().map(padded).collect())] }
 }
 
 /// After splitting, each sub-range spans at least one block; a refusal at one block is passed on as the node
@@ -650,6 +684,16 @@ fn number_after(rest: &str) -> Option<(u64, usize)> {
     Some((n, i))
 }
 
+/// Logs matching `filter` in blocks `from` to `to` on one node of chain `chain`, fetched in ranges the node
+/// accepts: the anchor scan's own reader, under the same rules (asked with patience, asked again, the range
+/// shrunk, a node's cut range remembered, the asks bounded; see [`paged`]). An unfinished range is a named
+/// refusal, never fewer logs. The logs come back as the node gave them, in block order of the ranges asked;
+/// judging them is the caller's.
+pub fn logs_over_window(ep: &mut dyn Endpoint, chain: u64, filter: &LogFilter, from: u64, to: u64) -> Result<Vec<W>, Refusal> {
+    crate::seam();
+    paged(&mut Chain { id: chain, ep }, filter, from, to)
+}
+
 /// Logs of one window, fetched in ranges the node accepts.
 ///
 /// Ask for the whole range first: when the node accepts, the query is byte-identical to a single-range scan
@@ -665,23 +709,23 @@ fn number_after(rest: &str) -> Option<(u64, usize)> {
 ///
 /// A node whose range was cut before in this process ([`known_span`]) is asked at that range from the start;
 /// a range cut in this window is remembered once a question at it is answered.
-fn logs_over_window(chain: &mut Chain, w: &Window, t0: &[u8; 32]) -> Result<Vec<W>, Refusal> {
+fn paged(chain: &mut Chain, filter: &LogFilter, from: u64, to: u64) -> Result<Vec<W>, Refusal> {
     let mut logs: Vec<W> = Vec::new();
-    if w.to_block < w.from_block {
+    if to < from {
         return Ok(logs);
     }
     // Saturating: a window from block 0 to the last there is spans one more block than a u64 counts.
-    let whole = (w.to_block - w.from_block).saturating_add(1);
+    let whole = (to - from).saturating_add(1);
     // Kept by place, not by the name said: two nodes on one host (`…/eth/<key>`, `…/polygon/<key>`) are two.
     let node = chain.ep.place();
     let mut span = known_span(&node).map_or(whole, |k| k.clamp(MIN_SPAN, whole));
-    let mut at = w.from_block;
+    let mut at = from;
     let mut shrinks = 0usize;
     let mut asks = 0usize;
     // How many times the question now due was refused.
     let mut refused = 0usize;
-    while at <= w.to_block {
-        let end = at.saturating_add(span - 1).min(w.to_block);
+    while at <= to {
+        let end = at.saturating_add(span - 1).min(to);
         if asks >= MAX_ASKS {
             // Unfinished is said as unfinished: a refusal goes out, never "zero logs", which downstream would
             // read as "no anchors in this range".
@@ -694,7 +738,7 @@ fn logs_over_window(chain: &mut Chain, w: &Window, t0: &[u8; 32]) -> Result<Vec<
             });
         }
         asks += 1;
-        match chain.ask_paced("eth_getLogs", vec![log_filter(w, at, end, t0)]) {
+        match chain.ask_paced("eth_getLogs", vec![filter.at(at, end)]) {
             // Still limited after the patience table's pauses: passed on as it is.
             Err((e, true)) => return Err(e),
             Ok(answered) => {
@@ -1054,12 +1098,31 @@ mod window_tests {
     }
 
     fn scan_window<F: FnMut(u64, u64, usize) -> Result<W, Trouble>>(node: &mut Logs<F>, w: &Window) -> Result<Vec<W>, Refusal> {
-        let mut chain = Chain { id: w.chain_id, ep: node };
-        logs_over_window(&mut chain, w, &topic0())
+        logs_over_window(node, w.chain_id, &anchor_filter(w, &topic0()), w.from_block, w.to_block)
     }
 
     fn no_pauses() {
         set_rate_backoff(Some(vec![std::time::Duration::ZERO; crate::said::RATE_BACKOFF.len()]));
+    }
+
+    /// The public filter is written position by position, in `eth_getLogs`'s own terms: no address is an empty
+    /// list (any contract), a topic left open is `null`, one topic is its hex, several are a list; the anchor
+    /// scan's own filter is the registries, topic 0 and its senders padded to a word, as it always asked.
+    #[test]
+    fn a_log_filter_is_written_position_by_position() {
+        let f = LogFilter { addresses: Vec::new(), topics: vec![Topic::Any, Topic::One([0x33; 32]), Topic::AnyOf(vec![[0x44; 32], [0x55; 32]])] };
+        let got = String::from_utf8(zikaron::json::canon_bytes(&f.at(0, u64::MAX))).expect("text");
+        let word = |b: u8| format!("\"0x{}\"", format!("{b:02x}").repeat(32));
+        assert_eq!(
+            got,
+            format!("{{\"address\":[],\"fromBlock\":\"0x0\",\"toBlock\":\"0xffffffffffffffff\",\"topics\":[null,{},[{},{}]]}}", word(0x33), word(0x44), word(0x55))
+        );
+        assert_eq!(String::from_utf8(zikaron::json::canon_bytes(&LogFilter { addresses: Vec::new(), topics: Vec::new() }.at(5, 5))).expect("text"), "{\"address\":[],\"fromBlock\":\"0x5\",\"toBlock\":\"0x5\",\"topics\":[]}");
+        let w = window(1, 9);
+        let anchor = anchor_filter(&w, &topic0());
+        let mut padded_sender = [0u8; 32];
+        padded_sender[12..].copy_from_slice(&[0x22; 20]);
+        assert_eq!(anchor, LogFilter { addresses: vec![[0x11; 20]], topics: vec![Topic::One(topic0()), Topic::AnyOf(vec![padded_sender])] });
     }
 
     /// A refusal asked again at once answers on the third try: three questions, the range whole.

@@ -1,6 +1,9 @@
 //! Packaging helpers (see `Cargo.toml`). Each is a function over bytes or files with a named failure; the
 //! `zikaron-pack` CLI exposes them to the packaging scripts.
 
+// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+#![forbid(unsafe_code)]
+
 pub mod elf;
 pub mod hfs;
 pub mod notices;

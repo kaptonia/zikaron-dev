@@ -281,9 +281,6 @@ pub enum Known {
     /// A sealed local file does not open with this machine's local data key (sealed under another master
     /// key, or altered).
     LocalSeal,
-    /// Migrating plain local files: a sealed copy did not open back to the same bytes; migration stopped and
-    /// no plain file was deleted.
-    MigrateMismatch,
     /// The recovery secret belongs to a secondary identity: only the primary identity recovers the passcode.
     RecoveryNotPrimary,
     /// The primary identity cannot be deleted directly.
@@ -372,7 +369,7 @@ impl Known {
         Known::NodeRefused,
     ];
 
-    pub const ALL: [Known; 163] = [
+    pub const ALL: [Known; 162] = [
         Known::FontMissing,
         Known::FileMissing,
         Known::Denied,
@@ -510,7 +507,6 @@ impl Known {
         Known::TraceFull,
         Known::ClaimShape,
         Known::LocalSeal,
-        Known::MigrateMismatch,
         Known::RecoveryNotPrimary,
         Known::PrimaryDelete,
         Known::PrimaryNoKeyFile,
@@ -677,7 +673,6 @@ impl Known {
             Known::TraceFull => "TRACE_FULL",
             Known::ClaimShape => "CLAIM_SHAPE",
             Known::LocalSeal => "LOCAL_SEAL",
-            Known::MigrateMismatch => "MIGRATE_MISMATCH",
             Known::RecoveryNotPrimary => "RECOVERY_NOT_PRIMARY",
             Known::PrimaryDelete => "PRIMARY_DELETE",
             Known::PrimaryNoKeyFile => "PRIMARY_NO_KEYFILE",
@@ -852,7 +847,6 @@ impl Known {
             Known::TraceFull => L::FaultWhatTraceFull,
             Known::ClaimShape => L::FaultWhatClaimShape,
             Known::LocalSeal => L::FaultWhatLocalSeal,
-            Known::MigrateMismatch => L::FaultWhatMigrateMismatch,
             Known::RecoveryNotPrimary => L::FaultWhatRecoveryNotPrimary,
             Known::PrimaryDelete => L::FaultWhatPrimaryDelete,
             Known::PrimaryNoKeyFile => L::FaultWhatPrimaryNoKeyFile,
@@ -1021,7 +1015,6 @@ impl Known {
             Known::TraceFull => L::FaultNextTraceFull,
             Known::ClaimShape => L::FaultNextClaimShape,
             Known::LocalSeal => L::FaultNextLocalSeal,
-            Known::MigrateMismatch => L::FaultNextMigrateMismatch,
             Known::RecoveryNotPrimary => L::FaultNextRecoveryNotPrimary,
             Known::PrimaryDelete => L::FaultNextPrimaryDelete,
             Known::PrimaryNoKeyFile => L::FaultNextPrimaryNoKeyFile,
@@ -1191,7 +1184,6 @@ pub fn translate(k: Known) -> &'static str {
         Known::TraceFull => "痕迹档到了上限,此后停写",
         Known::ClaimShape => "认领的字读不成",
         Known::LocalSeal => "本机数据里有一份档解不开",
-        Known::MigrateMismatch => "旧版明文档转封后比对不一致,迁移已停",
         Known::RecoveryNotPrimary => "这是次要身份的助记词或密钥文件",
         Known::PrimaryDelete => "主身份不能直接删除",
         Known::PrimaryNoKeyFile => "这个身份还没导出过密钥文件",

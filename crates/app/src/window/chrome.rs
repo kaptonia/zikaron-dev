@@ -61,6 +61,7 @@ impl Win {
             if self.shell.page != p {
                 self.auto(Action::Show(p), now);
             }
+            self.ux.page_seen = Some(p);
         }
         // A detail page reads its entry's bytes once, off the frame (the action layer reads the disk).
         match &route {
@@ -221,6 +222,22 @@ impl Win {
             }
             crate::when::set(self.shell.settings.zone.unwrap_or(crate::when::Zone::Utc));
         }
+        // The shell's page is followed: a change to it made from outside the window (`Action::Show` from a link, a
+        // test, the command-line door) is gone to the next frame; the window's own moves record the page they set
+        // (`entered`), so this never answers them. The first frame only takes note: the window starts where it
+        // was put (from the shell's page itself when nothing else put it, above).
+        let page = self.shell.page;
+        match self.ux.page_seen {
+            None => self.ux.page_seen = Some(page),
+            Some(seen) if seen != page => {
+                self.ux.page_seen = Some(page);
+                let here = route_page(&self.route(), self.ux.place.unwrap_or(Place::Home), self.shell.settings.role);
+                if here != Some(page) {
+                    self.go(Place::Page(page), now);
+                }
+            }
+            Some(_) => {}
+        }
         // Whether the wizard opens by itself is asked once, and only with the gate down: while the vault is
         // locked the key cannot be read, and a locked machine would read as one without a key.
         let gate = self.shell.vault.gate_up();
@@ -234,6 +251,8 @@ impl Win {
         if self.rail_shown() {
             self.chrome_rail(ctx, now);
         }
+        // A page that takes drops in its own zones says so as it draws (`takes_drops`).
+        self.ux.page_drops = false;
         self.chrome_page(ctx, now);
         // The full-window layers: the first-run wizard, and the passcode gate above it.
         if self.ux.wizard.is_some() && !gate {
@@ -449,7 +468,8 @@ impl Win {
             Some(at) => {
                 let ago = (self.ux.now - at).max(0.0) as u64;
                 let zone = if self.shell.settings.zone.unwrap_or(crate::when::Zone::Utc) == crate::when::Zone::Utc { " UTC" } else { "" };
-                fill1(Key::NavReadAt, &format!("{}{zone}", hm_zone(wall_secs().saturating_sub(ago))))
+                let wall = wall_secs();
+                fill1(Key::NavReadAt, &format!("{}{zone}", crate::when::clock_or_day(wall.saturating_sub(ago), wall)))
             }
             None => t(Key::NavReadNever).to_string(),
         };
@@ -755,10 +775,16 @@ impl Win {
         }
     }
 
-    /// Whether the page on screen takes dropped files in its own zones (the whole-window drop stands aside).
+    /// Whether the page on screen takes dropped files in its own zones (the whole-window drop stands aside): what
+    /// the page declared as it drew this frame ([`Win::takes_drops`]), never a list of pages kept here.
     fn page_takes_drops(&mut self) -> bool {
-        use crate::nav::{tab as T, View};
-        matches!(self.route(), Route::Kit | Route::NewGrant | Route::Relicense | Route::Root(Place::View(View::Verify, T::VERIFY_CHECK)))
+        self.ux.page_drops
+    }
+
+    /// Declared by a page while it draws: it takes dropped files in its own zones this frame, so the
+    /// whole-window drop stands aside.
+    pub(super) fn takes_drops(&mut self) {
+        self.ux.page_drops = true;
     }
 
     /// The whole-window drop: while a file is dragged over a page that takes drops as a whole, the veil covers

@@ -8,6 +8,9 @@
 //! from its six checks, ledger completeness from the core's audit, and on-chain anchoring from the anchoring
 //! crate's scan; answers are passed on unchanged. Every public entry point emits the kit output trace mark.
 
+// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+#![forbid(unsafe_code)]
+
 /// The component code of kit output in the diagnostic trace.
 pub const V2: &str = "V2";
 

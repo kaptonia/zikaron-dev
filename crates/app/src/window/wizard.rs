@@ -29,6 +29,11 @@ impl Win {
         let mut act: Option<Action> = None;
         let fresh = self.shell.new_words.as_ref().map(|f| (f.words(), f.picks));
         let busy = self.shell.tasks.in_flight(crate::task::Kind::Vault);
+        // This step's page and where "back" goes from it (`nav::prev`, the one place that decides).
+        let sub = if step == Step::Key && fresh.is_some() && self.ux.id_confirming { crate::nav::Sub::Check } else { crate::nav::Sub::First };
+        let back = crate::nav::prev(step, sub);
+        let mut go_back = false;
+        let mut lang_to: Option<crate::lang::Lang> = None;
         full::cover(ctx, "wizard", |ui, drop| {
             let screen = ui.max_rect();
             let side = egui::Rect::from_min_size(screen.min, egui::vec2(260.0, screen.height()));
@@ -49,6 +54,9 @@ impl Win {
             if let Some(i) = full::steps(&mut left, &rows, at) {
                 move_to = Some(i);
             }
+            // The language, switchable from the first step on (kept on this machine).
+            left.add_space(24.0);
+            lang_to = lang_pick(&mut left, "wiz-lang");
             // The way out, under the steps (not on a true first run).
             if exit_shown {
                 left.add_space(24.0);
@@ -81,11 +89,11 @@ impl Win {
                 let w = ui.available_width();
                 let later = t(if last { Key::WizLaterDo } else { Key::WizLater });
                 let later_on = step.deferrable(role) && !done;
-                let lead: Vec<(&str, Role)> = [(at > 0).then_some((t(Key::WizPrev), Role::Secondary)), later_on.then_some((later, Role::Plain))].into_iter().flatten().collect();
-                let lead_keys = |ui: &mut egui::Ui, move_to: &mut Option<usize>, close: &mut bool| {
+                let lead: Vec<(&str, Role)> = [back.is_some().then_some((t(Key::WizPrev), Role::Secondary)), later_on.then_some((later, Role::Plain))].into_iter().flatten().collect();
+                let lead_keys = |ui: &mut egui::Ui, move_to: &mut Option<usize>, close: &mut bool, go_back: &mut bool| {
                     ui.spacing_mut().item_spacing.x = tk::S2;
-                    if at > 0 && key::key(ui, t(Key::WizPrev), Role::Secondary, true).clicked() {
-                        *move_to = Some(at - 1);
+                    if back.is_some() && key::key(ui, t(Key::WizPrev), Role::Secondary, true).clicked() {
+                        *go_back = true;
                     }
                     if later_on && key::key(ui, later, Role::Plain, true).clicked() {
                         if last {
@@ -163,17 +171,32 @@ impl Win {
                     let lead_w: f32 = lead.iter().map(|(text, role)| key::size_of(ui, &key::Key::new(text, *role)).x).sum::<f32>() + tk::S2 * lead.len().saturating_sub(1) as f32;
                     lead_below = !lead.is_empty() && lead_w > ui.available_width() - tk::S2;
                     if !lead_below {
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| lead_keys(ui, &mut move_to, &mut close));
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| lead_keys(ui, &mut move_to, &mut close, &mut go_back));
                     }
                 });
                 if lead_below {
                     ui.add_space(tk::S2);
-                    ui.allocate_ui_with_layout(egui::vec2(w, tk::KEY_H), egui::Layout::left_to_right(egui::Align::Center), |ui| lead_keys(ui, &mut move_to, &mut close));
+                    ui.allocate_ui_with_layout(egui::vec2(w, tk::KEY_H), egui::Layout::left_to_right(egui::Align::Center), |ui| lead_keys(ui, &mut move_to, &mut close, &mut go_back));
                 }
             });
         });
         if confirm {
             self.ux.confirm_genesis = true;
+        }
+        if let Some(lang) = lang_to {
+            let _ = self.act(Action::SetLang { lang }, now);
+        }
+        // "Back" lands where `nav::prev` says: the words' check goes back to the same words (the check cells
+        // emptied), anything else to the step before.
+        if let (true, Some((to, to_sub))) = (go_back, back) {
+            if to == step {
+                self.ux.id_confirming = to_sub == crate::nav::Sub::Check;
+                for c in self.ux.id_confirm.iter_mut() {
+                    *c = crate::secret::Secret::default();
+                }
+            } else {
+                move_to = Step::ALL.iter().position(|s| *s == to);
+            }
         }
         if copied {
             // Moving on to the three check cells: mask the words again first.

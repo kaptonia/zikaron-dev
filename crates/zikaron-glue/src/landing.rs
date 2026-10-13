@@ -57,37 +57,13 @@ fn failed(subject: &Path, what: &str, at: &Path, e: &std::io::Error) -> Trouble 
     Trouble::Io(say(subject), format!("{what} {}: {e}", at.display()))
 }
 
-/// Temporary sibling tags: a single-file landing and a tree's staging area.
-const TAGS: [&str; 2] = ["landing", "staging"];
-
-/// Whether a name is one of this crate's temporary siblings (`.{base}.{tag}-{pid}-{sixteen hex}`), judged by
-/// the name alone; the inverse of [`beside`].
-pub fn is_beside_name(name: &str) -> bool {
-    let Some(rest) = name.strip_prefix('.') else { return false };
-    let Some((base, tail)) = rest.rsplit_once('.') else { return false };
-    let mut parts = tail.splitn(3, '-');
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some(tag), Some(pid), Some(n)) => {
-            !base.is_empty()
-                && TAGS.contains(&tag)
-                && !pid.is_empty()
-                && pid.bytes().all(|b| b.is_ascii_digit())
-                && n.len() == 16
-                && n.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        }
-        _ => false,
-    }
-}
-
-/// A temporary sibling path in the target's parent (a move is atomic only within one file system). The name
-/// carries the process id and a random part, so two processes landing on one path do not collide.
-fn beside(out: &Path, tag: &str) -> Result<PathBuf, Trouble> {
+/// The temporary sibling of `out`, in this product's one temporary shape (`zikaron_store::layout::tmp_file_name`:
+/// a fixed prefix and sixteen random hex digits), so whoever reads a directory knows a leftover one by the one
+/// reading of that shape (`zikaron_store::layout::tmp_shaped`), whichever write left it.
+fn beside(out: &Path) -> Result<PathBuf, Trouble> {
     let parent = out.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
-    let base = out
-        .file_name()
-        .map(|x| x.to_string_lossy().into_owned())
-        .unwrap_or_else(|| String::from("landing"));
-    Ok(parent.join(format!(".{base}.{tag}-{}-{}", std::process::id(), nonce().map_err(|e| failed(Path::new(zikaron_os::ENTROPY_SOURCE), "read", Path::new(zikaron_os::ENTROPY_SOURCE), &e))?)))
+    let nonce = nonce().map_err(|e| failed(Path::new(zikaron_os::ENTROPY_SOURCE), "read", Path::new(zikaron_os::ENTROPY_SOURCE), &e))?;
+    Ok(parent.join(zikaron_store::layout::tmp_file_name(&nonce)))
 }
 
 /// Sixteen random hex digits from the system entropy source. If it cannot be read the landing fails, naming
@@ -100,7 +76,7 @@ fn nonce() -> std::io::Result<String> {
 
 /// A temporary staging path beside the target (tree landings lay themselves out, so they need the name).
 pub fn staging_beside(out: &Path) -> Result<PathBuf, Trouble> {
-    beside(out, TAGS[1])
+    beside(out)
 }
 
 /// Write one file. An existing path is refused atomically (`hard_link`); a failed write leaves no truncated
@@ -129,7 +105,7 @@ pub fn land_bytes_for(readers: Readers, out: &Path, bytes: &[u8]) -> Result<(), 
     if out.exists() {
         return Err(Trouble::Occupied(say(out)));
     }
-    let tmp = beside(out, TAGS[0])?;
+    let tmp = beside(out)?;
     let _ = std::fs::remove_file(&tmp);
     // Write in full and fsync: after the move the bytes must be on disk, not only in the page cache.
     let wrote = (|| -> std::io::Result<()> {

@@ -20,11 +20,10 @@
 //! - `cli_anchor`: how the CLI's `anchor` command is handled by the desktop app: `queue` shows the request and
 //!   sends nothing; absent (or `send`, never written) sends as the send button does.
 //! - `network`: the network last chosen in the wizard (a `deploy::KNOWN` row or `deploy::CUSTOM`); absent means
-//!   not chosen (older files with only the auto-lock fields still open). It only decides which option is
-//!   preselected; a home's network comes from its identity or settings (`identity::Row::network`).
+//!   not chosen. It only decides which option is preselected; a home's network comes from its identity or
+//!   settings (`identity::Row::network`).
 //!
-//! Unknown members are preserved, so changing one field never erases others (e.g. the obsolete `custom`
-//! member from older versions is kept but unused). No file means all defaults. A wrong shape, or a known
+//! Unknown members are preserved, so changing one field never erases others. No file means all defaults. A wrong shape, or a known
 //! member with an unknown value, fails the whole file with `MACHINE_SHAPE` and leaves it untouched; the shell
 //! then locks with the default timeout and reports the error (never silently "never lock").
 
@@ -51,13 +50,12 @@ pub struct Backed {
     pub at: u64,
     /// Where it was written.
     pub path: String,
-    /// How many ledger entries and held grants this machine had then.
+    /// How many ledger entries and held grants this machine had then. Every backup records which entries and
+    /// held grants it contains (the sealed index in the machine directory, `backup::index_path`), written as
+    /// the record's `index` member, `true`; a record without it, or with any other value, is refused by name.
+    /// Newer items are counted as those not in the index, regardless of deletions since (`backup::measured`);
+    /// an index that is there but does not read is measured by plain count until the next backup.
     pub count: u64,
-    /// Whether this backup recorded which entries and held grants it contains (the sealed index in the machine
-    /// directory, `backup::index_path`). If so, newer items are counted as those not in the index, regardless
-    /// of deletions since (`backup::measured`). Records from older versions (no `index` member), or with an
-    /// unreadable index, are measured by plain count until the next backup.
-    pub indexed: bool,
 }
 
 /// How many ledger entries and held grants were added since the last whole-machine backup, as shown by the
@@ -225,13 +223,9 @@ fn parse(bytes: &[u8], p: &std::path::Path) -> Result<Machine, Fault> {
                     Some(Value::Str(x)) => Some(x.clone()),
                     _ => None,
                 };
-                let indexed = match b.member(member::INDEX) {
-                    None => Some(false),
-                    Some(Value::Bool(x)) => Some(*x),
-                    Some(_) => None,
-                };
+                let indexed = matches!(b.member(member::INDEX), Some(Value::Bool(true)));
                 match (int(member::AT), int(member::COUNT), path, indexed) {
-                    (Some(at), Some(count), Some(path), Some(indexed)) => out.backup = Some(Backed { at, path, count, indexed }),
+                    (Some(at), Some(count), Some(path), true) => out.backup = Some(Backed { at, path, count }),
                     _ => return Err(Fault::known(Known::MachineShape, member::BACKUP.to_string())),
                 }
             }
@@ -343,7 +337,7 @@ pub fn to_bytes(m: &Machine) -> Result<Vec<u8>, Fault> {
             Value::Obj(
                 [
                     vec![(member::AT.into(), Value::Int(b.at)), (member::COUNT.into(), Value::Int(b.count))],
-                    if b.indexed { vec![(member::INDEX.into(), Value::Bool(true))] } else { Vec::new() },
+                    vec![(member::INDEX.into(), Value::Bool(true))],
                     vec![(member::PATH.into(), Value::Str(b.path.clone()))],
                 ]
                 .concat(),
@@ -450,20 +444,23 @@ pub fn idle_locks(m: &Machine, last: f64, now: f64) -> bool {
 mod tests {
     use super::*;
 
-    /// Unknown members and the proxy value round-trip; the backup `index` member reads and writes, and older
-    /// records without it still read; an unreadable proxy value follows the system.
+    /// Unknown members and the proxy value round-trip; the backup `index` member reads and writes, and a record
+    /// without it, or one that says it has no index, is refused by name; an unreadable proxy value follows the
+    /// system.
     #[test]
     fn unknown_members_and_the_proxy_cell_are_carried() {
         let p = std::path::Path::new("machine.json");
-        let text = format!("{{\"backup\":{{\"at\":5,\"count\":2,\"path\":\"/b\"}},\"future\":{{\"x\":1}},\"proxy\":\"pac://later\",\"shape\":\"{SHAPE}\"}}");
+        assert!(parse(format!("{{\"backup\":{{\"at\":5,\"count\":2,\"path\":\"/b\"}},\"shape\":\"{SHAPE}\"}}").as_bytes(), p).is_err(), "a backup record without its index member");
+        assert!(parse(format!("{{\"backup\":{{\"at\":5,\"count\":2,\"index\":false,\"path\":\"/b\"}},\"shape\":\"{SHAPE}\"}}").as_bytes(), p).is_err(), "a backup record without an index");
+        let text = format!("{{\"backup\":{{\"at\":5,\"count\":2,\"index\":true,\"path\":\"/b\"}},\"future\":{{\"x\":1}},\"proxy\":\"pac://later\",\"shape\":\"{SHAPE}\"}}");
         let m = parse(text.as_bytes(), p).expect("reads");
-        assert_eq!(m.backup.as_ref().map(|b| b.indexed), Some(false));
+        assert_eq!(m.backup.as_ref().map(|b| b.count), Some(2));
         assert_eq!(proxy_choice(&m), zikaron_net::Choice::System);
         let back = String::from_utf8(to_bytes(&m).expect("writes")).expect("utf-8");
         assert!(back.contains("\"future\":{\"x\":1}") && back.contains("\"proxy\":\"pac://later\""), "{back}");
-        let m2 = Machine { backup: Some(Backed { at: 5, path: "/b".into(), count: 2, indexed: true }), proxy: Some(proxy::NONE.into()), ..m };
+        let m2 = Machine { backup: Some(Backed { at: 5, path: "/b".into(), count: 3 }), proxy: Some(proxy::NONE.into()), ..m };
         let again = parse(&to_bytes(&m2).expect("writes"), p).expect("reads back");
-        assert_eq!((again.backup.as_ref().map(|b| b.indexed), proxy_choice(&again)), (Some(true), zikaron_net::Choice::Off));
+        assert_eq!((again.backup.clone(), proxy_choice(&again)), (m2.backup.clone(), zikaron_net::Choice::Off));
         let manual = Machine { proxy: Some("socks5://127.0.0.1:1080".into()), ..Machine::default() };
         assert!(matches!(proxy_choice(&manual), zikaron_net::Choice::Manual(_)));
         assert!(parse(format!("{{\"backup\":{{\"at\":5,\"count\":2,\"index\":1,\"path\":\"/b\"}},\"shape\":\"{SHAPE}\"}}").as_bytes(), p).is_err(), "the index member is a truth value");

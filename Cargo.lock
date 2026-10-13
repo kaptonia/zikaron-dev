@@ -3608,6 +3608,7 @@ name = "zikaron-ui"
 version = "0.1.2"
 dependencies = [
  "egui",
+ "zikaron-os",
 ]
 
 [[package]]

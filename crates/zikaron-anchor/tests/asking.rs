@@ -136,6 +136,8 @@ fn the_judging_table_names_one_rule_per_method() {
     let at = |s: &str| Value::Arr(vec![Value::Str(s.into()), Value::Bool(false)]);
     assert_eq!(judge::rule_of("eth_blockNumber", &no_params()), Rule::Least);
     assert_eq!(judge::rule_of("eth_getTransactionCount", &no_params()), Rule::Most(None));
+    // The gas estimate is a quantity each node works out itself, not a fact of the chain.
+    assert_eq!(judge::rule_of("eth_estimateGas", &no_params()), Rule::Most(None));
     assert_eq!(judge::rule_of("eth_getBlockByNumber", &at("latest")), Rule::Most(Some("number")));
     assert_eq!(judge::rule_of("eth_getBlockByNumber", &at("0x40")), Rule::Facts(&judge::BLOCK_FACTS));
     assert_eq!(judge::rule_of("eth_feeHistory", &no_params()), Rule::Facts(&judge::FEE_HISTORY_FACTS));

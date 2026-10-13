@@ -64,8 +64,10 @@ pub(super) fn gas_ask(shell: &Shell, count: usize) -> Result<GasAsk, crate::faul
 }
 
 /// Estimates gas once on the task's thread, using the same rule as the command line
-/// (`zikaron_anchor::send::estimate_gas`) through this side's endpoints. If gas cannot be estimated the
-/// transaction would revert, so it is refused by name and not sent.
+/// (`zikaron_anchor::send::estimate_gas`) through this side's endpoints. Endpoints that estimate different
+/// amounts do not disagree: the largest is taken (the judging table reads an estimate as a quantity), and it
+/// meets the ceiling like any estimate. If gas cannot be estimated the transaction would revert, so it is
+/// refused by name and not sent.
 pub(super) fn estimate_on(a: GasAsk) -> Result<crate::task::Done, crate::fault::Fault> {
     use zikaron_anchor::send::NoGas;
     let GasAsk { count, chain, call, data, eps } = a;
@@ -601,8 +603,8 @@ enum Unheld {
 }
 
 /// Judges a batch whose transactions no node holds by comparing the sending account's on-chain nonce with the
-/// batch's own (`nonce`, recorded at signing; queue files from older versions lack it, so the account's next
-/// nonce stands in, and such a batch is offered again rather than voided on a guess):
+/// batch's own (`nonce`, recorded at signing; a batch held in memory without one, which no file this version
+/// reads can give, takes the account's next nonce, and is offered again rather than voided on a guess):
 /// - **used** (every answering node's nonce is past it): each transaction's receipt is asked once more (a node
 ///   past the nonce has the block, and the receipt if it was this batch's); if all are "not yet" the batch is
 ///   void, otherwise it waits.

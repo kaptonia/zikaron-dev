@@ -10,12 +10,13 @@
 //!
 //! 1. The passcode seal: an eight-character passcode through a memory-hard derivation (scrypt, standard
 //! parameters, about one second) gives the sealing key.
-//! 2. A recovery seal per identity: a recovery-word identity derives from its 16 bytes of entropy, an
-//! existing-key identity from its 32-byte private key (recovered from the exported keystore V3 file and its
-//! password).
+//! 2. The primary identity's recovery seals, one for every secret that derives its signing keys: a
+//! recovery-word identity's 16 bytes of entropy and each of its two seat keys, an existing-key identity's
+//! 32-byte private key (a seat key or an existing key is recovered from its exported keystore V3 file and
+//! the file's password).
 //!
-//! So after a forgotten passcode, or five failures that lock the vault, a person with the recovery words or
-//! the key file can still open it; opening that way reseals the passcode seal and resets the failure count.
+//! So after a forgotten passcode, or five failures that lock the vault, a person with the primary's recovery
+//! words or one of its key files can still open it; opening that way reseals the passcode seal and resets the failure count.
 //!
 //! The lock is real: once opened, the master key lives only in memory (one `Mutex` in this file) and is wiped
 //! on lock, exit or idle timeout. While locked, [`get`] refuses with `LOCKED`: the action layer's table stops
@@ -35,14 +36,12 @@
 //! are wiped by the receiver (`key.rs`, `identity::words_of`). Temporary stack copies the compiler makes when
 //! moving an array, and the primitives' own working memory, are outside what this file can wipe.
 //!
-//! Shape 2 binds each seal's identity into its MAC: with only the ciphertext covered (shape 1), someone able
-//! to write the file could swap the two seats' slot ciphertexts and the author seat would sign with the
-//! grantee key. In shape 2 each seal has a `bind` field covered by the master key over kind, slot name or
-//! identity id, IV, derivation parameters, salt and ciphertext, so a swap, a changed IV or changed parameters
-//! are refused by name. Slots carry only `bind` (a shape 2 slot with `mac` is malformed, so `bind` cannot be
-//! stripped to forge a shape 1 file); passcode and recovery seals also keep `mac` (covered by the derived
-//! key, which checks the passcode or recovery secret). Shape 1 files still open and are upgraded in place
-//! when the master key is in hand.
+//! Each seal binds its identity into its MAC: a `bind` field covered by the master key over kind, slot name or
+//! label, IV, derivation parameters, salt and ciphertext, so a swapped slot (the author seat signing with the
+//! grantee key), a changed IV or changed parameters are refused by name. Slots carry only `bind`; passcode and
+//! recovery seals also keep `mac` (covered by the derived key, which checks the passcode or recovery secret).
+//! This version reads only the shape it writes ([`SHAPE`]); a vault in any other shape, an earlier one
+//! included, is refused by name and not touched.
 //!
 //! Derivation floor: the vault records its derivation parameters; below this binary's shipped parameters it
 //! is refused with `KDF_BELOW_FLOOR` (not counted as a failure), and the person is guided to reseal at the
@@ -53,13 +52,14 @@ use crate::fault::{classify, Fault, Known};
 use zikaron::hexfmt;
 use zikaron::json::{self, Value};
 
-/// Vault file shape. Shape 3: no plain name in the file leads to an identity on the chain (slot names keyed by
-/// the names key, account names sealed inside the slots, the primary identity's id sealed under the master
-/// key; only its kind stays plain). An older binary reading this shape refuses it by name.
+/// Vault file shape, the only one read: no plain name in the file leads to an identity on the chain (slot names
+/// keyed by the names key, account names sealed inside the slots, the primary identity's id sealed under the
+/// master key; only its kind stays plain). Any other shape is refused by name (`KEYBOX_SHAPE`).
 pub const SHAPE: &str = "zikaron-desk/keybox/3";
-/// Shape 2 (binds each seal's identity into its MAC; names plain): still readable, upgraded in place.
+/// A shape an earlier version wrote: kept as a literal of the family register only (no other product may take
+/// it); this version refuses it like any shape not its own.
 pub const SHAPE_V2: &str = "zikaron-desk/keybox/2";
-/// Shape 1 (older vaults): still readable, upgraded in place on a successful unlock.
+/// The first shape an earlier version wrote: kept as a literal of the family register only; refused.
 pub const SHAPE_V1: &str = "zikaron-desk/keybox/1";
 
 /// A seal's IV length in bytes (AES-128-CTR).
@@ -87,6 +87,7 @@ pub mod member {
     pub const NAME: &str = "name";
     pub const ACCOUNT: &str = "account";
     pub const KIND: &str = "kind";
+    pub const LABEL: &str = "label";
     pub const N: &str = "n";
     pub const R: &str = "r";
     pub const P: &str = "p";
@@ -170,15 +171,6 @@ struct Sealed {
     bind: Option<[u8; 32]>,
 }
 
-/// Which shape the vault file has.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-enum Form {
-    V1,
-    V2,
-    #[default]
-    V3,
-}
-
 /// Which kind a seal is (the first field mixed into `bind`).
 #[derive(Clone, Copy)]
 enum Kind {
@@ -228,46 +220,85 @@ impl Drop for Key32 {
 /// The vault on disk.
 #[derive(Clone, Debug, Default)]
 struct Book {
-    form: Form,
     pin: Option<Sealed>,
-    /// This vault's own derivation parameters. Absent in vaults written before they were recorded (opened
-    /// with this pass's [`params`]).
+    /// This vault's own derivation parameters, recorded when it is made (a vault without them is refused by
+    /// name).
     kdf: Option<crate::keystore::Params>,
-    /// Recovery seals by label: shapes 1 and 2 label each by identity id; shape 3 has at most one, the
-    /// primary's, labelled [`PRIMARY_LABEL`].
-    recovery: Vec<(String, Sealed)>,
+    /// The primary's recovery seals, one per label of its kind ([`labels`]), in that order.
+    recovery: Vec<Recovery>,
     slots: Vec<Slot>,
     wrong: u64,
-    /// The primary identity: the only one whose recovery seal opens the vault. `None` in vaults written before
-    /// this cell existed (settled on the first unlock, see [`settle_primary`]).
+    /// The primary identity: the only one whose recovery seal opens the vault. A vault with a recovery seal
+    /// and no primary is refused by name.
     primary: Option<Primary>,
-    /// Shape 3: this vault's salt for member marks, new with each new master key (see [`member_tag`]).
+    /// This vault's salt for member marks, new with each new master key (see [`member_tag`]).
     marks: Option<[u8; 32]>,
 }
 
-/// One key slot. Shapes 1 and 2: `name` is the account name in plain text. Shape 3: `name` is keyed by the
-/// names key (`names::Logical::Slot`) and the account name is sealed inside with the secret; `tag` is the
-/// member mark of the secret (see [`member_tag`]).
+/// One key slot: `name` is keyed by the names key (`names::Logical::Slot`) and the account name is sealed
+/// inside with the secret; `tag` is the member mark of the secret (see [`member_tag`]).
 #[derive(Clone, Debug)]
 struct Slot {
     name: String,
     sealed: Sealed,
-    tag: Option<[u8; 32]>,
+    tag: [u8; 32],
 }
 
-/// The primary identity as the file holds it. Shapes 1 and 2: `id` plain. Shape 3: `id` sealed under the
-/// master key (`id_seal`), and `tag` is the member mark of its secret, so recovery can tell the primary's
-/// secret from another identity's while locked without the file naming anyone.
+/// The primary identity as the file holds it: its id sealed under the master key (`id_seal`) and its kind
+/// plain.
 #[derive(Clone, Debug)]
 struct Primary {
-    id: Option<String>,
     kind: PrimaryKind,
-    tag: Option<[u8; 32]>,
-    id_seal: Option<Sealed>,
+    id_seal: Sealed,
 }
 
-/// The label of shape 3's one recovery seal.
+/// One recovery seal of the primary: its label, `tag` the member mark of the secret it opens with (so recovery
+/// finds the seal a secret opens, and tells the primary's secret from another identity's, while locked and
+/// without the file naming anyone), and the master key sealed under that secret.
+#[derive(Clone, Debug)]
+struct Recovery {
+    label: String,
+    tag: [u8; 32],
+    sealed: Sealed,
+}
+
+/// The label of the primary's own secret's seal (a recovery-word identity's entropy, an existing key), and of
+/// the sealed primary id.
 const PRIMARY_LABEL: &str = "primary";
+
+/// The labels of a primary's recovery seals, in order, by its kind (a closed table): the primary's own secret,
+/// then for a recovery-word identity each seat key (author, grantee), so its key files recover too.
+fn labels(kind: PrimaryKind) -> &'static [&'static str] {
+    match kind {
+        PrimaryKind::Words => &[PRIMARY_LABEL, "primary-author", "primary-grantee"],
+        PrimaryKind::KeyFile => &[PRIMARY_LABEL],
+    }
+}
+
+/// Every secret a primary of `kind` recovers with, by [`labels`]: `secret` itself (entropy or an existing
+/// key), then for a recovery-word identity the two seat keys derived from it. Wiped when dropped.
+fn recovery_secrets(kind: PrimaryKind, secret: &[u8]) -> Result<Vec<Plain>, Fault> {
+    let mut out = vec![Plain(secret.to_vec())];
+    if kind == PrimaryKind::Words {
+        let entropy: &[u8; crate::family::ENTROPY_BYTES] =
+            secret.try_into().map_err(|_| Fault::known(Known::KeyboxShape, member::RECOVERY.to_string()))?;
+        // The seat keys in `Role::ALL` order, as `key::seat_slots` hands them to be sealed.
+        let seats = crate::key::seat_slots(entropy).ok_or_else(|| Fault::known(Known::KeyMalformed, member::RECOVERY.to_string()))?;
+        out.extend(seats.into_iter().map(|(_, k)| Plain(k)));
+    }
+    Ok(out)
+}
+
+/// The primary's recovery seals, sealed anew under `mk`: one per secret, each under a fresh salt.
+fn recovery_seals(mk: &[u8; MASTER_BYTES], kind: PrimaryKind, secret: &[u8], kdf: crate::keystore::Params, marks: &[u8; 32]) -> Result<Vec<Recovery>, Fault> {
+    let mut out = Vec::new();
+    for (label, sec) in labels(kind).iter().zip(recovery_secrets(kind, secret)?) {
+        let salt = rand(32)?;
+        let dk = derive(kdf, sec.bytes(), &salt)?;
+        out.push(Recovery { label: label.to_string(), tag: member_tag(sec.bytes(), marks), sealed: seal_master(&dk, salt, mk, Kind::Recovery, label, kdf)? });
+    }
+    Ok(out)
+}
 
 /// The member mark of a secret (a recovery-word identity's entropy, an existing key's private key): keyed by
 /// the secret itself, so it says nothing to anyone without that secret, and a secret handed in at recovery
@@ -417,9 +448,8 @@ fn text(v: &Value, k: &str) -> String {
     }
 }
 
-/// Read one seal. Shape 1: every seal needs `mac` and forbids `bind`. Shape 2: slots only `bind`; passcode
-/// and recovery seals need both.
-fn seal_of(v: &Value, form: Form, kind: Kind) -> Option<Sealed> {
+/// Read one seal: slots and the primary's id only `bind`; passcode and recovery seals both.
+fn seal_of(v: &Value, kind: Kind) -> Option<Sealed> {
     let salt = unbare(&text(v, member::SALT))?;
     let iv_b = unbare(&text(v, member::IV))?;
     let ct = unbare(&text(v, member::CT))?;
@@ -443,10 +473,9 @@ fn seal_of(v: &Value, form: Form, kind: Kind) -> Option<Sealed> {
     if iv_b.len() != IV_LEN || salt.is_empty() || ct.is_empty() {
         return None;
     }
-    let want = match (form, kind) {
-        (Form::V1, _) => mac.is_some() && bind.is_none(),
-        (Form::V2 | Form::V3, Kind::Slot | Kind::PrimaryId) => mac.is_none() && bind.is_some(),
-        (Form::V2 | Form::V3, _) => mac.is_some() && bind.is_some(),
+    let want = match kind {
+        Kind::Slot | Kind::PrimaryId => mac.is_none() && bind.is_some(),
+        _ => mac.is_some() && bind.is_some(),
     };
     if !want {
         return None;
@@ -481,12 +510,11 @@ fn read_book() -> Result<Option<Book>, Fault> {
     };
     let v = json::parse(&bytes)
         .map_err(|t| Fault::known(Known::KeyboxShape, format!("{}: {t:?}", p.display())))?;
-    let form = match text(&v, member::SHAPE).as_str() {
-        SHAPE => Form::V3,
-        SHAPE_V2 => Form::V2,
-        SHAPE_V1 => Form::V1,
+    // Only the shape this version writes: an earlier shape is refused like any other, by name, untouched.
+    match text(&v, member::SHAPE).as_str() {
+        SHAPE => {}
         other => return Err(Fault::known(Known::KeyboxShape, other.to_string())),
-    };
+    }
     // A missing or malformed failure count is refused by name. Reading it as 0 would let someone able to edit
     // the file clear the count by deleting a field, silently. Nothing in the vault changes; it just does not
     // open.
@@ -494,12 +522,15 @@ fn read_book() -> Result<Option<Book>, Fault> {
         Some(Value::Int(n)) => *n,
         _ => return Err(Fault::known(Known::KeyboxShape, member::WRONG.to_string())),
     };
-    let mut book = Book { form, wrong, ..Book::default() };
+    let mut book = Book { wrong, ..Book::default() };
     // The vault states its own derivation parameters. All three are read and checked against bounds
     // (`keystore::in_range`, the same gate as keystore V3 files): out of bounds is refused by name, so a file
-    // cannot make derivation use terabytes of memory. A vault without this section predates it and opens with
-    // this pass's `params()` (it was sealed under them).
-    if let Some(k) = v.member(member::KDF) {
+    // cannot make derivation use terabytes of memory. A vault without this section is refused by name: this
+    // version writes it into every vault it makes.
+    let Some(k) = v.member(member::KDF) else {
+        return Err(Fault::known(Known::KeyboxShape, member::KDF.to_string()));
+    };
+    {
         let num = |name: &str| -> Option<usize> {
             match k.member(name) {
                 Some(Value::Int(n)) => usize::try_from(*n).ok(),
@@ -524,53 +555,48 @@ fn read_book() -> Result<Option<Book>, Fault> {
             Some(_) => Err(()),
         }
     };
-    if form == Form::V3 {
-        book.marks = Some(tag32(v.member(member::MARKS)).ok().flatten().ok_or_else(|| Fault::known(Known::KeyboxShape, member::MARKS.to_string()))?);
-    }
+    book.marks = Some(tag32(v.member(member::MARKS)).ok().flatten().ok_or_else(|| Fault::known(Known::KeyboxShape, member::MARKS.to_string()))?);
     if let Some(p) = v.member(member::PRIMARY) {
-        let kind = PrimaryKind::parse(&text(p, member::KIND));
         let bad = || Fault::known(Known::KeyboxShape, member::PRIMARY.to_string());
-        book.primary = Some(match (form, kind) {
-            // Shape 3: the kind and the member mark plain, the id sealed.
-            (Form::V3, Some(kind)) => Primary {
-                id: None,
-                kind,
-                tag: Some(tag32(p.member(member::TAG)).ok().flatten().ok_or_else(bad)?),
-                id_seal: Some(p.member(member::ID).and_then(|x| seal_of(x, form, Kind::PrimaryId)).ok_or_else(bad)?),
-            },
-            (_, Some(kind)) if !text(p, member::ID).is_empty() => Primary { id: Some(text(p, member::ID)), kind, tag: None, id_seal: None },
-            _ => return Err(bad()),
+        // The kind plain, the id sealed.
+        book.primary = Some(Primary {
+            kind: PrimaryKind::parse(&text(p, member::KIND)).ok_or_else(bad)?,
+            id_seal: p.member(member::ID).and_then(|x| seal_of(x, Kind::PrimaryId)).ok_or_else(bad)?,
         });
     }
     if let Some(p) = v.member(member::PIN) {
-        book.pin = seal_of(p, form, Kind::Pin);
+        book.pin = seal_of(p, Kind::Pin);
         if book.pin.is_none() {
             return Err(Fault::known(Known::KeyboxShape, member::PIN.to_string()));
         }
     }
     if let Some(Value::Arr(a)) = v.member(member::RECOVERY) {
         for one in a {
-            // Shape 3 labels its one seal itself; older shapes by identity id.
-            let id = if form == Form::V3 { PRIMARY_LABEL.to_string() } else { text(one, member::ID) };
-            let Some(s) = seal_of(one, form, Kind::Recovery) else {
-                return Err(Fault::known(Known::KeyboxShape, format!("recovery {id}")));
+            let label = text(one, member::LABEL);
+            let (Some(sealed), Ok(Some(tag))) = (seal_of(one, Kind::Recovery), tag32(one.member(member::TAG))) else {
+                return Err(Fault::known(Known::KeyboxShape, format!("recovery {label}")));
             };
-            book.recovery.push((id, s));
+            book.recovery.push(Recovery { label, tag, sealed });
         }
-        if form == Form::V3 && book.recovery.len() > 1 {
-            return Err(Fault::known(Known::KeyboxShape, member::RECOVERY.to_string()));
-        }
+    }
+    // Recovery seals open the vault only as the primary's, exactly one per label of its kind, in order; a
+    // primary with no seals is one whose identity was deleted from under it, which this version never writes.
+    // Anything else is refused by name.
+    let have: Vec<&str> = book.recovery.iter().map(|r| r.label.as_str()).collect();
+    match &book.primary {
+        Some(p) if have == labels(p.kind) => {}
+        None if have.is_empty() => {}
+        Some(_) => return Err(Fault::known(Known::KeyboxShape, member::RECOVERY.to_string())),
+        None => return Err(Fault::known(Known::KeyboxShape, member::PRIMARY.to_string())),
     }
     if let Some(Value::Arr(a)) = v.member(member::SLOTS) {
         for one in a {
-            let name = if form == Form::V3 { text(one, member::NAME) } else { text(one, member::ACCOUNT) };
-            let Some(sealed) = seal_of(one, form, Kind::Slot) else {
+            let name = text(one, member::NAME);
+            let Some(sealed) = seal_of(one, Kind::Slot) else {
                 return Err(Fault::known(Known::KeyboxShape, format!("slot {name}")));
             };
-            let tag = match (form, tag32(one.member(member::TAG))) {
-                (Form::V3, Ok(Some(t))) => Some(t),
-                (Form::V3, _) => return Err(Fault::known(Known::KeyboxShape, format!("slot {name}"))),
-                _ => None,
+            let Ok(Some(tag)) = tag32(one.member(member::TAG)) else {
+                return Err(Fault::known(Known::KeyboxShape, format!("slot {name}")));
             };
             book.slots.push(Slot { name, sealed, tag });
         }
@@ -600,7 +626,6 @@ fn write_book_as(b: &Book, name: &str) -> Result<(), Fault> {
             other => other,
         }
     };
-    let v3 = b.form == Form::V3;
     let mut m: Vec<(String, Value)> = Vec::new();
     if let Some(k) = &b.kdf {
         m.push((
@@ -616,15 +641,10 @@ fn write_book_as(b: &Book, name: &str) -> Result<(), Fault> {
         m.push((member::PIN.into(), seal_value(pin)));
     }
     if let Some(pr) = &b.primary {
-        let mut f: Vec<(String, Value)> = vec![(member::KIND.into(), Value::Str(pr.kind.as_str().to_string()))];
-        if v3 {
-            if let (Some(t), Some(sl)) = (&pr.tag, &pr.id_seal) {
-                f.push((member::ID.into(), seal_value(sl)));
-                f.push((member::TAG.into(), Value::Str(bare(t))));
-            }
-        } else if let Some(id) = &pr.id {
-            f.push((member::ID.into(), Value::Str(id.clone())));
-        }
+        let mut f: Vec<(String, Value)> = vec![
+            (member::KIND.into(), Value::Str(pr.kind.as_str().to_string())),
+            (member::ID.into(), seal_value(&pr.id_seal)),
+        ];
         f.sort_by(|x, y| x.0.cmp(&y.0));
         m.push((member::PRIMARY.into(), Value::Obj(f)));
     }
@@ -633,35 +653,21 @@ fn write_book_as(b: &Book, name: &str) -> Result<(), Fault> {
         Value::Arr(
             b.recovery
                 .iter()
-                .map(|(id, s)| if v3 { seal_value(s) } else { with(seal_value(s), vec![(member::ID.into(), Value::Str(id.clone()))]) })
+                .map(|r| with(seal_value(&r.sealed), vec![(member::LABEL.into(), Value::Str(r.label.clone())), (member::TAG.into(), Value::Str(bare(&r.tag)))]))
                 .collect(),
         ),
     ));
-    m.push((member::SHAPE.into(), Value::Str(match b.form {
-        Form::V3 => SHAPE,
-        Form::V2 => SHAPE_V2,
-        Form::V1 => SHAPE_V1,
-    }.to_string())));
+    m.push((member::SHAPE.into(), Value::Str(SHAPE.to_string())));
     m.push((
         member::SLOTS.into(),
         Value::Arr(
             b.slots
                 .iter()
-                .map(|sl| {
-                    if v3 {
-                        let mut extra = vec![(member::NAME.into(), Value::Str(sl.name.clone()))];
-                        if let Some(t) = &sl.tag {
-                            extra.push((member::TAG.into(), Value::Str(bare(t))));
-                        }
-                        with(seal_value(&sl.sealed), extra)
-                    } else {
-                        with(seal_value(&sl.sealed), vec![(member::ACCOUNT.into(), Value::Str(sl.name.clone()))])
-                    }
-                })
+                .map(|sl| with(seal_value(&sl.sealed), vec![(member::NAME.into(), Value::Str(sl.name.clone())), (member::TAG.into(), Value::Str(bare(&sl.tag)))]))
                 .collect(),
         ),
     ));
-    if let (true, Some(mk)) = (v3, &b.marks) {
+    if let Some(mk) = &b.marks {
         m.push((member::MARKS.into(), Value::Str(bare(mk))));
     }
     m.push((member::WRONG.into(), Value::Int(b.wrong)));
@@ -775,12 +781,9 @@ fn bind_of(mk: &[u8; MASTER_BYTES], kind: Kind, label: &str, kdf: crate::keystor
     out
 }
 
-/// Whether a seal's identity matches (shape 2 only; shape 1 has no such field and answers true).
-fn bound(mk: &[u8; MASTER_BYTES], kind: Kind, label: &str, kdf: crate::keystore::Params, s: &Sealed, form: Form) -> bool {
-    match form {
-        Form::V1 => true,
-        Form::V2 | Form::V3 => s.bind == Some(bind_of(mk, kind, label, kdf, s)),
-    }
+/// Whether a seal's identity matches.
+fn bound(mk: &[u8; MASTER_BYTES], kind: Kind, label: &str, kdf: crate::keystore::Params, s: &Sealed) -> bool {
+    s.bind == Some(bind_of(mk, kind, label, kdf, s))
 }
 
 /// Seal bytes with a key (`mac` by this key; `bind` added by the master key).
@@ -798,27 +801,23 @@ fn seal(dk: &[u8; 32], salt: Vec<u8>, plain: &[u8]) -> Result<Sealed, Fault> {
 }
 
 /// Seal the master key (passcode and recovery seals): `mac` by the derived key, `bind` by the master key.
-fn seal_master(dk: &Key32, salt: Vec<u8>, mk: &[u8; MASTER_BYTES], kind: Kind, label: &str, kdf: crate::keystore::Params, form: Form) -> Result<Sealed, Fault> {
+fn seal_master(dk: &Key32, salt: Vec<u8>, mk: &[u8; MASTER_BYTES], kind: Kind, label: &str, kdf: crate::keystore::Params) -> Result<Sealed, Fault> {
     let mut s = seal(&dk.0, salt, mk)?;
-    if form != Form::V1 {
-        s.bind = Some(bind_of(mk, kind, label, kdf, &s));
-    }
+    s.bind = Some(bind_of(mk, kind, label, kdf, &s));
     Ok(s)
 }
 
-/// Seal a slot: shape 2 keeps only `bind` (by the master key); shape 1 keeps `mac`.
-fn seal_slot(mk: &[u8; MASTER_BYTES], account: &str, kdf: crate::keystore::Params, form: Form, plain: &[u8]) -> Result<Sealed, Fault> {
+/// Seal a slot: only `bind` (by the master key).
+fn seal_slot(mk: &[u8; MASTER_BYTES], account: &str, kdf: crate::keystore::Params, plain: &[u8]) -> Result<Sealed, Fault> {
     let salt = rand(32)?;
     let mut s = seal(mk, salt, plain)?;
-    if form != Form::V1 {
-        s.mac = None;
-        s.bind = Some(bind_of(mk, Kind::Slot, account, kdf, &s));
-    }
+    s.mac = None;
+    s.bind = Some(bind_of(mk, Kind::Slot, account, kdf, &s));
     Ok(s)
 }
 
 /// Open a seal. A MAC mismatch gives `None` (verify first, then decrypt: a wrong passcode stops at the MAC).
-/// Shape 2 slots have no `mac`; their check is `bind` (the caller asks [`bound`] first).
+/// Slots have no `mac`; their check is `bind` (the caller asks [`bound`] first).
 fn unseal(dk: &[u8; 32], s: &Sealed) -> Option<Plain> {
     if let Some(mac) = s.mac {
         if crate::keystore::mac_of(dk, &s.ct) != mac {
@@ -899,128 +898,6 @@ pub fn pin_digits_only() -> Option<bool> {
         2 => Some(false),
         _ => None,
     }
-}
-
-/// Upgrade shape 1 to shape 2 in place (while the master key is in hand). Each slot must pass its shape 1
-/// `mac` first; any mismatch stops the upgrade (that slot is still refused by name when read; upgrading does
-/// not give a bad slot a valid binding) and returns false. Otherwise each seal gets `bind` and slots drop
-/// `mac`.
-fn upgrade(book: &mut Book, mk: &[u8; MASTER_BYTES]) -> bool {
-    if book.form != Form::V1 {
-        return false;
-    }
-    for sl in &book.slots {
-        match sl.sealed.mac {
-            Some(mac) if crate::keystore::mac_of(mk, &sl.sealed.ct) == mac => {}
-            _ => return false,
-        }
-    }
-    let kdf = kdf_of(book);
-    if let Some(p) = book.pin.as_mut() {
-        p.bind = Some(bind_of(mk, Kind::Pin, "", kdf, p));
-    }
-    for (id, s) in book.recovery.iter_mut() {
-        s.bind = Some(bind_of(mk, Kind::Recovery, id, kdf, s));
-    }
-    for sl in book.slots.iter_mut() {
-        sl.sealed.mac = None;
-        sl.sealed.bind = Some(bind_of(mk, Kind::Slot, &sl.name, kdf, &sl.sealed));
-    }
-    book.form = Form::V2;
-    true
-}
-
-/// Upgrade shapes 1 and 2 to shape 3 in place (the master key in hand): every slot is resealed with its
-/// account name inside under a name keyed by the names key, and marked with its secret's member mark; the
-/// primary's id is sealed under the master key and marked with its secret's mark; the one recovery seal is
-/// relabelled. Not one key is lost: a slot that does not open stops the upgrade and the file stays as it was.
-/// A vault whose primary is not settled yet (older vaults: [`settle_primary`] runs first) waits.
-///
-/// Settling the primary is [`settle_primary`]'s alone (it chooses it and drops every other identity's seal);
-/// this upgrade only relabels the one seal left. A vault still holding a seal that is not its primary's
-/// waits for it, so no second place decides which seal stays.
-fn upgrade_v3(book: &mut Book, mk: &[u8; MASTER_BYTES]) -> Result<bool, Fault> {
-    if book.form == Form::V3 {
-        return Ok(false);
-    }
-    if book.form == Form::V1 && !upgrade(book, mk) {
-        return Ok(false);
-    }
-    if book.primary.is_none() && !book.recovery.is_empty() {
-        return Ok(false);
-    }
-    let settled = book.primary.as_ref().and_then(|p| p.id.clone());
-    if book.recovery.iter().any(|(label, _)| settled.as_deref().map(|p| !label.eq_ignore_ascii_case(p)).unwrap_or(true)) {
-        return Ok(false);
-    }
-    let kdf = kdf_of(book);
-    let nk = names_of(mk);
-    let marks = new_marks()?;
-    let mut slots: Vec<Slot> = Vec::with_capacity(book.slots.len());
-    let mut opened: Vec<(String, Vec<u8>)> = Vec::new();
-    for sl in &book.slots {
-        if !bound(mk, Kind::Slot, &sl.name, kdf, &sl.sealed, book.form) {
-            return Err(Fault::known(Known::KeyboxSlot, sl.name.clone()));
-        }
-        let Some(mut plain) = unseal(mk, &sl.sealed) else {
-            return Err(Fault::known(Known::KeyboxSlot, sl.name.clone()));
-        };
-        opened.push((sl.name.clone(), std::mem::take(&mut plain.0)));
-    }
-    for (account, secret) in opened.iter() {
-        let name = nk.name(crate::names::Logical::Slot(account));
-        let sealed = seal_slot(mk, &name, kdf, Form::V3, &slot_plain(account, secret))?;
-        slots.push(Slot { name, sealed, tag: Some(member_tag(secret, &marks)) });
-    }
-    if let Some(pr) = book.primary.as_mut() {
-        let id = pr.id.clone().unwrap_or_default();
-        // The primary's secret: its seed slot (a recovery-word identity) or its own key's slot (a key file).
-        let base = crate::places::key_account().to_string();
-        let want = match pr.kind {
-            PrimaryKind::Words => format!("{base}-seed-{id}"),
-            PrimaryKind::KeyFile => format!("{base}-{id}"),
-        };
-        let secret = opened.iter().find(|(a, _)| a.eq_ignore_ascii_case(&want)).map(|(_, s)| s.clone());
-        let Some(secret) = secret else {
-            for (_, s) in opened.iter_mut() {
-                wipe(s);
-            }
-            return Err(Fault::known(Known::KeychainMissing, want));
-        };
-        pr.tag = Some(member_tag(&secret, &marks));
-        let salt = rand(32)?;
-        let mut sealed = seal(mk, salt, id.as_bytes())?;
-        sealed.mac = None;
-        sealed.bind = Some(bind_of(mk, Kind::PrimaryId, PRIMARY_LABEL, kdf, &sealed));
-        pr.id_seal = Some(sealed);
-        pr.id = None;
-    }
-    for (_, s) in opened.iter_mut() {
-        wipe(s);
-    }
-    // Shape 3 holds the primary's seal only, labelled as the primary's: the one seal left (labelled by id,
-    // checked above to be the primary's) is relabelled.
-    for (label, s) in book.recovery.iter_mut() {
-        *label = PRIMARY_LABEL.to_string();
-        s.bind = Some(bind_of(mk, Kind::Recovery, PRIMARY_LABEL, kdf, s));
-    }
-    book.slots = slots;
-    book.marks = Some(marks);
-    book.form = Form::V3;
-    Ok(true)
-}
-
-/// Upgrade this vault to shape 3 now (the first opening after upgrading, after the primary is settled). Only
-/// while open. Answers whether it upgraded.
-pub fn upgrade_names() -> Result<bool, Fault> {
-    let mk = master_now()?;
-    let held = lock_book()?;
-    let Some(mut book) = read_book()? else { return Ok(false) };
-    if !upgrade_v3(&mut book, &mk.0)? {
-        return Ok(false);
-    }
-    write_book(&held, &book)?;
-    Ok(true)
 }
 
 /// The vault's state now. One disk read; unreadable is refused by name.
@@ -1135,9 +1012,7 @@ pub fn set_pin(pin: &str) -> Result<(), Fault> {
     if book.pin.is_some() {
         return Err(Fault::known(Known::PinSet, String::new()));
     }
-    if book.form == Form::V3 {
-        marks_of(&mut book)?;
-    }
+    marks_of(&mut book)?;
     // One vault, one set of derivation parameters, fixed when the vault is created and written into it. Every
     // later seal (passcode, recovery, slot) uses them, so making the shipped parameters harder later still
     // opens old vaults by their own section without migration; only new vaults use the new parameters.
@@ -1149,12 +1024,11 @@ pub fn set_pin(pin: &str) -> Result<(), Fault> {
     let mut mk = Key32([0u8; MASTER_BYTES]);
     mk.0.copy_from_slice(&mk_v);
     wipe(&mut mk_v);
-    // A vault without a passcode can only be empty or a test vault the test hooks filled with slots: slots stay,
-    // and the shape is as read (shape 2 when there was no vault).
+    // A vault without a passcode can only be empty or a test vault the test hooks filled with slots: slots stay.
     let salt = rand(32)?;
     let kdf = kdf_of(&book);
     let dk = derive(kdf, pin.as_bytes(), &salt)?;
-    book.pin = Some(seal_master(&dk, salt, &mk.0, Kind::Pin, "", kdf, book.form)?);
+    book.pin = Some(seal_master(&dk, salt, &mk.0, Kind::Pin, "", kdf)?);
     book.wrong = 0;
     write_book(&held, &book)?;
     hold(&mk);
@@ -1171,6 +1045,50 @@ pub fn unlock(pin: &str) -> Result<(), Fault> {
     crate::trace::mark(crate::feature::Feature::H2);
     let held = lock_book()?;
     unlock_held(&held, pin, false)
+}
+
+/// Check a passcode without opening the vault: the gate in front of an action that asks for the passcode again
+/// on an open vault (showing the words, deleting an identity, exporting a key or a backup, signing for another)
+/// only confirms who is at the machine. The tries count as for [`unlock`] (recorded before deriving, cleared on
+/// a correct passcode, the last failure locks) and are refused the same way (no vault, locked out, recorded
+/// parameters below the floor), but the master key never enters memory and a lock that is pending or done stays
+/// as it is: a correct passcode checked here reopens nothing.
+pub fn check_pin(pin: &str) -> Result<(), Fault> {
+    crate::trace::mark(crate::feature::Feature::H2);
+    let held = lock_book()?;
+    let Some(mut book) = read_book()? else {
+        return Err(Fault::known(Known::KeyboxMissing, String::new()));
+    };
+    let Some(sealed) = book.pin.clone() else {
+        return Err(Fault::known(Known::KeyboxMissing, String::new()));
+    };
+    if book.wrong >= WRONG_LIMIT {
+        return Err(Fault::known(Known::LockedOut, String::new()));
+    }
+    floor_gate(&book)?;
+    let kdf = kdf_of(&book);
+    // Recorded before deriving, as in `unlock_held`, so parallel checks cannot each spend the same try.
+    book.wrong += 1;
+    write_book(&held, &book)?;
+    let dk = derive(kdf, pin.as_bytes(), &sealed.salt)?;
+    match unseal(&dk.0, &sealed).and_then(master_of) {
+        Some(mk) => {
+            let whole = bound(&mk.0, Kind::Pin, "", kdf, &sealed);
+            drop(mk);
+            book.wrong = 0;
+            let _ = write_book(&held, &book);
+            if !whole {
+                return Err(Fault::known(Known::KeyboxSlot, member::PIN.to_string()));
+            }
+            Ok(())
+        }
+        None => {
+            if book.wrong >= WRONG_LIMIT {
+                lock();
+            }
+            Err(Fault::known(Known::PinWrong, WRONG_LIMIT.saturating_sub(book.wrong).to_string()))
+        }
+    }
 }
 
 /// Reseal at the floor: when the recorded parameters are below the floor, open the passcode seal at the
@@ -1230,7 +1148,7 @@ fn unlock_held(held: &Held, pin: &str, at_floor: bool) -> Result<(), Fault> {
             // An identity mismatch is refused by name (shape 2): the passcode was right (the derived key's
             // MAC passed) but this seal was altered (IV, parameters or the whole seal). The attempt is
             // cleared and the master key does not enter memory.
-            if !bound(&mk.0, Kind::Pin, "", kdf, &sealed, book.form) {
+            if !bound(&mk.0, Kind::Pin, "", kdf, &sealed) {
                 book.wrong = 0;
                 let _ = write_book(held, &book);
                 return Err(Fault::known(Known::KeyboxSlot, member::PIN.to_string()));
@@ -1252,7 +1170,7 @@ fn unlock_held(held: &Held, pin: &str, at_floor: bool) -> Result<(), Fault> {
                 let done = (|| -> Result<(), Fault> {
                     let salt = rand(32)?;
                     let dk2 = derive(floor(), pin.as_bytes(), &salt)?;
-                    resealed.pin = Some(seal_master(&dk2, salt, &mk.0, Kind::Pin, "", floor(), resealed.form)?);
+                    resealed.pin = Some(seal_master(&dk2, salt, &mk.0, Kind::Pin, "", floor())?);
                     rebind(&mut resealed, &mk.0);
                     write_book(held, &resealed)
                 })();
@@ -1265,8 +1183,6 @@ fn unlock_held(held: &Held, pin: &str, at_floor: bool) -> Result<(), Fault> {
                 }
                 return Ok(());
             }
-            // Upgrade shape 1 to shape 2 in place (the master key is in hand).
-            let _ = upgrade(&mut book, &mk.0);
             let _ = write_book(held, &book);
             Ok(())
         }
@@ -1281,24 +1197,20 @@ fn unlock_held(held: &Held, pin: &str, at_floor: bool) -> Result<(), Fault> {
     }
 }
 
-/// After the recorded parameters change, every shape 2 or 3 seal's binding is recomputed (shape 1 has no such
-/// field and is upgraded first).
+/// After the recorded parameters change, every seal's binding is recomputed.
 fn rebind(book: &mut Book, mk: &[u8; MASTER_BYTES]) {
-    if book.form == Form::V1 && !upgrade(book, mk) {
-        return;
-    }
     let kdf = kdf_of(book);
     if let Some(p) = book.pin.as_mut() {
         p.bind = Some(bind_of(mk, Kind::Pin, "", kdf, p));
     }
-    for (id, s) in book.recovery.iter_mut() {
-        s.bind = Some(bind_of(mk, Kind::Recovery, id, kdf, s));
+    for r in book.recovery.iter_mut() {
+        r.sealed.bind = Some(bind_of(mk, Kind::Recovery, &r.label, kdf, &r.sealed));
     }
     for sl in book.slots.iter_mut() {
         sl.sealed.bind = Some(bind_of(mk, Kind::Slot, &sl.name, kdf, &sl.sealed));
     }
-    if let Some(sealed) = book.primary.as_mut().and_then(|p| p.id_seal.as_mut()) {
-        sealed.bind = Some(bind_of(mk, Kind::PrimaryId, PRIMARY_LABEL, kdf, sealed));
+    if let Some(p) = book.primary.as_mut() {
+        p.id_seal.bind = Some(bind_of(mk, Kind::PrimaryId, PRIMARY_LABEL, kdf, &p.id_seal));
     }
 }
 
@@ -1321,23 +1233,23 @@ pub fn change_pin(old: &str, new: &str) -> Result<(), Fault> {
     let salt = rand(32)?;
     let kdf = kdf_of(&book);
     let dk = derive(kdf, new.as_bytes(), &salt)?;
-    book.pin = Some(seal_master(&dk, salt, &mk.0, Kind::Pin, "", kdf, book.form)?);
+    book.pin = Some(seal_master(&dk, salt, &mk.0, Kind::Pin, "", kdf)?);
     book.wrong = 0;
     write_book(&held, &book)?;
     note_pin(new);
     Ok(())
 }
 
-/// Recover: open the master key with the primary identity's own secret, set a new passcode, reset the count.
+/// Recover: open the master key with one of the primary identity's secrets, set a new passcode, reset the
+/// count.
 ///
-/// The secret is a recovery-word identity's 16 bytes of entropy or an existing-key identity's 32-byte private
-/// key; `who` is the identity it derives to and `who_slots` the slot names that identity would hold here. Only
-/// the primary identity's seal is tried (a vault written before the primary was recorded tries every seal, as
-/// it did). A secret of another identity on this machine is refused by name with `RECOVERY_NOT_PRIMARY`; one
+/// The secret is a recovery-word identity's 16 bytes of entropy or one of its seat keys, or an existing-key
+/// identity's 32-byte private key; its member mark finds the one primary's seal it opens. A secret of another
+/// identity on this machine is refused by name with `RECOVERY_NOT_PRIMARY`; one
 /// that matches nothing with `RECOVERY_NO_MATCH`. Either way neither the vault nor the count changes (wrong
 /// words must not lock the person in further). With recorded parameters below the floor, it opens at the
 /// floor and writes the floor back (the recovery reseal path).
-pub fn recover(secret: &[u8], new_pin: &str, who: &str, who_slots: &[String]) -> Result<(), Fault> {
+pub fn recover(secret: &[u8], new_pin: &str) -> Result<(), Fault> {
     if let Some(t) = pin_trouble(new_pin) {
         return Err(Fault::known(Known::PinShape, t.as_str().to_string()));
     }
@@ -1345,55 +1257,27 @@ pub fn recover(secret: &[u8], new_pin: &str, who: &str, who_slots: &[String]) ->
     let mut book = read_book()?.ok_or_else(|| Fault::known(Known::KeyboxMissing, String::new()))?;
     let low = below_floor(kdf_of(&book));
     let kdf = if low { floor() } else { kdf_of(&book) };
-    // Is this secret the primary's? Shape 3 tells by the member mark (the file names nobody); older shapes by
-    // the plain id and slot names.
+    // Which of the primary's seals does this secret open? Told by the member mark (the file names nobody).
     let mark = member_tag(secret, &book.marks.unwrap_or_default());
-    let not_primary = match &book.primary {
-        Some(Primary { tag: Some(t), .. }) => *t != mark,
-        Some(Primary { id: Some(p), .. }) => !p.eq_ignore_ascii_case(who),
-        _ => false,
-    };
-    if not_primary {
-        let here = if book.form == Form::V3 {
-            book.slots.iter().any(|sl| sl.tag == Some(mark))
-        } else {
-            book.slots.iter().any(|sl| who_slots.iter().any(|w| *w == sl.name))
-        };
+    let Some(r) = book.recovery.iter().find(|r| r.tag == mark) else {
+        let here = book.slots.iter().any(|sl| sl.tag == mark);
         let k = if here { Known::RecoveryNotPrimary } else { Known::RecoveryNoMatch };
         return Err(Fault::known(k, String::new()));
-    }
-    let primary = book.primary.as_ref().and_then(|p| p.id.clone());
-    let mut opened: Option<Key32> = None;
-    for (id, s) in book.recovery.iter() {
-        if let Some(p) = &primary {
-            if !p.eq_ignore_ascii_case(id) {
-                continue;
-            }
-        }
-        let dk = derive(kdf, secret, &s.salt)?;
-        if let Some(mk) = unseal(&dk.0, s).and_then(master_of) {
-            // Seals whose identity does not match are skipped (shape 2): a renumbered seal or one with an
-            // altered IV cannot yield a trustworthy master key.
-            if bound(&mk.0, Kind::Recovery, id, kdf, s, book.form) {
-                opened = Some(mk);
-                break;
-            }
-        }
-    }
-    let Some(mk) = opened else {
+    };
+    let dk = derive(kdf, secret, &r.sealed.salt)?;
+    // A seal whose identity does not match does not open: a relabelled seal or one with an altered IV cannot
+    // yield a trustworthy master key.
+    let Some(mk) = unseal(&dk.0, &r.sealed).and_then(master_of).filter(|mk| bound(&mk.0, Kind::Recovery, &r.label, kdf, &r.sealed)) else {
         return Err(Fault::known(Known::RecoveryNoMatch, String::new()));
     };
     if low {
         book.kdf = Some(floor());
-    }
-    let _ = upgrade(&mut book, &mk.0);
-    if low {
         rebind(&mut book, &mk.0);
     }
     let salt = rand(32)?;
     let kdf = kdf_of(&book);
     let dk = derive(kdf, new_pin.as_bytes(), &salt)?;
-    book.pin = Some(seal_master(&dk, salt, &mk.0, Kind::Pin, "", kdf, book.form)?);
+    book.pin = Some(seal_master(&dk, salt, &mk.0, Kind::Pin, "", kdf)?);
     book.wrong = 0;
     write_book(&held, &book)?;
     hold(&mk);
@@ -1406,12 +1290,9 @@ pub fn recover(secret: &[u8], new_pin: &str, who: &str, who_slots: &[String]) ->
 pub fn primary() -> Result<Option<(String, PrimaryKind)>, Fault> {
     let Some(book) = read_book()? else { return Ok(None) };
     let Some(pr) = book.primary.clone() else { return Ok(None) };
-    if let Some(id) = pr.id {
-        return Ok(Some((id, pr.kind)));
-    }
     let mk = master_now()?;
-    let sealed = pr.id_seal.ok_or_else(|| Fault::known(Known::KeyboxShape, member::PRIMARY.to_string()))?;
-    if !bound(&mk.0, Kind::PrimaryId, PRIMARY_LABEL, kdf_of(&book), &sealed, book.form) {
+    let sealed = pr.id_seal;
+    if !bound(&mk.0, Kind::PrimaryId, PRIMARY_LABEL, kdf_of(&book), &sealed) {
         return Err(Fault::known(Known::KeyboxSlot, member::PRIMARY.to_string()));
     }
     let plain = unseal(&mk.0, &sealed).ok_or_else(|| Fault::known(Known::KeyboxSlot, member::PRIMARY.to_string()))?;
@@ -1424,79 +1305,29 @@ pub fn primary_kind() -> Result<Option<PrimaryKind>, Fault> {
     Ok(read_book()?.and_then(|b| b.primary).map(|p| p.kind))
 }
 
-/// Settle the primary identity in a vault written before it was recorded (the first unlock after upgrading).
-/// `rows` are this machine's identities as (id, kind, created); the primary is the earliest recovery-word
-/// identity, or the earliest one when there is no recovery-word identity. Every other recovery seal is
-/// dropped. Answers the chosen id when this pass settled it (the screen says once that only the primary
-/// identity recovers the passcode); `None` when already settled or when there is no identity with a seal.
-///
-/// The one place an older vault's primary is settled: a vault that recorded its primary while other
-/// identities' seals were still written has those dropped here too (the shape upgrade only relabels).
-pub fn settle_primary(rows: &[(String, PrimaryKind, String)]) -> Result<Option<String>, Fault> {
-    let _mk = master_now()?;
-    let held = lock_book()?;
-    let Some(mut book) = read_book()? else { return Ok(None) };
-    if let Some(pr) = book.primary.as_ref() {
-        // Recorded by id (the older shapes): every seal not its own goes. Shape 3 seals the id and holds one
-        // seal labelled as the primary's; nothing to drop there.
-        if let Some(id) = pr.id.clone() {
-            let before = book.recovery.len();
-            book.recovery.retain(|(x, _)| x.eq_ignore_ascii_case(&id));
-            if book.recovery.len() != before {
-                write_book(&held, &book)?;
-            }
-        }
-        return Ok(None);
-    }
-    let sealed: Vec<&(String, PrimaryKind, String)> =
-        rows.iter().filter(|(id, _, _)| book.recovery.iter().any(|(x, _)| x.eq_ignore_ascii_case(id))).collect();
-    let pick = sealed
-        .iter()
-        .filter(|(_, k, _)| *k == PrimaryKind::Words)
-        .min_by(|a, b| a.2.cmp(&b.2))
-        .or_else(|| sealed.iter().min_by(|a, b| a.2.cmp(&b.2)));
-    let Some((id, kind, _)) = pick.map(|x| (*x).clone()) else { return Ok(None) };
-    book.recovery.retain(|(x, _)| x.eq_ignore_ascii_case(&id));
-    book.primary = Some(Primary { id: Some(id.clone()), kind, tag: None, id_seal: None });
-    write_book(&held, &book)?;
-    Ok(Some(id))
-}
-
-/// Record the recovery seal of the primary identity. The vault has one primary identity and only its seal
-/// opens the vault: when there is none yet (the first identity built on this machine), this identity becomes
-/// primary, its seal is written and the header records it; when this identity is already primary its seal is
-/// replaced (refilling a machine). Any other identity is secondary and gets no seal (answers false). Only while
-/// open (the master key is in hand).
+/// Record the recovery seals of the primary identity (one per secret, [`labels`]). The vault has one primary
+/// identity and only its seals open the vault: when there is none yet (the first identity built on this
+/// machine), this identity becomes primary, its seals are written and the header records it; when this
+/// identity is already primary its seals are replaced (refilling a machine). Any other identity is secondary
+/// and gets no seal (answers false). Only while open (the master key is in hand).
 pub fn add_recovery(id: &str, kind: PrimaryKind, secret: &[u8]) -> Result<bool, Fault> {
     let mk = master_now()?;
     let held = lock_book()?;
     let mut book = read_book()?.unwrap_or_default();
-    let marks = if book.form == Form::V3 { marks_of(&mut book)? } else { [0u8; 32] };
+    let marks = marks_of(&mut book)?;
     let mark = member_tag(secret, &marks);
-    match &book.primary {
-        Some(Primary { tag: Some(t), .. }) if *t != mark => return Ok(false),
-        Some(Primary { id: Some(p), .. }) if !p.eq_ignore_ascii_case(id) => return Ok(false),
-        _ => {}
+    if book.primary.is_some() && book.recovery.first().is_some_and(|r| r.tag != mark) {
+        return Ok(false);
     }
-    // Nothing is sealed under parameters below the floor: if the record was lowered during this session, this
-    // seal is not written.
+    // Nothing is sealed under parameters below the floor: if the record was lowered during this session, no
+    // seal is written.
     floor_gate(&book)?;
-    let salt = rand(32)?;
     let kdf = kdf_of(&book);
-    let dk = derive(kdf, secret, &salt)?;
-    if book.form == Form::V3 {
-        let sealed = seal_master(&dk, salt, &mk.0, Kind::Recovery, PRIMARY_LABEL, kdf, book.form)?;
-        book.recovery = vec![(PRIMARY_LABEL.to_string(), sealed)];
-        let mut id_seal = seal(&mk.0, rand(32)?, id.as_bytes())?;
-        id_seal.mac = None;
-        id_seal.bind = Some(bind_of(&mk.0, Kind::PrimaryId, PRIMARY_LABEL, kdf, &id_seal));
-        book.primary = Some(Primary { id: None, kind, tag: Some(mark), id_seal: Some(id_seal) });
-    } else {
-        let sealed = seal_master(&dk, salt, &mk.0, Kind::Recovery, id, kdf, book.form)?;
-        book.recovery.retain(|(x, _)| x != id);
-        book.recovery.push((id.to_string(), sealed));
-        book.primary = Some(Primary { id: Some(id.to_string()), kind, tag: None, id_seal: None });
-    }
+    book.recovery = recovery_seals(&mk.0, kind, secret, kdf, &marks)?;
+    let mut id_seal = seal(&mk.0, rand(32)?, id.as_bytes())?;
+    id_seal.mac = None;
+    id_seal.bind = Some(bind_of(&mk.0, Kind::PrimaryId, PRIMARY_LABEL, kdf, &id_seal));
+    book.primary = Some(Primary { kind, id_seal });
     write_book(&held, &book)?;
     Ok(true)
 }
@@ -1537,28 +1368,22 @@ pub fn reset_empty() -> Result<(), Fault> {
     Ok(())
 }
 
-/// Whether an identity still has its recovery seal (only the primary has one).
+/// Whether an identity still has its recovery seals (only the primary has them).
 pub fn has_recovery(id: &str) -> Result<bool, Fault> {
     let Some(book) = read_book()? else { return Ok(false) };
-    if book.form != Form::V3 {
-        return Ok(book.recovery.iter().any(|(x, _)| x == id));
-    }
     Ok(!book.recovery.is_empty() && primary()?.map(|(p, _)| p.eq_ignore_ascii_case(id)).unwrap_or(false))
 }
 
-/// Drop an identity's recovery seal (it goes with the identity when deleted).
+/// Drop an identity's recovery seals (they go with the identity when deleted).
 pub fn drop_recovery(id: &str) -> Result<(), Fault> {
     let is_primary = has_recovery(id)?;
     let held = lock_book()?;
     let Some(mut book) = read_book()? else { return Ok(()) };
-    if book.form != Form::V3 {
-        book.recovery.retain(|(x, _)| x != id);
-    } else if is_primary {
-        book.recovery.clear();
-        book.primary = None;
-    } else {
+    if !is_primary {
         return Ok(());
     }
+    book.recovery.clear();
+    book.primary = None;
     write_book(&held, &book)
 }
 
@@ -1653,8 +1478,8 @@ pub enum PinFor<'a> {
     KeepFresh,
 }
 
-/// Build a vault in memory: `pin` seals the master key; `primary` (id, kind, secret) gets the one recovery
-/// seal; every `slots` entry is sealed under the master key. The count starts at zero. Nothing is written.
+/// Build a vault in memory: `pin` seals the master key; `primary` (id, kind, secret) gets its recovery seals
+/// ([`labels`]); every `slots` entry is sealed under the master key. The count starts at zero. Nothing is written.
 pub fn build_new(pin: PinFor, primary: Option<(&str, PrimaryKind, &[u8])>, slots: &[(String, Vec<u8>)]) -> Result<NewBook, Fault> {
     if let PinFor::New(p) = pin {
         if let Some(t) = pin_trouble(p) {
@@ -1662,7 +1487,7 @@ pub fn build_new(pin: PinFor, primary: Option<(&str, PrimaryKind, &[u8])>, slots
         }
     }
     let old = read_book()?.unwrap_or_default();
-    let mut book = Book { form: Form::V3, kdf: Some(old.kdf.unwrap_or_else(params)), ..Book::default() };
+    let mut book = Book { kdf: Some(old.kdf.unwrap_or_else(params)), ..Book::default() };
     if below_floor(kdf_of(&book)) {
         book.kdf = Some(floor());
     }
@@ -1684,28 +1509,26 @@ pub fn build_new(pin: PinFor, primary: Option<(&str, PrimaryKind, &[u8])>, slots
             wipe(&mut v);
             let salt = rand(32)?;
             let dk = derive(kdf, p.as_bytes(), &salt)?;
-            book.pin = Some(seal_master(&dk, salt, &mk.0, Kind::Pin, "", kdf, Form::V3)?);
+            book.pin = Some(seal_master(&dk, salt, &mk.0, Kind::Pin, "", kdf)?);
             mk
         }
     };
     let kdf = kdf_of(&book);
-    // Shape 3: names keyed by the new master key's names key, member marks salted anew.
+    // Names keyed by the new master key's names key, member marks salted anew.
     let nk = names_of(&mk.0);
     let marks = new_marks()?;
     book.marks = Some(marks);
     if let Some((id, kind, secret)) = primary {
-        let salt = rand(32)?;
-        let dk = derive(kdf, secret, &salt)?;
-        book.recovery.push((PRIMARY_LABEL.to_string(), seal_master(&dk, salt, &mk.0, Kind::Recovery, PRIMARY_LABEL, kdf, Form::V3)?));
+        book.recovery = recovery_seals(&mk.0, kind, secret, kdf, &marks)?;
         let mut id_seal = seal(&mk.0, rand(32)?, id.as_bytes())?;
         id_seal.mac = None;
         id_seal.bind = Some(bind_of(&mk.0, Kind::PrimaryId, PRIMARY_LABEL, kdf, &id_seal));
-        book.primary = Some(Primary { id: None, kind, tag: Some(member_tag(secret, &marks)), id_seal: Some(id_seal) });
+        book.primary = Some(Primary { kind, id_seal });
     }
     for (a, plain) in slots {
         let name = nk.name(crate::names::Logical::Slot(a));
-        let sealed = seal_slot(&mk.0, &name, kdf, Form::V3, &slot_plain(a, plain))?;
-        book.slots.push(Slot { name, sealed, tag: Some(member_tag(plain, &marks)) });
+        let sealed = seal_slot(&mk.0, &name, kdf, &slot_plain(a, plain))?;
+        book.slots.push(Slot { name, sealed, tag: member_tag(plain, &marks) });
     }
     book.wrong = 0;
     Ok(NewBook { book, mk })
@@ -1748,21 +1571,19 @@ pub fn drop_staged() -> Result<bool, Fault> {
 
 // Slots.
 
-/// The slot of `account` in a vault: by plain name (shapes 1 and 2) or by its keyed name (shape 3).
-fn slot_name(book: &Book, mk: &[u8; MASTER_BYTES], account: &str) -> String {
-    if book.form == Form::V3 {
-        names_of(mk).name(crate::names::Logical::Slot(account))
-    } else {
-        account.to_string()
-    }
+/// The slot of `account` in a vault: by its keyed name.
+fn slot_name(mk: &[u8; MASTER_BYTES], account: &str) -> String {
+    names_of(mk).name(crate::names::Logical::Slot(account))
 }
 
 /// The name the vault files `account`'s slot under, by the same lookup `get` and `put` use (tests take it
 /// from here rather than computing it). Refused by name while locked.
 pub fn slot_name_of(account: &str) -> Result<Option<String>, Fault> {
     let mk = master_now()?;
-    let Some(book) = read_book()? else { return Ok(None) };
-    Ok(Some(slot_name(&book, &mk.0, account)))
+    if read_book()?.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(slot_name(&mk.0, account)))
 }
 
 /// Put one in. A slot with the same name is dropped first, so this places it exactly. Refused by name while
@@ -1772,9 +1593,9 @@ pub fn put(account: &str, secret: &[u8]) -> Result<(), Fault> {
     let held = lock_book()?;
     let mut book = read_book()?.unwrap_or_default();
     floor_gate(&book)?;
-    let name = slot_name(&book, &mk.0, account);
-    let (plain, tag) = if book.form == Form::V3 { (slot_plain(account, secret), Some(member_tag(secret, &marks_of(&mut book)?))) } else { (secret.to_vec(), None) };
-    let sealed = seal_slot(&mk.0, &name, kdf_of(&book), book.form, &plain);
+    let name = slot_name(&mk.0, account);
+    let (plain, tag) = (slot_plain(account, secret), member_tag(secret, &marks_of(&mut book)?));
+    let sealed = seal_slot(&mk.0, &name, kdf_of(&book), &plain);
     let mut plain = plain;
     wipe(&mut plain);
     book.slots.retain(|sl| sl.name != name);
@@ -1789,22 +1610,19 @@ pub fn put(account: &str, secret: &[u8]) -> Result<(), Fault> {
 pub fn get(account: &str) -> Result<Option<Vec<u8>>, Fault> {
     let mk = master_now()?;
     let Some(book) = read_book()? else { return Ok(None) };
-    let name = slot_name(&book, &mk.0, account);
+    let name = slot_name(&mk.0, account);
     let Some(sl) = book.slots.iter().find(|sl| sl.name == name) else {
         return Ok(None);
     };
-    if !bound(&mk.0, Kind::Slot, &name, kdf_of(&book), &sl.sealed, book.form) {
+    if !bound(&mk.0, Kind::Slot, &name, kdf_of(&book), &sl.sealed) {
         return Err(Fault::known(Known::KeyboxSlot, account.to_string()));
     }
-    let Some(mut plain) = unseal(&mk.0, &sl.sealed) else {
+    let Some(plain) = unseal(&mk.0, &sl.sealed) else {
         // MAC mismatch: this slot does not match the master key (the file was altered, or two vaults were
         // mixed).
         return Err(Fault::known(Known::KeyboxSlot, account.to_string()));
     };
-    if book.form != Form::V3 {
-        // The returned copy is wiped by the receiver (`key.rs`, `identity::words_of`).
-        return Ok(Some(std::mem::take(&mut plain.0)));
-    }
+    // The returned copy is wiped by the receiver (`key.rs`, `identity::words_of`).
     match slot_split(plain.bytes()) {
         Some((a, secret)) if a == account => Ok(Some(secret)),
         _ => Err(Fault::known(Known::KeyboxSlot, account.to_string())),
@@ -1816,7 +1634,7 @@ pub fn get(account: &str) -> Result<Option<Vec<u8>>, Fault> {
 pub fn drop_item(account: &str) -> Result<bool, Fault> {
     let held = lock_book()?;
     let Some(mut book) = read_book()? else { return Ok(false) };
-    let name = if book.form == Form::V3 { slot_name(&book, &master_now()?.0, account) } else { account.to_string() };
+    let name = slot_name(&master_now()?.0, account);
     let before = book.slots.len();
     book.slots.retain(|sl| sl.name != name);
     let gone = book.slots.len() != before;
@@ -1844,12 +1662,9 @@ pub fn slot_count() -> Result<usize, Fault> {
     Ok(read_book()?.map(|b| b.slots.len()).unwrap_or(0))
 }
 
-/// The account names in the vault now. Shape 3 keeps them sealed inside the slots: this needs the vault open.
+/// The account names in the vault now, kept sealed inside the slots: this needs the vault open.
 pub fn accounts() -> Result<Vec<String>, Fault> {
     let Some(book) = read_book()? else { return Ok(Vec::new()) };
-    if book.form != Form::V3 {
-        return Ok(book.slots.iter().map(|sl| sl.name.clone()).collect());
-    }
     let mk = master_now()?;
     let mut out = Vec::with_capacity(book.slots.len());
     for sl in &book.slots {
@@ -1861,9 +1676,9 @@ pub fn accounts() -> Result<Vec<String>, Fault> {
     Ok(out)
 }
 
-/// Whether a slot exists (not decrypted). Shape 3 needs the vault open to name it.
+/// Whether a slot exists (not decrypted). Naming it needs the vault open.
 pub fn present(account: &str) -> Result<bool, Fault> {
     let Some(book) = read_book()? else { return Ok(false) };
-    let name = if book.form == Form::V3 { slot_name(&book, &master_now()?.0, account) } else { account.to_string() };
+    let name = slot_name(&master_now()?.0, account);
     Ok(book.slots.iter().any(|sl| sl.name == name))
 }

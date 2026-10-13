@@ -4,6 +4,9 @@
 //! answer) exits 0; harness misuse (an unreadable path, wrong arguments) exits 2; there is no other exit
 //! code.
 
+// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+#![forbid(unsafe_code)]
+
 use std::ffi::{OsStr, OsString};
 use std::process::exit;
 use zikaron::entry;
