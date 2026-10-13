@@ -258,10 +258,13 @@ fn wait_at(door: zikaron_os::door::Listener, asked: Sender<Asked>, wake: Option<
 }
 
 impl Shell {
-    /// The home whose door should be open now: unlocked, a home open, and this instance its writer.
+    /// The home whose door should be open now: unlocked, a home open, this instance its writer, and the
+    /// command line's path through the desktop (`machine::CliPath::Desktop`: "writes through the desktop" on,
+    /// "writes alone" off).
     fn door_wanted(&self) -> Option<PathBuf> {
         let writer = self.lock.as_ref().map(|l| l.mode() == crate::lock::Mode::Writer).unwrap_or(false);
-        if self.door_off || !self.unlocked() || !writer {
+        let through = self.machine.cli_path() == crate::machine::CliPath::Desktop;
+        if self.door_off || !self.unlocked() || !writer || !through {
             return None;
         }
         self.home.as_ref().map(|h| h.root().to_path_buf())

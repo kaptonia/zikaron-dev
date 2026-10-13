@@ -109,10 +109,11 @@ cannot be read
 ```
 
 **A sealed ledger is not read.** Every local file ZIKARON Desk keeps, ledger entries included, is sealed
-(it starts with `zikaron-local/2`, or `zikaron-local/1` for a file an earlier version wrote; `zikaron_glue::sealed`), and the command line holds no passcode. When the
-ledger folder a verb reads holds a sealed file (every entry-writing verb, `kit-export`, `audit` and the verbs
-that read through it when `--ledger` is a ledger folder, `show --entry` on a ledger folder), the verb stops as
-misuse, exit 2 and zero bytes on stdout:
+(it starts with `zikaron-local/2`; `zikaron_glue::sealed`), and the command line holds no passcode. When the
+ledger folder a verb reads holds a sealed file (`kit-export`, `audit` and the verbs that read through it when
+`--ledger` is a ledger folder, `show --entry` on a ledger folder; the entry-writing verbs on a home the desktop
+keeps are written with the credential instead, section 12), the verb stops as misuse, exit 2 and zero bytes on
+stdout:
 
 ```
 E_UNREADABLE <the ledger path's place and length, as #3 (12 bytes)>
@@ -125,6 +126,10 @@ Locked: this is local data ZIKARON Desk keeps sealed; the command line does not 
 ```
 
 The command line works on plain ledger folders and on the mirror bundles and record packages the app exports.
+
+**A sealed home is written with the credential.** The entry-writing verbs write a home ZIKARON Desk keeps with
+the command line's credential while "the command line writes alone" is on in the desktop; section 12 says how,
+and when they are refused.
 
 The base's HARNESS leaves misuse diagnostics to the implementation and only fixes the exit code and
 the empty stdout. Putting "which input could not be read" on the first line of stderr, in a fixed
@@ -168,6 +173,12 @@ happened on the shell's side".
 | `E_ON_DESKTOP` | `--home`: the action asks for the passcode, so it is done on the desktop and never through its door; nothing was done | 1 |
 | `E_QUEUED` | `--home` `anchor` with the desktop set to leave sending to the user: nothing was sent; `count` entries wait in its queue for the user to send them from the desktop | 3 |
 | `E_DESKTOP_REFUSED` | `--home`: the desktop's action layer refused; `token` is its code (the desktop's closed table of refusals) and `detail` its evidence; exit 4 when the refusal is a network one (no answer), 1 otherwise | 1 / 4 |
+| `E_CREDENTIAL_EXPIRED` | Writing a sealed home (section 3): the command line's credential has expired; it was removed, and nothing was written | 1 |
+| `E_CREDENTIAL_MISSING` | Writing a sealed home: this machine has no command-line credential ("the command line writes alone" is off on the desktop); nothing was written | 1 |
+| `E_CREDENTIAL_SHAPE` | Writing a sealed home: the credential is not in its shape, does not open, or holds another master key than this machine's vault (issued before a new master key); nothing was written | 1 |
+| `E_HOME_HELD` | Writing a sealed home (section 12): the desktop is writing it at this moment (it holds the home's writer lock for its own write); nothing was written; try again shortly | 1 |
+| `E_HOME_OTHER_MACHINE` | Writing a sealed home: the home's writer mark names another machine, or does not read; nothing was written | 1 |
+| `E_ADOPTED` | Writing a plain ledger folder that ZIKARON Desk on this machine has adopted (section 12): it is written through the desktop's sealed copy from then on; nothing was written | 1 |
 
 ## 5 · The two families of answers
 
@@ -596,3 +607,55 @@ hand out a private key), or they do not touch a data folder.
 `attest` always answers `E_ON_DESKTOP`. `succeed` takes `--home` and always answers `E_ON_DESKTOP` (exit 1) without asking the desktop: nothing is written, and its flags beside `--home` are judged as without it. `history` records the file by the record convention, as the desktop's own
 record does; `kit-export` takes the
 entries named (all of them without `--entry`), and attachments and proof bundles are chosen on the desktop.
+
+## 12 · Writing alone: the credential, the switches, the adopted ledgers
+
+**Two switches** in the desktop (settings, local data, "Command line") decide how the command line may write the
+data ZIKARON Desk keeps sealed. The higher outranks the lower, so there is one way at any time:
+
+| Writes alone | Writes through the desktop | How the command line writes | The door (section 11) |
+|---|---|---|---|
+| off | off | it does not write this data | closed |
+| off | on | through the door, while the desktop is unlocked | open while unlocked |
+| on | on or off (greyed, cannot be switched) | alone, with the credential, the desktop open or not | closed |
+
+**The credential.** Turning "writes alone" on asks for the passcode and a validity (minutes, hours or days, or
+never expiring). The desktop then writes a credential file in this user's machine folder, readable and writable
+by its owner only: a fresh random key, the master key sealed under it, when it was issued and when it expires,
+and nothing else. The command line takes nothing but this file to open the sealed data: no passcode, no key flag.
+Its expiry is checked at every use. Turning the switch off removes the file at once; an expired one is removed
+when it is met; a new master key on the desktop makes it worthless, and the desktop removes it and turns the
+switch off. A changed passcode keeps the credential working. A credential that fails counts no passcode try.
+
+**What is written.** `history`, `grant`, `revoke`, `adopt`, `succeed`, `annotate` and `retract` with `--ledger`
+naming the ledger folder of a home the desktop keeps (its `settings` room holds the home's label) write it with
+the credential: the key is the one the desktop's vault keeps for the home's identity and seat (the current one
+for a home of no seat), so `--key` and `--key-file` are misuse there (`E_ARGS --key --key-file`). The entry passes
+the same write gate (`E_WOULD_BREAK`), lands in the sealed ledger, and is queued for anchoring as the desktop
+queues its own. `init` is not taken there: such a home has its root already, and `init` answers as for any
+ledger that is not empty (`E_NOT_EMPTY`).
+
+**One writer at a time.** The command line takes the home's writer lock for each write and lets it go when done.
+While writing alone is on, the desktop does the same: it takes the lock for each write of its own and lets it go
+after, and before writing reads the ledger, the queue and the settings again if the command line wrote meanwhile.
+A home on a synced disk names the machine that writes it; another machine's mark is no license to write here.
+
+| Reason | Exit | When |
+|---|---|---|
+| `E_CREDENTIAL_MISSING` | 1 | no credential on this machine (writing alone is off) |
+| `E_CREDENTIAL_EXPIRED` | 1 | the credential's time is up; it was removed |
+| `E_CREDENTIAL_SHAPE` | 1 | the credential does not read or open, or holds another master key than this machine's vault |
+| `E_HOME_HELD` | 1 | the desktop is writing the home at this moment; try again shortly |
+| `E_HOME_OTHER_MACHINE` | 1 | the home's writer mark names another machine, or does not read |
+
+Nothing is written in any of these. The desktop, meeting the command line's turn, does not do its write either
+and says so, with a key to the switches.
+
+**Adopted ledgers.** A plain ledger folder the command line made, which the desktop has adopted ("import an
+existing key", then "adopt"), is written through the desktop's sealed copy from then on. The desktop keeps, in
+the machine folder, a random salt and a list with one line per adopted ledger: the SHA-256 of the salt followed by
+the ledger's root (its genesis entry id). The list alone names no ledger; only the ledger itself finds its line.
+Before writing a plain ledger folder, the command line looks its root up there: on the list, it answers
+`E_ADOPTED` (exit 1) and writes nothing, whether writing alone is on or off, and wherever the folder has been
+moved or renamed. The folder itself is never touched. A list or salt that does not read is refused by name
+(`E_UNREADABLE`), and nothing is written past it.

@@ -36,10 +36,10 @@ impl Slot {
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Slot::Ledger => "ledger",
-            Slot::Kits => "kits",
-            Slot::GrantsHeld => "grants-held",
-            Slot::Settings => "settings",
+            Slot::Ledger => zikaron_seal::envelope::LEDGER_DIR,
+            Slot::Kits => zikaron_seal::envelope::KITS_DIR,
+            Slot::GrantsHeld => zikaron_seal::envelope::GRANTS_HELD_DIR,
+            Slot::Settings => zikaron_seal::envelope::SETTINGS_DIR,
         }
     }
 }
@@ -181,39 +181,12 @@ pub fn put_at(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), Fault> {
     if crate::task::ticket_void() {
         return Err(crate::task::void_ticket_fault(dir));
     }
-    use std::io::Write;
-    let dir = dir.to_path_buf();
-    std::fs::create_dir_all(&dir).map_err(|e| classify(&e, &dir.display().to_string()))?;
-    // The temporary name must be unique: two paths in one process may write the same file at once (queueing
-    // in the frame, dequeuing in the background), and a shared temporary name would mix their bytes.
-    let tmp = dir.join(put_tmp_name()?);
-    let p = dir.join(name);
-    // A failure is said with the file being written (the temporary name is this function's own business).
-    let named = p.display().to_string();
-    let wrote = (|| -> Result<(), Fault> {
-        let mut f = open_owner_only(&tmp).map_err(|e| classify(&e, &named))?;
-        f.write_all(bytes).map_err(|e| classify(&e, &named))?;
-        f.sync_all().map_err(|e| classify(&e, &named))?;
-        drop(f);
-        replace_lasting(&tmp, &p)
-    })();
-    // A write that did not land takes its temporary file with it (a cut that leaves one, a power loss, is
-    // swept when a writer next opens the home: [`sweep_temps`]).
-    if wrote.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    wrote
+    zikaron_os::put_at(dir, name, &put_tmp_name()?, bytes).map_err(unput)
 }
 
-/// Renames `from` over `to` in one step, then syncs the directory (`zikaron_os::sync_dir`) so the new name
-/// survives a power cut; otherwise the directory could still name the old file and the last write of a
-/// setting, queue or pointer would come back as the one before. A failed rename is reported with the target,
-/// a failed sync with the directory (the file is in place, but the write is not taken as done). The app's
-/// only rename-and-sync: [`put_at`] and [`rename_over`] both end here.
-fn replace_lasting(from: &Path, to: &Path) -> Result<(), Fault> {
-    zikaron_os::replace(from, to).map_err(|e| classify(&e, &to.display().to_string()))?;
-    let dir = to.parent().unwrap_or_else(|| Path::new("."));
-    zikaron_os::sync_dir(dir, to).map_err(|e| classify(&e, &dir.display().to_string()))
+/// A write that did not land, as a fault said with the path the platform piece names.
+fn unput(u: zikaron_os::Unput) -> Fault {
+    classify(&u.error, &u.at.display().to_string())
 }
 
 /// The temporary name [`put_at`] writes beside its target: the product's one temporary shape
@@ -221,9 +194,7 @@ fn replace_lasting(from: &Path, to: &Path) -> Result<(), Fault> {
 /// writing one file at once (queueing in the frame, dequeuing in the background) get two names; a collision is
 /// refused by `create_new`, never mixed.
 fn put_tmp_name() -> Result<String, Fault> {
-    let mut b = [0u8; 8];
-    crate::key::fill_random(&mut b)?;
-    Ok(zikaron_store::layout::tmp_file_name(&zikaron::hexfmt::encode(&b)[2..]))
+    Ok(zikaron_seal::land::tmp_name()?)
 }
 
 /// Whether a file name is this product's temporary name, by the name alone: the one shape every write puts
@@ -256,25 +227,10 @@ pub fn sweep_temps(root: &Path) -> usize {
 }
 
 /// Moves a file written beside its place (a staged `.zk-next`, itself written by [`put_at`]) over that place in
-/// one rename. The only rename of a written file outside `put_at`: the vault change and the settling of staged
-/// files go through it.
+/// one rename, the directory synced (`zikaron_os::rename_over`). The only rename of a written file outside
+/// `put_at`: the vault change and the settling of staged files go through it.
 pub fn rename_over(from: &Path, to: &Path) -> Result<(), Fault> {
-    replace_lasting(from, to)
-}
-
-/// Creates a new file readable and writable by its owner only.
-///
-/// Used for this machine's private files: the key vault (key ciphertext and recovery seals), the identity
-/// registry, the queue, the checklist, settings. A plain create follows the system's defaults, often
-/// readable by other accounts; the files hold no plaintext, but this is one more layer. The owner-only mode is
-/// set at creation (`zikaron_os::owner_only`), so there is no moment when others may read the file, and
-/// replacing keeps it. `create_new` refuses a name collision instead of truncating someone else's file (the
-/// temporary name carries sixteen random hex digits).
-fn open_owner_only(tmp: &Path) -> std::io::Result<std::fs::File> {
-    let mut o = zikaron_os::Options::new();
-    o.write(true).create_new(true);
-    zikaron_os::owner_only(&mut o);
-    o.open(tmp)
+    zikaron_os::rename_over(from, to).map_err(unput)
 }
 
 /// An archive directory.

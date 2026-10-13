@@ -18,6 +18,9 @@ zikaron-anchor = { path = "../zikaron-anchor" }
 zikaron-glue = { path = "../zikaron-glue" }
 # The system's entropy source, read through the one place that knows each system's.
 zikaron-os = { path = "../zikaron-os" }
+# The sealed layer, one implementation with the desktop: writing a home the desktop keeps sealed, with the
+# command line's credential (`sealed`).
+zikaron-seal = { path = "../zikaron-seal" }
 
 [[bin]]
 name = "zikaron"

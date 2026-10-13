@@ -657,7 +657,7 @@ pub fn probe_lang_pick(ctx: &egui::Context, shell: Shell, place: Place, gate: bo
         drawn: at.is_some(),
         before: before.label().to_string(),
         after: crate::lang::lang().label().to_string(),
-        machine_after: crate::machine::read().ok().and_then(|m| m.lang).map(|l| l.label().to_string()).unwrap_or_default(),
+        machine_after: crate::machine::read_face().ok().and_then(|m| m.lang).map(|l| l.label().to_string()).unwrap_or_default(),
         still_up,
     };
     (win.shell, reading)
@@ -810,4 +810,57 @@ pub fn probe_rail_walk(ctx: &egui::Context, shell: Shell, width: f32, height: f3
         shell = win.shell;
     }
     (shell, walk)
+}
+
+/// What a press that was held back says, and where its toast's key goes ([`probe_held_back`]).
+#[derive(Clone, Debug, Default)]
+pub struct HeldBackReading {
+    /// The answer the press got (its code when refused).
+    pub said: String,
+    /// The toast's sentence and its keys' labels.
+    pub toast: Option<String>,
+    pub keys: Vec<String>,
+    /// The route drawn after the toast's own key was pressed (empty when it has none).
+    pub route_after_key: String,
+}
+
+/// Press `action` over `place` in windowless frames, read the toast it leaves, then press that toast's own key
+/// (the first one that hands a tag back) the way a click does, and read the route drawn after.
+pub fn probe_held_back(ctx: &egui::Context, shell: Shell, place: Place, action: Action, width: f32, height: f32) -> (Shell, HeldBackReading) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(place, role));
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = win.shell.faults.len();
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut t = 0.0;
+    let mut run = |win: &mut Win| {
+        t += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(t), ..Default::default() };
+        let _ = ctx.run(input, |c| win.draw(c));
+    };
+    run(&mut win);
+    let applied = apply(&mut win.shell, action);
+    let said = match &applied {
+        Applied::Trouble(f) => f.which().map(|k| k.as_str().to_string()).unwrap_or_default(),
+        other => format!("{other:?}").split([' ', '(', '{']).next().unwrap_or_default().to_string(),
+    };
+    for _ in 0..2 {
+        run(&mut win);
+    }
+    let toast = win.toasts.showing().map(str::to_string);
+    let keys_now = win.toasts.showing_keys();
+    let keys = keys_now.iter().map(|(l, _)| l.clone()).collect();
+    let mut route_after_key = String::new();
+    if let Some(tag) = keys_now.iter().find_map(|(_, a)| match a {
+        zikaron_ui::toast::Act::Tag(t) => Some(*t),
+        _ => None,
+    }) {
+        win.toast_pressed(tag, 1.0);
+        for _ in 0..3 {
+            run(&mut win);
+        }
+        route_after_key = zikaron_ui::probe::route_drawn(ctx);
+    }
+    (win.shell, HeldBackReading { said, toast, keys, route_after_key })
 }

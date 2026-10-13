@@ -263,6 +263,9 @@ fn every(ids: &Ids) -> Vec<Action> {
         Action::ReadCliPath,
         Action::SetCliPath { on: false },
         Action::SetCliAnchor { to: app::machine::CliAnchor::Send },
+        Action::SetCliDesktop { on: true },
+        Action::SetCliAlone { lasts: app::machine::Lasts::Never, pin: String::new().into() },
+        Action::CliAloneOff,
         Action::SendAsked { count: 1 },
         Action::SetProxy { choice: s() },
     ]

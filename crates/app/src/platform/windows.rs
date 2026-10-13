@@ -1,5 +1,5 @@
 //! Windows: the file dialog is `rfd` over the system dialog; everything else uses Win32 APIs declared here.
-//! The lock is a byte-range lock (`LockFileEx`); the home and application data folders are known folders
+//! The lock is `zikaron-os`'s byte-range lock (`LockFileEx`); the home and application data folders are known folders
 //! (read in `zikaron-os`, shared with the command line); the time zone is `TZ` or the current system zone,
 //! its rule for each year (`GetDynamicTimeZoneInformation`, `GetTimeZoneInformationForYear`) converted to a
 //! POSIX rule; the temporary directory is the per-user one
@@ -8,18 +8,9 @@
 use std::ffi::c_void;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::io::AsRawHandle;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 type Handle = *mut c_void;
-
-#[repr(C)]
-struct Overlapped {
-    internal: usize,
-    internal_high: usize,
-    offset: u32,
-    offset_high: u32,
-    event: Handle,
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -69,13 +60,10 @@ struct DynamicTimeZoneInformation {
     dynamic_daylight_time_disabled: u8,
 }
 
-const LOCKFILE_FAIL_IMMEDIATELY: u32 = 0x1;
-const LOCKFILE_EXCLUSIVE_LOCK: u32 = 0x2;
 const TIME_ZONE_ID_INVALID: u32 = 0xFFFF_FFFF;
 
 #[link(name = "kernel32")]
 unsafe extern "system" {
-    fn LockFileEx(file: Handle, flags: u32, reserved: u32, low: u32, high: u32, overlapped: *mut Overlapped) -> i32;
     fn GetTimeZoneInformation(info: *mut TimeZoneInformation) -> u32;
     fn GetDynamicTimeZoneInformation(info: *mut DynamicTimeZoneInformation) -> u32;
     fn GetTimeZoneInformationForYear(year: u16, zone: *const DynamicTimeZoneInformation, info: *mut TimeZoneInformation) -> i32;
@@ -122,23 +110,6 @@ pub(super) fn say_without_window(line: &str, sentence: &str) {
 
 pub(super) fn window_backend() -> super::Backend {
     super::Backend::Default
-}
-
-/// The locked range: one byte far beyond any data in the file. Windows locks are mandatory, and the writer
-/// lock file holds the holder's pid, which the settings page reads while the lock is held.
-const LOCK_OFFSET_HIGH: u32 = 0x4000_0000;
-
-fn lock(file: &std::fs::File, flags: u32) -> bool {
-    let mut at = Overlapped { internal: 0, internal_high: 0, offset: 0, offset_high: LOCK_OFFSET_HIGH, event: std::ptr::null_mut() };
-    unsafe { LockFileEx(file.as_raw_handle() as Handle, flags, 0, 1, 0, &mut at) != 0 }
-}
-
-pub(super) fn lock_now(file: &std::fs::File) -> bool {
-    lock(file, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY)
-}
-
-pub(super) fn lock_wait(file: &std::fs::File) -> bool {
-    lock(file, LOCKFILE_EXCLUSIVE_LOCK)
 }
 
 /// The years asked of the system for their rules. Windows keeps a zone's past and announced rules for a span

@@ -322,7 +322,7 @@ pub(super) fn without_window(line: &str, sentence: String) {
 /// Speak the language this machine last chose (`machine.json`'s `lang`; unreadable or never chosen: the
 /// build's default), before any window or home has set it.
 pub(super) fn speak_this_machines_language() {
-    if let Some(l) = crate::machine::read().ok().and_then(|m| m.lang) {
+    if let Some(l) = crate::machine::read_face().ok().and_then(|m| m.lang) {
         crate::lang::set(l);
     }
 }

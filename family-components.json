@@ -362,46 +362,6 @@
     },
     {
      "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
-     "name": "a_marker_for_funds_is_the_calls"
-    },
-    {
-     "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
-     "name": "a_marker_for_a_used_nonce_is_the_calls"
-    },
-    {
-     "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
-     "name": "a_marker_for_pending_is_the_calls"
-    },
-    {
-     "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
-     "name": "a_marker_for_underpriced_is_the_calls"
-    },
-    {
-     "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
-     "name": "a_marker_for_gas_too_low_is_the_calls"
-    },
-    {
-     "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
-     "name": "a_marker_for_a_revert_is_the_calls"
-    },
-    {
-     "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
-     "name": "a_marker_for_a_rate_limit_is_the_nodes"
-    },
-    {
-     "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
-     "name": "a_marker_for_a_missing_method_is_the_nodes"
-    },
-    {
-     "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
-     "name": "a_marker_for_credentials_is_the_nodes"
-    },
-    {
-     "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
-     "name": "a_marker_for_a_wrong_chain_is_the_nodes"
-    },
-    {
-     "path": "crates/zikaron-anchor/tests/refusal_shapes.rs",
      "name": "a_marker_without_a_code_is_still_its_member"
     },
     {
@@ -860,7 +820,7 @@
     },
     {
      "path": "crates/app/tests/checks.rs",
-     "name": "the_queue_file_keeps_each_step_and_reads_old_files"
+     "name": "the_queue_file_keeps_each_step_and_refuses_old_files"
     },
     {
      "path": "crates/app/tests/checks.rs",
@@ -1124,6 +1084,8 @@
     "crates/app/src/machine.rs",
     "crates/app/src/settings.rs",
     "crates/zikaron-glue/src/landing.rs",
+    "crates/zikaron-os/src/lib.rs",
+    "crates/zikaron-seal/src/land.rs",
     "crates/zikaron-store/src/codes.rs",
     "crates/zikaron-store/src/layout.rs",
     "crates/zikaron-store/src/ledger.rs",
@@ -1342,10 +1304,12 @@
     "crates/app/src/lang.rs",
     "crates/app/src/lock.rs",
     "crates/app/src/platform/mod.rs",
-    "crates/app/src/platform/unix.rs",
-    "crates/app/src/platform/windows.rs",
     "crates/app/src/shell.rs",
-    "crates/app/src/window/watch.rs"
+    "crates/app/src/window/watch.rs",
+    "crates/zikaron-os/src/lib.rs",
+    "crates/zikaron-os/src/unix.rs",
+    "crates/zikaron-os/src/windows.rs",
+    "crates/zikaron-seal/src/writer.rs"
    ],
    "tests": [
     {
@@ -1375,6 +1339,14 @@
     {
      "path": "crates/app/tests/checks_more/a8_gates.rs",
      "name": "every_ledger_write_is_refused_as_read_only_in_both_reader_modes"
+    },
+    {
+     "path": "crates/zikaron-seal/src/writer.rs",
+     "name": "one_holder_writes_and_a_second_is_told_it_is_busy"
+    },
+    {
+     "path": "crates/zikaron-seal/src/writer.rs",
+     "name": "another_machines_mark_or_one_that_does_not_read_is_no_license"
     }
    ],
    "nameZh": "单写者锁与跨机写者标"
@@ -1391,7 +1363,10 @@
     "crates/app/src/action/home.rs",
     "crates/app/src/cryptx.rs",
     "crates/app/src/local.rs",
-    "crates/zikaron-glue/src/sealed.rs"
+    "crates/zikaron-glue/src/sealed.rs",
+    "crates/zikaron-seal/src/crypto.rs",
+    "crates/zikaron-seal/src/envelope.rs",
+    "crates/zikaron-seal/src/names.rs"
    ],
    "tests": [
     {
@@ -1428,7 +1403,7 @@
     },
     {
      "path": "crates/app/tests/local_standard.rs",
-     "name": "the_first_envelope_still_reads"
+     "name": "the_first_envelope_is_not_sealed"
     },
     {
      "path": "crates/app/tests/local_standard.rs",
@@ -1440,7 +1415,7 @@
     },
     {
      "path": "crates/app/tests/checks.rs",
-     "name": "an_older_envelope_reads_and_is_rewritten_only_by_a_write"
+     "name": "an_earlier_envelope_is_refused_and_never_written_over"
     },
     {
      "path": "crates/app/tests/checks.rs",
@@ -1474,7 +1449,8 @@
    },
    "home": [
     "crates/app/src/action/mod.rs",
-    "crates/app/src/keybox.rs"
+    "crates/app/src/keybox.rs",
+    "crates/zikaron-seal/src/keybox.rs"
    ],
    "tests": [
     {
@@ -1546,7 +1522,9 @@
    "home": [
     "crates/app/src/action/identity.rs",
     "crates/app/src/cryptx.rs",
-    "crates/app/src/keystore.rs"
+    "crates/app/src/keystore.rs",
+    "crates/zikaron-seal/src/crypto.rs",
+    "crates/zikaron-seal/src/kdf.rs"
    ],
    "tests": [
     {
@@ -1689,19 +1667,11 @@
     },
     {
      "path": "crates/app/tests/checks_more/gaps_b12.rs",
-     "name": "an_older_plain_index_is_never_read_and_goes_at_the_next_backup"
-    },
-    {
-     "path": "crates/app/tests/checks_more/gaps_b12.rs",
      "name": "locked_an_index_is_not_guessed"
     },
     {
      "path": "crates/app/tests/checks_more/gaps_b12.rs",
      "name": "a_new_master_key_seals_the_index_again"
-    },
-    {
-     "path": "crates/app/tests/checks_more/gaps_b12.rs",
-     "name": "a_plain_index_place_that_cannot_be_cleared_is_said_by_name"
     },
     {
      "path": "crates/app/tests/checks_more/gaps_b12.rs",
@@ -1726,6 +1696,10 @@
     {
      "path": "crates/app/tests/checks_more/a8_gates.rs",
      "name": "a_backup_counts_only_once_read_back_and_reopened"
+    },
+    {
+     "path": "crates/app/src/machine.rs",
+     "name": "the_plain_file_reads_the_language_and_appearance_only"
     }
    ],
    "nameZh": "整机备份"
@@ -2892,6 +2866,7 @@
     "crates/zikaron-cli/src/codes.rs",
     "crates/zikaron-cli/src/desk.rs",
     "crates/zikaron-cli/src/out.rs",
+    "crates/zikaron-cli/src/sealed.rs",
     "crates/zikaron-cli/src/verbs.rs",
     "crates/zikaron-glue/src/door.rs",
     "crates/zikaron-os/src/cli_path.rs",
@@ -3089,6 +3064,26 @@
     {
      "path": "crates/app/tests/checks.rs",
      "name": "the_shipped_app_starts_no_child_process_at_all"
+    },
+    {
+     "path": "crates/app/src/machine.rs",
+     "name": "both_switches_off_leave_the_command_line_no_way_to_write"
+    },
+    {
+     "path": "crates/app/src/machine.rs",
+     "name": "through_the_desktop_on_and_alone_off_is_the_door"
+    },
+    {
+     "path": "crates/app/src/machine.rs",
+     "name": "alone_on_outranks_the_desktop_switch_on"
+    },
+    {
+     "path": "crates/app/src/machine.rs",
+     "name": "alone_on_with_the_desktop_switch_off_is_alone_too"
+    },
+    {
+     "path": "crates/app/src/machine.rs",
+     "name": "the_command_line_switches_round_trip_in_the_sealed_part_only"
     }
    ],
    "nameZh": "命令行经桌面同源"
@@ -3130,6 +3125,96 @@
     }
    ],
    "nameZh": "二维码出码与回读自测"
+  },
+  {
+   "id": "sealed-layer",
+   "familyVersion": 1,
+   "origin": {
+    "by": "ZIKARON",
+    "previous": null
+   },
+   "home": [
+    "crates/app/src/keybox.rs",
+    "crates/zikaron-cli/src/sealed.rs",
+    "crates/zikaron-seal/Cargo.toml",
+    "crates/zikaron-seal/src/adopted.rs",
+    "crates/zikaron-seal/src/credential.rs",
+    "crates/zikaron-seal/src/identities.rs",
+    "crates/zikaron-seal/src/ledger.rs",
+    "crates/zikaron-seal/src/lib.rs",
+    "crates/zikaron-seal/src/places.rs",
+    "crates/zikaron-seal/src/queue.rs",
+    "crates/zikaron-seal/src/trouble.rs",
+    "crates/zikaron-seal/src/writer.rs"
+   ],
+   "symbols": [
+    "zikaron_seal::Trouble",
+    "zikaron_seal::Code",
+    "zikaron_seal::envelope::Doc",
+    "zikaron_seal::envelope::seal_checked",
+    "zikaron_seal::envelope::open_with",
+    "zikaron_seal::keybox::Vault",
+    "zikaron_seal::keybox::hold_master",
+    "zikaron_seal::keybox::master_is_this",
+    "zikaron_seal::ledger::Ledger",
+    "zikaron_seal::queue::Queue",
+    "zikaron_seal::identities::Book",
+    "zikaron_seal::credential::issue",
+    "zikaron_seal::credential::open",
+    "zikaron_seal::credential::remove",
+    "zikaron_seal::credential::Term",
+    "zikaron_seal::writer::take",
+    "zikaron_seal::writer::Took",
+    "zikaron_seal::adopted::mark",
+    "zikaron_seal::adopted::contains"
+   ],
+   "tests": [
+    {
+     "path": "crates/zikaron-seal/src/credential.rs",
+     "name": "a_credential_is_four_members_owner_only_and_opens_to_the_master_key"
+    },
+    {
+     "path": "crates/zikaron-seal/src/credential.rs",
+     "name": "an_expired_credential_is_refused_by_name_and_removed"
+    },
+    {
+     "path": "crates/zikaron-seal/src/credential.rs",
+     "name": "a_credential_that_never_expires_opens_at_any_time"
+    },
+    {
+     "path": "crates/zikaron-seal/src/credential.rs",
+     "name": "a_credential_with_another_member_or_a_changed_byte_is_refused"
+    },
+    {
+     "path": "crates/zikaron-seal/tests/closure.rs",
+     "name": "the_sealed_layers_closure_holds_no_window"
+    },
+    {
+     "path": "crates/zikaron-seal/tests/closure.rs",
+     "name": "the_sealed_layers_third_party_crates_are_the_closed_seven"
+    },
+    {
+     "path": "crates/app/tests/checks_more/cli_writes.rs",
+     "name": "writing_alone_issues_an_owner_only_credential_of_this_vault_and_off_removes_it"
+    },
+    {
+     "path": "crates/app/tests/checks_more/cli_writes.rs",
+     "name": "an_expired_credential_is_removed_and_writing_alone_goes_off_said_by_name"
+    },
+    {
+     "path": "crates/app/tests/checks_more/cli_writes.rs",
+     "name": "a_credential_of_another_master_key_is_dropped_and_a_bad_one_counts_no_passcode_try"
+    },
+    {
+     "path": "crates/zikaron-seal/src/adopted.rs",
+     "name": "the_list_holds_one_blind_line_per_ledger_and_never_the_root"
+    },
+    {
+     "path": "crates/zikaron-seal/src/adopted.rs",
+     "name": "a_list_or_salt_out_of_its_shape_is_refused_by_name"
+    }
+   ],
+   "nameZh": "封存层(桌面与命令行同一实现)"
   }
  ]
 }

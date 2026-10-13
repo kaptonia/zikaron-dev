@@ -1,485 +1,53 @@
 //! The anchor queue: entries recorded but not yet anchored.
 //!
-//! It lives in the home's `settings/` directory as canonical JSON (the core's `json`), so copying a home
-//! carries its queue along.
-//!
-//! ─── No miscounting ───
-//!
-//! The risk is an entry sent but not removed, or removed without being sent. There is one way in
-//! ([`Queue::push`]) and two ways out, each with its reason: a successful chain receipt goes through
-//! [`Queue::anchored_out`] (removed and recorded as anchored; [`Queue::included_out`] also records the block),
-//! called only by [`settle`]; a deleted entry goes through [`Queue::drop_ids`] (removed, nothing recorded).
-//! Anything that failed to send stays queued for retry because no other removal path exists.
-//!
-//! ─── Only the receipt path records "anchored" ───
-//!
-//! The `anchored` list states a chain fact. If one exit recorded "anchored" for every caller, a retraction
-//! would mark an entry that never reached the chain as anchored, and re-queueing it would wrongly answer
-//! "already on chain". So only the receipt path's exit writes `anchored`.
+//! It lives in the home's `settings/` directory, sealed (`local::Doc::Queue`), so copying a home carries its
+//! queue along. Its model and bytes are the sealed layer's (`zikaron_seal::queue`), one with the command line's
+//! sealed write; what stays here is where the file lives, reading and writing it under the home's seal, the
+//! words a refusal is said in, the in-process lock ([`amend`]) and the receipt path ([`settle`]), the only caller
+//! of the ways out that record "anchored".
 
 use crate::fault::{Fault, Known};
 use crate::home::{Home, Slot};
-use zikaron::json::{self, Value};
+pub use zikaron_seal::queue::{member, state, Block, Pushed, Queue, Queued, Shape, Step, FILE, RESENDS_MAX};
 
-/// The queue file's name.
-pub const FILE: &str = "queue.json";
-
-/// A queued entry's sending state. Entries included in a block are recorded separately ([`Block`]). The
-/// status light, entry card, record card, queue page and watch line all derive from this (through
-/// `ledgerx::Lamp`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Step {
-    /// Queued, not sent.
-    Queued,
-    /// Broadcast, and the node returned the matching transaction hash: waiting for the receipt. Saved to disk,
-    /// so after a restart the same transaction is awaited, never resent. `nonce` is the batch's signed nonce,
-    /// always written and required when read; it distinguishes a batch no node holds any more from one whose
-    /// nonce another transaction used (`action::confirm_batch`).
-    Submitted { tx: String, chain: u64, nonce: Option<u64> },
-    /// Included, but the receipt status is not 1 (law §9.1: not an anchor). Stays queued and can be
-    /// resent.
-    Reverted { tx: String, chain: u64 },
-    /// Refused before broadcast (insufficient balance, node refusal, unreachable): never sent. Stays queued
-    /// and can be resent.
-    Refused { said: String },
-    /// Broadcast, then resent by the user with higher fees at the same nonce. All the batch's transactions
-    /// (oldest first) are awaited, and whichever is included counts (one nonce, so at most one can be). Saved
-    /// to disk like `Submitted`: after a restart all are awaited, none resent. `nonce` as in `Submitted`.
-    Resent { txs: Vec<String>, chain: u64, nonce: Option<u64> },
+/// The queue file on disk: read and written here, its bytes the sealed layer's.
+pub trait Kept: Sized {
+    /// Read the queue. No file means an empty queue ("never queued" is not an error). Bytes not in this version's
+    /// shape are refused by name (`QUEUE_SHAPE`), never read with a member guessed.
+    fn read(home: &Home) -> Result<Self, Fault>;
+    /// Write the queue, replacing the previous one.
+    fn write(&self, home: &Home) -> Result<(), Fault>;
 }
 
-/// The most times one batch is resent with higher fees (its first transaction and at most this many more).
-pub const RESENDS_MAX: usize = 3;
-
-impl Step {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Step::Queued => state::QUEUED,
-            Step::Submitted { .. } => state::SUBMITTED,
-            Step::Reverted { .. } => state::REVERTED,
-            Step::Refused { .. } => state::REFUSED,
-            Step::Resent { .. } => state::RESENT,
-        }
-    }
-
-    /// Whether this entry's transaction is out and awaited (submitted or resent): such entries are never picked
-    /// for another batch, never counted as sendable, and count as published.
-    pub fn in_flight(&self) -> bool {
-        matches!(self, Step::Submitted { .. } | Step::Resent { .. })
-    }
-
-    /// The transactions awaited for this entry (oldest first) and their chain; `None` when none is out.
-    pub fn awaited(&self) -> Option<(Vec<String>, u64)> {
-        match self {
-            Step::Submitted { tx, chain, .. } => Some((vec![tx.clone()], *chain)),
-            Step::Resent { txs, chain, .. } => Some((txs.clone(), *chain)),
-            _ => None,
-        }
-    }
-
-    /// The nonce the awaited transactions were signed with, when recorded.
-    pub fn nonce(&self) -> Option<u64> {
-        match self {
-            Step::Submitted { nonce, .. } | Step::Resent { nonce, .. } => *nonce,
-            _ => None,
-        }
-    }
-}
-
-/// Values of the `state` member in the queue file.
-pub mod state {
-    pub const QUEUED: &str = "queued";
-    pub const SUBMITTED: &str = "submitted";
-    pub const REVERTED: &str = "reverted";
-    pub const REFUSED: &str = "refused";
-    pub const RESENT: &str = "resent";
-}
-
-/// Member names in the queue file (top level, rows and blocks).
-pub mod member {
-    pub const QUEUED: &str = "queued";
-    pub const ANCHORED: &str = "anchored";
-    pub const BLOCKS: &str = "blocks";
-    pub const ID: &str = "id";
-    pub const AT: &str = "at";
-    pub const STATE: &str = "state";
-    pub const TX: &str = "tx";
-    pub const CHAIN: &str = "chain";
-    pub const SAID: &str = "said";
-    pub const BLOCK: &str = "block";
-    pub const TXS: &str = "txs";
-    pub const NONCE: &str = "nonce";
-}
-
-/// One queued entry.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Queued {
-    /// Entry id (hex32, law §2.1).
-    pub id: String,
-    /// When it was queued (only for ordering and display, never for decisions).
-    pub at: u64,
-    /// Its state.
-    pub step: Step,
-}
-
-/// An included transaction (receipt status 1): entry, transaction, chain and block.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Block {
-    pub id: String,
-    pub tx: String,
-    pub chain: u64,
-    pub block: u64,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Queue {
-    pub items: Vec<Queued>,
-    /// The entries this file records as anchored.
-    ///
-    /// Without it, "is it on chain" could only be answered by the queue (useless after removal) and the last
-    /// self-audit report (absent after a restart). An already anchored entry could then be queued and anchored
-    /// again, costing gas twice. Recording it here survives restarts and home copies.
-    pub anchored: Vec<String>,
-    /// Included transactions with chain and block number, recorded by the receipt path.
-    pub blocks: Vec<Block>,
-}
-
-/// The result of queueing an entry; the caller reports each form with its own message.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Pushed {
-    /// Queued.
-    Queued,
-    /// Already queued (each entry is queued once).
-    InQueue,
-    /// Already recorded as anchored in this file (this survives restarts).
-    Anchored,
-}
-
-impl Pushed {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Pushed::Queued => "queued",
-            Pushed::InQueue => "in-queue",
-            Pushed::Anchored => "anchored",
-        }
-    }
-
-    /// Whether it was actually queued by this call.
-    pub fn landed(self) -> bool {
-        matches!(self, Pushed::Queued)
-    }
-}
-
-fn member<'a>(v: &'a Value, k: &str) -> Option<&'a Value> {
-    match v {
-        Value::Obj(m) => m.iter().find(|(n, _)| n == k).map(|(_, x)| x),
-        _ => None,
-    }
-}
-
-impl Queue {
-    /// Read the queue. No file means an empty queue ("never queued" is not an error). Every member this version
-    /// writes is required: a file missing one (an earlier version's, or altered) is refused by name
-    /// (`QUEUE_SHAPE`), never read with a member guessed.
-    pub fn read(home: &Home) -> Result<Queue, Fault> {
+impl Kept for Queue {
+    fn read(home: &Home) -> Result<Queue, Fault> {
         let p = home.dir(Slot::Settings).join(FILE);
         // Sealed (`local::Doc::Queue`). Locked or unreadable is an error, never treated as empty, or the next
         // write would drop queued entries.
         let Some(bytes) = crate::local::read(&p, crate::local::Doc::Queue)? else {
             return Ok(Queue::default());
         };
-        let v = json::parse(&bytes)
-            .map_err(|t| Fault::known(Known::QueueShape, format!("{}: {t:?}", p.display())))?;
-        let Some(Value::Arr(rows)) = member(&v, member::QUEUED) else {
-            return Err(Fault::known(Known::QueueShape, crate::lang::filln(crate::lang::Key::Tail200, &[&(p.display()).to_string()])));
-        };
-        let mut items = Vec::new();
-        for r in rows {
-            let id = match member(r, member::ID) {
-                Some(Value::Str(s)) if zikaron::hexfmt::is_hex32(s) => s.clone(),
-                _ => {
-                    return Err(Fault::known(
-                        Known::QueueShape,
-                        crate::lang::filln(crate::lang::Key::Tail201, &[&(p.display()).to_string()]),
-                    ))
-                }
-            };
-            let bad = || Fault::known(Known::QueueShape, crate::lang::filln(crate::lang::Key::Tail201, &[&(p.display()).to_string()]));
-            let at = match member(r, member::AT) {
-                Some(Value::Int(n)) => *n,
-                _ => return Err(bad()),
-            };
-            let text = |k: &str| match member(r, k) {
-                Some(Value::Str(s)) => Some(s.clone()),
-                _ => None,
-            };
-            let chain = match member(r, member::CHAIN) {
-                Some(Value::Int(n)) => Some(*n),
-                _ => None,
-            };
-            // The batch's nonce, required where a batch was signed (submitted, resent).
-            let nonce = match member(r, member::NONCE) {
-                Some(Value::Int(n)) => Ok(Some(*n)),
-                _ => Err(()),
-            };
-            // `state`: required; unknown or incomplete is a shape error, never guessed.
-            let step = match text(member::STATE).as_deref() {
-                Some(state::QUEUED) => Step::Queued,
-                Some(state::SUBMITTED) => match (text(member::TX), chain, nonce) {
-                    (Some(tx), Some(chain), Ok(nonce)) if zikaron::hexfmt::is_hex32(&tx) => Step::Submitted { tx, chain, nonce },
-                    _ => return Err(bad()),
-                },
-                Some(state::REVERTED) => match (text(member::TX), chain) {
-                    (Some(tx), Some(chain)) if zikaron::hexfmt::is_hex32(&tx) => Step::Reverted { tx, chain },
-                    _ => return Err(bad()),
-                },
-                Some(state::REFUSED) => Step::Refused { said: text(member::SAID).ok_or_else(bad)? },
-                // Resent: 2 to `1 + RESENDS_MAX` transaction hashes; anything else is a shape error.
-                Some(state::RESENT) => {
-                    let txs: Option<Vec<String>> = match member(r, member::TXS) {
-                        Some(Value::Arr(xs)) => xs.iter().map(|x| match x {
-                            Value::Str(t) if zikaron::hexfmt::is_hex32(t) => Some(t.clone()),
-                            _ => None,
-                        }).collect(),
-                        _ => None,
-                    };
-                    match (txs, chain, nonce) {
-                        (Some(txs), Some(chain), Ok(nonce)) if (2..=1 + RESENDS_MAX).contains(&txs.len()) => Step::Resent { txs, chain, nonce },
-                        _ => return Err(bad()),
-                    }
-                }
-                _ => return Err(bad()),
-            };
-            items.push(Queued { id, at, step });
-        }
-        // `anchored` and `blocks`: required (empty lists when there are none).
-        let missing = |k: &str| Fault::known(Known::QueueShape, format!("{}: {k}", p.display()));
-        let mut anchored: Vec<String> = Vec::new();
-        let Some(Value::Arr(rows)) = member(&v, member::ANCHORED) else { return Err(missing(member::ANCHORED)) };
-        {
-            for r in rows {
-                match r {
-                    Value::Str(x) if zikaron::hexfmt::is_hex32(x) => anchored.push(x.clone()),
-                    _ => {
-                        return Err(Fault::known(
-                            Known::QueueShape,
-                            crate::lang::filln(crate::lang::Key::Tail201, &[&(p.display()).to_string()]),
-                        ))
-                    }
-                }
-            }
-        }
-        let mut blocks: Vec<Block> = Vec::new();
-        let Some(Value::Arr(rows)) = member(&v, member::BLOCKS) else { return Err(missing(member::BLOCKS)) };
-        {
-            for r in rows {
-                let (Some(Value::Str(id)), Some(Value::Str(tx)), Some(Value::Int(chain)), Some(Value::Int(block))) =
-                    (member(r, member::ID), member(r, member::TX), member(r, member::CHAIN), member(r, member::BLOCK))
-                else {
-                    return Err(Fault::known(
-                        Known::QueueShape,
-                        crate::lang::filln(crate::lang::Key::Tail201, &[&(p.display()).to_string()]),
-                    ));
-                };
-                blocks.push(Block { id: id.clone(), tx: tx.clone(), chain: *chain, block: *block });
-            }
-        }
-        Ok(Queue { items, anchored, blocks })
+        Queue::parse(&bytes).map_err(|s| unparsed(&p, s))
     }
 
-    /// Write the queue, replacing the previous one.
-    pub fn write(&self, home: &Home) -> Result<(), Fault> {
-        let rows: Vec<Value> = self
-            .items
-            .iter()
-            .map(|q| {
-                let mut m = vec![
-                    (member::AT.to_string(), Value::Int(q.at)),
-                    (member::ID.to_string(), Value::Str(q.id.clone())),
-                    (member::STATE.to_string(), Value::Str(q.step.as_str().to_string())),
-                ];
-                match &q.step {
-                    Step::Queued => {}
-                    Step::Submitted { tx, chain, .. } | Step::Reverted { tx, chain } => {
-                        m.push((member::CHAIN.to_string(), Value::Int(*chain)));
-                        m.push((member::TX.to_string(), Value::Str(tx.clone())));
-                    }
-                    Step::Refused { said } => m.push((member::SAID.to_string(), Value::Str(said.clone()))),
-                    Step::Resent { txs, chain, .. } => {
-                        m.push((member::CHAIN.to_string(), Value::Int(*chain)));
-                        m.push((member::TXS.to_string(), Value::Arr(txs.iter().map(|t| Value::Str(t.clone())).collect())));
-                    }
-                }
-                if let Some(n) = q.step.nonce() {
-                    m.push((member::NONCE.to_string(), Value::Int(n)));
-                }
-                m.sort_by(|a, b| a.0.cmp(&b.0));
-                Value::Obj(m)
-            })
-            .collect();
-        let anchored: Vec<Value> = self.anchored.iter().map(|x| Value::Str(x.clone())).collect();
-        let blocks: Vec<Value> = self
-            .blocks
-            .iter()
-            .map(|b| {
-                Value::Obj(vec![
-                    (member::BLOCK.to_string(), Value::Int(b.block)),
-                    (member::CHAIN.to_string(), Value::Int(b.chain)),
-                    (member::ID.to_string(), Value::Str(b.id.clone())),
-                    (member::TX.to_string(), Value::Str(b.tx.clone())),
-                ])
-            })
-            .collect();
-        let bytes = json::canon_bytes(&Value::Obj(vec![
-            (member::ANCHORED.to_string(), Value::Arr(anchored)),
-            (member::BLOCKS.to_string(), Value::Arr(blocks)),
-            (member::QUEUED.to_string(), Value::Arr(rows)),
-        ]));
+    fn write(&self, home: &Home) -> Result<(), Fault> {
         // `local::put` seals, writes aside, then renames, so a half-written queue never lands on disk.
-        crate::local::put(&home.dir(Slot::Settings), FILE, crate::local::Doc::Queue, &bytes)
+        crate::local::put(&home.dir(Slot::Settings), FILE, crate::local::Doc::Queue, &self.to_bytes())
     }
+}
 
-    /// Queue an entry. Each entry is queued once, and an entry recorded as anchored can never be queued again.
-    ///
-    /// Every queueing path (automatic after recording, manual from the page) goes through here, so they all
-    /// share one record of what is on chain.
-    pub fn push(&mut self, id: &str, at: u64) -> Pushed {
-        if self.anchored.iter().any(|x| x == id) {
-            return Pushed::Anchored;
-        }
-        if self.items.iter().any(|q| q.id == id) {
-            return Pushed::InQueue;
-        }
-        self.items.push(Queued { id: id.to_string(), at, step: Step::Queued });
-        Pushed::Queued
-    }
-
-    /// Remove entries without recording anything. Used when an entry will no longer be anchored for a reason
-    /// other than being anchored (currently only deletion), so `anchored` is not touched.
-    pub fn drop_ids(&mut self, ids: &[String]) -> usize {
-        let before = self.items.len();
-        self.items.retain(|q| !ids.iter().any(|x| x == &q.id));
-        before - self.items.len()
-    }
-
-    /// A successful chain receipt: remove and record as anchored. Only [`settle`] calls this.
-    ///
-    /// Removal and recording happen together; split apart, there would be a moment where the entry was removed
-    /// but not recorded and could be queued again. `anchored` is written only here.
-    pub fn anchored_out(&mut self, ids: &[String]) -> usize {
-        let n = self.drop_ids(ids);
-        for id in ids {
-            if !self.anchored.iter().any(|x| x == id) {
-                self.anchored.push(id.clone());
-            }
-        }
-        n
-    }
-
-    /// Set the state of these entries (only entries still queued are affected).
-    pub fn mark(&mut self, ids: &[String], step: Step) {
-        for q in self.items.iter_mut() {
-            if ids.iter().any(|x| x == &q.id) {
-                q.step = step.clone();
-            }
-        }
-    }
-
-    /// Included with receipt status 1: remove, record as anchored, and record the block. Only [`settle`] calls
-    /// this in the app.
-    pub fn included_out(&mut self, ids: &[String], tx: &str, chain: u64, block: u64) -> usize {
-        let n = self.anchored_out(ids);
-        for id in ids {
-            self.blocks.retain(|b| &b.id != id);
-            self.blocks.push(Block { id: id.clone(), tx: tx.to_string(), chain, block });
-        }
-        n
-    }
-
-    /// This entry's state (`None` when not queued).
-    pub fn step_of(&self, id: &str) -> Option<&Step> {
-        self.items.iter().find(|q| q.id == id).map(|q| &q.step)
-    }
-
-    /// The block this entry's transaction was included in (`None` when not recorded).
-    pub fn block_of(&self, id: &str) -> Option<&Block> {
-        self.blocks.iter().find(|b| b.id == id)
-    }
-
-    /// Batches still waiting for a receipt, used at startup to resume waiting: each batch's transactions (oldest
-    /// first), chain and entry ids.
-    pub fn submitted(&self) -> Vec<(Vec<String>, u64, Vec<String>)> {
-        let mut out: Vec<(Vec<String>, u64, Vec<String>)> = Vec::new();
-        for q in &self.items {
-            if let Some((txs, chain)) = q.step.awaited() {
-                match out.iter_mut().find(|(t, c, _)| *t == txs && *c == chain) {
-                    Some((_, _, ids)) => ids.push(q.id.clone()),
-                    None => out.push((txs, chain, vec![q.id.clone()])),
-                }
-            }
-        }
-        out
-    }
-
-    /// Whether this entry was published: in flight, included, recorded as anchored here, or anchored per the
-    /// last report. Queued, reverted, refused, or out of the queue with neither source saying anchored count as
-    /// unpublished. Used by the delete path.
-    pub fn published(&self, id: &str, report_anchored: &[String]) -> bool {
-        self.step_of(id).is_some_and(Step::in_flight)
-            || self.block_of(id).is_some()
-            || self.anchored_here(id)
-            || report_anchored.iter().any(|x| x == id)
-    }
-
-    /// Whether this file records it as anchored.
-    pub fn anchored_here(&self, id: &str) -> bool {
-        self.anchored.iter().any(|x| x == id)
-    }
-
-    pub fn has(&self, id: &str) -> bool {
-        self.items.iter().any(|q| q.id == id)
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    /// Ids of the first `n` sendable entries, for the next batch. In-flight entries are skipped: sending them
-    /// again would anchor the same batch twice.
-    pub fn take_ids(&self, n: usize) -> Vec<String> {
-        self.items
-            .iter()
-            .filter(|q| !q.step.in_flight())
-            .take(n)
-            .map(|q| q.id.clone())
-            .collect()
-    }
-
-    /// How many can be sent (in-flight entries do not count).
-    pub fn sendable(&self) -> usize {
-        self.items.iter().filter(|q| !q.step.in_flight()).count()
-    }
-
-    /// Convert a batch of ids into 32-byte hashes for anchoring. Any invalid id fails the whole batch, so a
-    /// partial batch is never sent.
-    pub fn hashes(ids: &[String]) -> Result<Vec<[u8; 32]>, Fault> {
-        let mut out = Vec::with_capacity(ids.len());
-        for id in ids {
-            let b = zikaron::hexfmt::decode(id)
-                .ok_or_else(|| Fault::known(Known::ContentShape, id.clone()))?;
-            if b.len() != 32 {
-                return Err(Fault::known(Known::ContentShape, id.clone()));
-            }
-            let mut h = [0u8; 32];
-            h.copy_from_slice(&b);
-            out.push(h);
-        }
-        Ok(out)
-    }
+/// A queue file not in its shape, said with its place.
+pub fn unparsed(p: &std::path::Path, s: Shape) -> Fault {
+    let at = p.display().to_string();
+    Fault::known(
+        Known::QueueShape,
+        match s {
+            Shape::Json(t) => format!("{at}: {t}"),
+            Shape::NoQueued => crate::lang::filln(crate::lang::Key::Tail200, &[&at]),
+            Shape::BadRow => crate::lang::filln(crate::lang::Key::Tail201, &[&at]),
+            Shape::Missing(k) => format!("{at}: {k}"),
+        },
+    )
 }
 
 /// Serializes queue file changes within one process.

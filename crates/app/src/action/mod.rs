@@ -401,6 +401,15 @@ pub enum Action {
     /// Choose how the command line's `anchor` is handled when it goes through the desktop app (machine-wide,
     /// `machine.json`): sent as the send button would, or left in the queue for the user. Takes effect at once.
     SetCliAnchor { to: crate::machine::CliAnchor },
+    /// "Command line writes through the desktop" (machine-wide, sealed machine settings): whether the desktop's
+    /// door opens to the command line while unlocked. Refused by name while writing alone is on (`CLI_ALONE_ON`):
+    /// the higher switch decides, so only one command-line path exists at any time.
+    SetCliDesktop { on: bool },
+    /// "Command line writes alone", on: after the passcode (the gate), issue the command line's credential
+    /// lasting `lasts` (`zikaron_seal::credential`) and record the switch; the desktop's door closes.
+    SetCliAlone { lasts: crate::machine::Lasts, pin: crate::secret::Secret },
+    /// "Command line writes alone", off: remove the credential and record the switch.
+    CliAloneOff,
     /// The command line asked the desktop app to send the queue while sending is left to the user
     /// (`CliAnchor::Queue`): nothing is sent; the request is reported and the `count` entries wait in the queue
     /// for the user to send from the queue page. With nothing queued (either setting) it is refused like the
@@ -433,7 +442,8 @@ impl Action {
             | Action::DeleteIdentity { pin, .. }
             | Action::RevealWords { pin }
             | Action::AttestFor { pin, .. }
-            | Action::ExportBackup { pin, .. } => pin.clear(),
+            | Action::ExportBackup { pin, .. }
+            | Action::SetCliAlone { pin, .. } => pin.clear(),
             // The gate's own fields ([`Action::gate_pin`]), all of them.
             Action::SetPin { pin, again } | Action::RecoverWords { pin, again, .. } | Action::RecoverKeystore { pin, again, .. } => {
                 pin.clear();
@@ -486,6 +496,7 @@ impl Action {
             | Action::RevealWords { pin }
             | Action::AttestFor { pin, .. }
             | Action::ExportBackup { pin, .. }
+            | Action::SetCliAlone { pin, .. }
             | Action::SetPin { pin, .. }
             | Action::Unlock { pin }
             | Action::Reseal { pin }
@@ -519,7 +530,8 @@ impl Action {
             | Action::DeleteIdentity { pin, .. }
             | Action::RevealWords { pin }
             | Action::AttestFor { pin, .. }
-            | Action::ExportBackup { pin, .. } => Some(pin),
+            | Action::ExportBackup { pin, .. }
+            | Action::SetCliAlone { pin, .. } => Some(pin),
             // Making another identity primary and restoring from settings seal the new vault with the passcode
             // itself, so each opens the vault with it inside its own task (the same gate and failure count).
             Action::SetPrimary { .. } | Action::RestoreBackup { .. } => None,
@@ -567,7 +579,12 @@ impl Action {
             | Action::ConfirmIdentity { .. }
             | Action::ImportIdentity { .. }
             | Action::DeleteIdentity { .. }
-            | Action::BackupKey { .. } => true,
+            | Action::BackupKey { .. }
+            // The command line's switches are sealed machine settings, and writing alone hands out the master key
+            // sealed in a credential.
+            | Action::SetCliDesktop { .. }
+            | Action::SetCliAlone { .. }
+            | Action::CliAloneOff => true,
             // Showing the words is not in this table: its passcode is the unlock question itself (the
             // `pin_asked` gate), so a locked machine can still show the words once.
             Action::RevealWords { .. } => false,
@@ -761,7 +778,7 @@ impl Action {
             Action::ListHeld => Feature::D6,
             Action::SetReviewEvery { .. } => Feature::D7,
             Action::SetLang { .. } | Action::SetZone { .. } => Feature::H6,
-            Action::ReadCliPath | Action::SetCliPath { .. } => Feature::H6,
+            Action::ReadCliPath | Action::SetCliPath { .. } | Action::SetCliDesktop { .. } | Action::SetCliAlone { .. } | Action::CliAloneOff => Feature::H6,
             Action::SetAppearance { .. } => Feature::H0,
             Action::ExportBadge { .. } | Action::CopyGrantCode { .. } => Feature::D9,
             Action::ExportGrantFile { .. } => Feature::D6,
@@ -895,6 +912,7 @@ impl Action {
             Action::SetCliAnchor { .. } => None,
             Action::ReadCliPath => None,
             Action::SetCliPath { .. } => None,
+            Action::SetCliDesktop { .. } | Action::SetCliAlone { .. } | Action::CliAloneOff => None,
             // Nothing leaves: the request is only reported.
             Action::SendAsked { .. } => None,
             Action::ExportBadge { .. } => Some(Exit::Badge),
@@ -923,6 +941,18 @@ impl Action {
                 | Action::ListHeld
                 | Action::Measure
         )
+    }
+
+    /// The actions that write what the command line writes too, the ledger and the anchor queue: while it writes
+    /// alone, each takes the home's writer lock for its turn, held until what it started has landed
+    /// (`Shell::take_turn`, `Shell::turn_sync`). Closed: the ledger writers ([`Action::writes_ledger`]), queueing,
+    /// resuming the awaited batches, catching up, adopting and fetching a ledger.
+    pub fn takes_turn(&self) -> bool {
+        self.writes_ledger()
+            || matches!(
+                self,
+                Action::QueueEntry { .. } | Action::Resume | Action::CatchUp | Action::Adopt { .. } | Action::FetchLedger { .. } | Action::FetchAside { .. }
+            )
     }
 
     /// What may run while old data is open (`ViewOldData`): reading it, coming back, and the vault gate.
@@ -1168,6 +1198,10 @@ pub enum Applied {
     ProxySet(String),
     /// How the command line's `anchor` is handled through the desktop app, as written.
     CliAnchorSet(crate::machine::CliAnchor),
+    /// "Command line writes through the desktop" switched (on or off).
+    CliDesktopSet(bool),
+    /// "Command line writes alone" switched: on with its credential's expiry (`Some(None)`: never), or off.
+    CliAloneSet(Option<Option<u64>>),
     /// What is currently at the command line's location on the terminal's command path.
     CliPathRead(zikaron_os::cli_path::State),
     /// The command line asked to send; nothing was sent, and `count` entries wait for the user.
@@ -1512,6 +1546,13 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
     if a.writes_ledger() {
         if let Some(s) = shell.unfetched {
             return shell.trouble(s.fault());
+        }
+    }
+    // While the command line writes alone, a write of the ledger or the queue takes the home's writer lock first
+    // (`Shell::take_turn`): the command line holding it is said by name and nothing is done.
+    if a.takes_turn() {
+        if let Err(f) = shell.take_turn() {
+            return shell.trouble(f);
         }
     }
     match a {
@@ -2270,6 +2311,26 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             },
             None => shell.trouble(crate::fault::Fault::known(crate::fault::Known::CliPathUnsupported, String::new())),
         },
+        Action::SetCliDesktop { on } => {
+            if shell.machine.cli_alone.is_some() {
+                return shell.trouble(crate::fault::Fault::known(crate::fault::Known::CliAloneOn, String::new()));
+            }
+            match crate::machine::update(|m| m.cli_desktop = on) {
+                Ok(m) => {
+                    shell.machine = m;
+                    Applied::CliDesktopSet(on)
+                }
+                Err(f) => shell.trouble(f),
+            }
+        }
+        Action::SetCliAlone { lasts, .. } => match cli_alone_on(shell, lasts) {
+            Ok(expires) => Applied::CliAloneSet(Some(expires)),
+            Err(f) => shell.trouble(f),
+        },
+        Action::CliAloneOff => match cli_alone_off(shell) {
+            Ok(()) => Applied::CliAloneSet(None),
+            Err(f) => shell.trouble(f),
+        },
         Action::SetCliAnchor { to } => match crate::machine::update(|m| m.cli_anchor = to) {
             Ok(m) => {
                 shell.machine = m;
@@ -2516,4 +2577,55 @@ fn cli_path_set(cli: &std::path::Path, on: bool) -> Result<Done, crate::fault::F
 /// A grant file was written, as the UI shows it.
 fn grant_file_exported(x: crate::grantfilex::Exported) -> Applied {
     Applied::GrantFileExported { path: x.path.display().to_string(), why: x.chosen.why, hops: x.hops, terms: x.terms, ledger: x.ledger, files: x.files }
+}
+
+/// Turn writing alone on (the passcode already passed the gate): the credential first, lasting `lasts` from now,
+/// then the switch; a switch that does not land takes the credential back. Returns when it expires.
+fn cli_alone_on(shell: &mut Shell, lasts: crate::machine::Lasts) -> Result<Option<u64>, crate::fault::Fault> {
+    if !lasts.ok() {
+        return Err(crate::fault::Fault::known(crate::fault::Known::MachineShape, crate::machine::member::CLI_ALONE.to_string()));
+    }
+    let issued = crate::lastread::now_secs();
+    let term = zikaron_seal::credential::Term { issued, expires: lasts.expires(issued) };
+    crate::keybox::issue_credential(term)?;
+    match crate::machine::update(|m| m.cli_alone = Some(lasts)) {
+        Ok(m) => shell.machine = m,
+        Err(f) => {
+            let _ = crate::keybox::drop_credential();
+            return Err(f);
+        }
+    }
+    shell.credential = Some(term);
+    Ok(term.expires)
+}
+
+/// Turn writing alone off: the credential goes first (the command line cannot open anything from then on),
+/// then the switch.
+fn cli_alone_off(shell: &mut Shell) -> Result<(), crate::fault::Fault> {
+    crate::keybox::drop_credential()?;
+    shell.credential = None;
+    shell.machine = crate::machine::update(|m| m.cli_alone = None)?;
+    Ok(())
+}
+
+/// Writing alone ends without the switch being touched: its credential expired, or a new master key made it
+/// worthless (`why`: `CREDENTIAL_EXPIRED` or `CLI_ALONE_DROPPED`). The credential is removed, the switch turned
+/// off and the person told once. Nothing to do when writing alone is off and no credential is left.
+pub fn cli_alone_ended(shell: &mut Shell, why: crate::fault::Known) {
+    let had = match crate::keybox::drop_credential() {
+        Ok(had) => had,
+        Err(f) => {
+            shell.faults.push(f);
+            return;
+        }
+    };
+    shell.credential = None;
+    if shell.machine.cli_alone.is_none() && !had {
+        return;
+    }
+    match crate::machine::update(|m| m.cli_alone = None) {
+        Ok(m) => shell.machine = m,
+        Err(f) => shell.faults.push(f),
+    }
+    shell.faults.push(crate::fault::Fault::known(why, crate::places::credential_file()));
 }

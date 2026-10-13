@@ -21,6 +21,12 @@
 //!   requesting administrator rights only through the OS's own dialog.
 //! - [`door`]: a local IPC endpoint for other processes of the same user (a socket file on unix, a named pipe on
 //!   Windows), with the peer's user checked on both sides.
+//! - [`lock_now`] / [`lock_wait`]: the single-writer lock, a kernel lock on an open descriptor (released when the
+//!   process ends, so no lock is ever stale): the app and the command line take a home's lock and the key
+//!   vault's lock through these.
+//! - [`put_at`] / [`rename_over`] / [`open_owner_only`]: replace a file whole and durably: written owner-only under
+//!   a temporary name, synced, renamed over its place in one step, the directory synced; a write that does not
+//!   land takes its temporary file with it.
 //! - [`wipe`] / [`wipe_string`] / [`wipe_string_tail`]: zero secret bytes in place with writes the compiler
 //!   cannot drop. The one place outside the platform implementations that writes through a raw pointer: every
 //!   other crate of the product forbids `unsafe` and wipes through these.
@@ -713,4 +719,69 @@ mod tests {
         pretend_unsupported(0);
         let _ = std::fs::remove_dir_all(&d);
     }
+}
+
+// ───────────────────────── The single-writer lock ─────────────────────────
+
+/// Ask the kernel for an exclusive lock on this descriptor, without waiting. True when obtained. The lock is
+/// released when the descriptor closes or the process ends, so no lock is ever stale.
+pub fn lock_now(file: &std::fs::File) -> bool {
+    imp::lock_now(file)
+}
+
+/// The same lock, blocking until obtained.
+pub fn lock_wait(file: &std::fs::File) -> bool {
+    imp::lock_wait(file)
+}
+
+// ───────────────────────── Replacing a file whole ─────────────────────────
+
+/// A write that did not land: the system's error, and the path it is said with (the file being written; its
+/// directory for creating or syncing that directory). The temporary name is the writer's own business and is
+/// never the path said.
+#[derive(Debug)]
+pub struct Unput {
+    pub error: std::io::Error,
+    pub at: std::path::PathBuf,
+}
+
+/// Creates a new file readable and writable by its owner only (refusing an existing name: `create_new`). The
+/// permission is part of the creating call ([`owner_only`]), so there is no moment others may read it.
+pub fn open_owner_only(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut o = Options::new();
+    o.write(true).create_new(true);
+    owner_only(&mut o);
+    o.open(path)
+}
+
+/// Replaces the file `name` in `dir` whole: the bytes go to `tmp` (a name of the caller's one temporary shape)
+/// created owner-only, are synced, and the file is renamed over `name` in one step and the directory synced
+/// ([`rename_over`]), so the place holds either the old file or the new one, never half of either. A write that
+/// does not land removes its temporary file. `dir` is created when missing.
+pub fn put_at(dir: &Path, name: &str, tmp: &str, bytes: &[u8]) -> Result<(), Unput> {
+    use std::io::Write;
+    std::fs::create_dir_all(dir).map_err(|error| Unput { error, at: dir.to_path_buf() })?;
+    let tmp = dir.join(tmp);
+    let p = dir.join(name);
+    let wrote = (|| -> Result<(), Unput> {
+        let at = || p.clone();
+        let mut f = open_owner_only(&tmp).map_err(|error| Unput { error, at: at() })?;
+        f.write_all(bytes).map_err(|error| Unput { error, at: at() })?;
+        f.sync_all().map_err(|error| Unput { error, at: at() })?;
+        drop(f);
+        rename_over(&tmp, &p)
+    })();
+    if wrote.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    wrote
+}
+
+/// Renames `from` over `to` in one step, then syncs the directory so the new name survives a power cut. A failed
+/// rename is said with the target, a failed sync with the directory (the file is in place, but the write is not
+/// taken as done).
+pub fn rename_over(from: &Path, to: &Path) -> Result<(), Unput> {
+    replace(from, to).map_err(|error| Unput { error, at: to.to_path_buf() })?;
+    let dir = to.parent().unwrap_or_else(|| Path::new("."));
+    sync_dir(dir, to).map_err(|error| Unput { error, at: dir.to_path_buf() })
 }

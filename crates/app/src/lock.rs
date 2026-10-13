@@ -14,6 +14,11 @@
 //!
 //! ─── Another machine ───
 //!
+//! Taking the lock (the kernel lock and the writer mark together) is the sealed layer's, one implementation with
+//! the command line's sealed write (`zikaron_seal::writer::take`); this module keeps the instance's mode, the
+//! words for who holds it, and the turn the desktop takes per write while the command line writes alone
+//! ([`Lock::release`], [`Lock::regain`]).
+//!
 //! A kernel lock only works on one machine: a data folder on a synced or shared disk opened on two machines
 //! would get a writer on each, and the two ledgers would diverge. So each home keeps a writer mark
 //! ([`MARK_FILE`]): one line naming the machine that writes it (this machine's mark, [`this_machine`], lives
@@ -22,19 +27,19 @@
 //! machine" ([`Lock::take_over`]), which rewrites the mark. There is no heartbeat or expiry, since both depend
 //! on the wall clock and sync delays, which cannot be relied on.
 
-use crate::fault::{classify, Fault};
+use crate::fault::Fault;
 use crate::home::{Home, Slot};
 use std::path::PathBuf;
-
+use zikaron_seal::writer::{self, Took};
 
 /// The lock file's name.
-pub const LOCK_FILE: &str = "writer.lock";
+pub const LOCK_FILE: &str = zikaron_seal::envelope::WRITER_LOCK;
 
 /// The writer mark's file name (in a home's `settings/` directory): which machine writes this home.
-pub const MARK_FILE: &str = "writer-mark";
+pub const MARK_FILE: &str = writer::MARK_FILE;
 
 /// The file name of this machine's mark (in the machine directory, outside every data folder).
-pub const MACHINE_FILE: &str = "machine-mark";
+pub const MACHINE_FILE: &str = writer::MACHINE_FILE;
 
 /// This instance's access mode for a home.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -64,9 +69,11 @@ impl Mode {
     }
 }
 
-/// A held lock, released when this value is dropped or the process exits.
+/// A lock on a home, released when this value is dropped or the process exits. A writer may let the kernel lock
+/// go between writes while the command line writes alone ([`Lock::release`]) and take it again for the next
+/// write ([`Lock::regain`]); its mode stays.
 pub struct Lock {
-    _file: Held,
+    file: Option<zikaron_os::LockFile>,
     mode: Mode,
     path: PathBuf,
     holder: String,
@@ -93,6 +100,47 @@ impl Lock {
         self.trouble.as_ref()
     }
 
+    /// Whether the kernel lock is in hand now.
+    pub fn held(&self) -> bool {
+        self.file.is_some()
+    }
+
+    /// Let the kernel lock go (a writer between writes while the command line writes alone); the mode stays.
+    pub fn release(&mut self) {
+        self.file = None;
+    }
+
+    /// Take the kernel lock again for a write: true when in hand (already, or now); false when another holder
+    /// on this machine has it. A home whose mark now names another machine (or no longer reads) turns this lock
+    /// into that reader, and is false.
+    pub fn regain(&mut self, home: &Home) -> Result<bool, Fault> {
+        if self.file.is_some() {
+            return Ok(true);
+        }
+        let t = writer::take(home.root(), &crate::home::machine_dir()?)?;
+        match t.took {
+            Took::Writer => {
+                self.file = Some(t.held);
+                Ok(true)
+            }
+            Took::Busy { .. } => Ok(false),
+            Took::OtherMachine => {
+                self.file = Some(t.held);
+                self.mode = Mode::OtherMachine;
+                self.holder = crate::lang::filln(crate::lang::Key::TailOtherMachine, &[&mark_path(home).display().to_string()]);
+                Ok(false)
+            }
+            Took::Unread(tr) => {
+                let f = Fault::from(tr);
+                self.file = Some(t.held);
+                self.mode = Mode::OtherMachine;
+                self.holder = f.evidence();
+                self.trouble = Some(f);
+                Ok(false)
+            }
+        }
+    }
+
     /// The user's "write from this machine": rewrite the home's writer mark to this machine and become a writer.
     /// Only applies to [`Mode::OtherMachine`]; a reader blocked by another local instance cannot take over,
     /// since the kernel lock decides that.
@@ -108,45 +156,14 @@ impl Lock {
     }
 }
 
-/// This machine's mark, kept in the machine directory and created on first use (a random number that reveals
-/// nothing about the machine). Created once: the write refuses an existing file, and callers in this process
-/// are serialized, so two first callers never create two marks.
+/// This machine's mark, kept in the machine directory and created on first use (`zikaron_seal::writer`).
 pub fn this_machine() -> Result<String, Fault> {
-    static MAKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _one = MAKING.lock().unwrap_or_else(|e| e.into_inner());
-    let m = crate::home::machine_dir()?;
-    let at = m.join(MACHINE_FILE);
-    let read = || -> Result<Option<String>, Fault> {
-        match std::fs::read_to_string(&at) {
-            Ok(s) if is_mark(s.trim()) => Ok(Some(s.trim().to_string())),
-            Ok(_) => Ok(None),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(classify(&e, &at.display().to_string())),
-        }
-    };
-    if let Some(mark) = read()? {
-        return Ok(mark);
-    }
-    let mut n = [0u8; 16];
-    crate::key::fill_random(&mut n)?;
-    let mark = zikaron::hexfmt::encode(&n).trim_start_matches("0x").to_ascii_lowercase();
-    std::fs::create_dir_all(&m).map_err(|e| classify(&e, &m.display().to_string()))?;
-    // Not a secret, written like any file; `land_bytes` refuses if the file already exists.
-    match zikaron_glue::landing::land_bytes(&at, format!("{mark}\n").as_bytes()) {
-        Ok(()) => Ok(mark),
-        // Another process created it first: use its mark.
-        Err(_) => read()?.ok_or_else(|| Fault::known(crate::fault::Known::MachineShape, at.display().to_string())),
-    }
-}
-
-/// A mark's shape: 32 lowercase hex digits.
-fn is_mark(s: &str) -> bool {
-    s.len() == 32 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    Ok(writer::this_machine(&crate::home::machine_dir()?)?)
 }
 
 /// Where a home's writer mark lives.
 pub fn mark_path(home: &Home) -> PathBuf {
-    home.dir(Slot::Settings).join(MARK_FILE)
+    writer::mark_path(home.root())
 }
 
 /// What a home's writer mark says. A missing mark is distinct from an unreadable one.
@@ -163,15 +180,10 @@ pub enum Mark {
 
 /// Read a home's writer mark.
 pub fn mark_read(home: &Home) -> Mark {
-    let at = mark_path(home);
-    match std::fs::read(&at) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Mark::None,
-        Err(e) => Mark::Unread(classify(&e, &at.display().to_string())),
-        // Surrounding whitespace is ignored.
-        Ok(b) => match std::str::from_utf8(&b).ok().map(str::trim).filter(|s| is_mark(s)) {
-            Some(m) => Mark::Machine(m.to_string()),
-            None => Mark::Unread(Fault::known(crate::fault::Known::SettingsShape, at.display().to_string())),
-        },
+    match writer::mark_read(home.root()) {
+        writer::Mark::None => Mark::None,
+        writer::Mark::Machine(m) => Mark::Machine(m),
+        writer::Mark::Unread(t) => Mark::Unread(t.into()),
     }
 }
 
@@ -183,7 +195,7 @@ pub fn mark_of(home: &Home) -> Option<String> {
     }
 }
 
-/// Mark a home as written by this machine.
+/// Mark a home as written by this machine (through the write gate, `home::put_at`).
 pub fn write_mark(home: &Home) -> Result<(), Fault> {
     let me = this_machine()?;
     crate::home::put_at(&home.dir(Slot::Settings), MARK_FILE, format!("{me}\n").as_bytes())
@@ -208,7 +220,7 @@ pub fn grab_waiting(file: &std::fs::File) -> bool {
 
 /// Where a home's lock file lives. Used both to take the lock and to check whether a held lock is this home's.
 pub fn path_of(home: &Home) -> PathBuf {
-    home.dir(Slot::Settings).join(LOCK_FILE)
+    writer::lock_path(home.root())
 }
 
 /// Whether the held lock is this home's writer lock.
@@ -225,59 +237,46 @@ pub fn holds_writer(held: Option<&Lock>, home: &Home) -> bool {
     crate::home::same_place(l.path(), &path_of(home))
 }
 
-/// The lock file's descriptor, registered with the OS layer while open (`zikaron_os::LockFile`). A child process
-/// spawned meanwhile closes its inherited copy before it runs, so releasing the lock here frees it at once and a
-/// later attempt on this machine is never turned into a reader by a child's copy. Every close, including after a
-/// failed grab, goes through that type.
-struct Held(zikaron_os::LockFile);
-
-/// Take the lock: obtained means writer (or [`Mode::OtherMachine`] per the writer mark), not obtained means
-/// reader. Either way a `Lock` is returned.
+/// Take the lock (`zikaron_seal::writer::take`): obtained means writer (or [`Mode::OtherMachine`] per the
+/// writer mark), not obtained means reader. Either way a `Lock` is returned.
 pub fn take(home: &Home) -> Result<Lock, Fault> {
+    take_as(home, false)
+}
+
+/// [`take`], knowing whether the command line writes alone (`alone`). Then the command line may hold the kernel
+/// lock for a write of its own just as this instance opens the home: that is its turn, not another instance, so
+/// this one is still the writer, with the lock to take at its own next write ([`Lock::regain`]); the writer mark
+/// decides as ever.
+pub fn take_as(home: &Home, alone: bool) -> Result<Lock, Fault> {
     let path = path_of(home);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| classify(&e, &parent.display().to_string()))?;
-    }
-    // Owner-only from creation, like the key vault's lock file (`keybox`): on a multi-user machine another
-    // account could otherwise read the holder's pid and, since locking needs only an open handle (even
-    // read-only), hold the lock forever and turn every instance here into a reader. An existing file is
-    // opened without truncation, so the holder text stays until a writer takes it.
-    let mut o = zikaron_os::Options::new();
-    o.create(true).read(true).write(true);
-    zikaron_os::owner_only(&mut o);
-    let held = Held(zikaron_os::LockFile::open(&o, &path).map_err(|e| classify(&e, &path.display().to_string()))?);
-    let got = grab(held.0.file());
-    // The kernel lock covers this machine; the writer mark says whether another machine writes this home.
-    if got {
-        let me = this_machine()?;
-        match mark_read(home) {
-            Mark::Machine(other) if other != me => {
-                let holder = crate::lang::filln(crate::lang::Key::TailOtherMachine, &[&mark_path(home).display().to_string()]);
-                return Ok(Lock { _file: held, mode: Mode::OtherMachine, path, holder, trouble: None });
-            }
-            Mark::Machine(_) => {}
-            Mark::None => write_mark(home)?,
-            // An unreadable mark is no license to write: stay read-only, report why, and leave the mark alone
-            // (a later version or another machine may be writing).
-            Mark::Unread(f) => {
-                let holder = f.evidence();
-                return Ok(Lock { _file: held, mode: Mode::OtherMachine, path, holder, trouble: Some(f) });
+    let t = writer::take(home.root(), &crate::home::machine_dir()?)?;
+    Ok(match t.took {
+        Took::Writer => Lock { file: Some(t.held), mode: Mode::Writer, path, holder: format!("pid {}", std::process::id()), trouble: None },
+        Took::OtherMachine => {
+            let holder = crate::lang::filln(crate::lang::Key::TailOtherMachine, &[&mark_path(home).display().to_string()]);
+            Lock { file: Some(t.held), mode: Mode::OtherMachine, path, holder, trouble: None }
+        }
+        // An unreadable mark is no license to write: stay read-only, report why, and leave the mark alone (a
+        // later version or another machine may be writing).
+        Took::Unread(tr) => {
+            let f = Fault::from(tr);
+            Lock { file: Some(t.held), mode: Mode::OtherMachine, path, holder: f.evidence(), trouble: Some(f) }
+        }
+        Took::Busy { .. } if alone => {
+            let me = this_machine()?;
+            match mark_read(home) {
+                Mark::Machine(m) if m == me => Lock { file: None, mode: Mode::Writer, path, holder: format!("pid {}", std::process::id()), trouble: None },
+                Mark::None => Lock { file: None, mode: Mode::Writer, path, holder: format!("pid {}", std::process::id()), trouble: None },
+                Mark::Machine(_) => {
+                    let holder = crate::lang::filln(crate::lang::Key::TailOtherMachine, &[&mark_path(home).display().to_string()]);
+                    Lock { file: None, mode: Mode::OtherMachine, path, holder, trouble: None }
+                }
+                Mark::Unread(f) => Lock { file: None, mode: Mode::OtherMachine, path, holder: f.evidence(), trouble: Some(f) },
             }
         }
-    }
-    if got {
-        let me = format!("pid {}", std::process::id());
-        // Holder text for display only; a failed write does not affect the lock.
-        use std::io::{Seek, Write};
-        let mut h = held.0.file();
-        let _ = h.set_len(0);
-        let _ = h.rewind();
-        let _ = h.write_all(me.as_bytes());
-        let _ = h.flush();
-        Ok(Lock { _file: held, mode: Mode::Writer, path, holder: me, trouble: None })
-    } else {
-        let holder = std::fs::read_to_string(&path).unwrap_or_default();
-        let holder = if holder.trim().is_empty() { crate::lang::t(crate::lang::Key::Tail184).to_string() } else { holder };
-        Ok(Lock { _file: held, mode: Mode::Reader, path, holder, trouble: None })
-    }
+        Took::Busy { holder } => {
+            let holder = if holder.trim().is_empty() { crate::lang::t(crate::lang::Key::Tail184).to_string() } else { holder };
+            Lock { file: Some(t.held), mode: Mode::Reader, path, holder, trouble: None }
+        }
+    })
 }

@@ -22,35 +22,10 @@ use crate::family::ENTROPY_BYTES;
 use crate::key::{Address, Secret};
 use crate::roles::Role;
 use std::path::{Path, PathBuf};
-use zikaron::json::{self, Value};
+use zikaron::json::Value;
 
-/// Registry shape name, defined once.
-pub const SHAPE: &str = "zikaron-desk/identities/1";
-
-/// The two kinds of identity. Closed.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Kind {
-    /// Two seat keys derived from recovery words.
-    Words,
-    /// An adopted existing key (no recovery words; backed up only as a file).
-    Existing,
-}
-
-impl Kind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Kind::Words => "words",
-            Kind::Existing => "existing",
-        }
-    }
-
-    fn parse(s: &str) -> Option<Kind> {
-        [Kind::Words, Kind::Existing].into_iter().find(|k| k.as_str() == s)
-    }
-}
-
-/// The slot member every row writes: one slot per key, by address. Any other value is refused by name.
-const SLOT_OWN: &str = "own";
+pub use zikaron_seal::identities::{Kind, NO_BACKUP_AT, NO_CREATED, NO_LABEL, SHAPE, UNSEATED};
+use zikaron_seal::identities::{Book, Line};
 
 fn seat_of(s: &str) -> Option<Role> {
     Role::ALL.into_iter().find(|r| r.as_str() == s)
@@ -95,15 +70,6 @@ impl Keys {
         }
     }
 }
-
-/// An empty seat: its address and home fields hold this (read back as "unoccupied").
-pub const UNSEATED: &str = "";
-/// The name field of an unnamed identity (the screen falls back to its kind).
-pub const NO_LABEL: &str = "";
-/// The "created" field when no time is recorded (the screen says "not recorded").
-pub const NO_CREATED: &str = "";
-/// The backup location field of rows with no backup file yet.
-pub const NO_BACKUP_AT: &str = "";
 
 /// One registry row.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -281,188 +247,90 @@ impl Registry {
         self.rows.iter().find(|r| r.id == id)
     }
 
-    /// Canonical bytes (member order and spelling from the core's canonicalizer).
-    ///
-    /// Empty seats write [`UNSEATED`] in address and home; `kind` and `slot` are computed from [`Keys`] and
-    /// checked field by field when read back.
+    /// Canonical bytes: the register as the sealed layer writes it (`zikaron_seal::identities::Book`), each
+    /// row's network cell given as it stands.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let s = |x: &str| Value::Str(x.to_string());
-        let obj = |m: Vec<(&str, Value)>| Value::Obj(m.into_iter().map(|(k, v)| (k.to_string(), v)).collect());
-        let seat_addr = |r: &Row, seat: Role| r.address(seat).map(|a| a.hex()).unwrap_or_else(|| UNSEATED.to_string());
-        let rows: Vec<Value> = self
+        let lines = self
             .rows
             .iter()
             .map(|r| {
-                let mut m = vec![
-                    ("author", s(&seat_addr(r, Role::Author))),
-                    (
-                        "backup",
-                        obj(vec![
-                            ("at", s(&r.backup_at)),
-                            ("file", Value::Bool(r.backed_file)),
-                            ("words", Value::Bool(r.backed_words)),
-                        ]),
-                    ),
-                    ("created", s(&r.created)),
-                    ("grantee", s(&seat_addr(r, Role::Grantee))),
-                    ("homes", obj(vec![("author", s(&r.author_home)), ("grantee", s(&r.grantee_home))])),
-                    ("id", s(&r.id)),
-                    ("kind", s(r.kind().as_str())),
-                    ("label", s(&r.label)),
-                    ("slot", s(SLOT_OWN)),
-                ];
                 // A cell this version could not read whole goes back as it came while its choice stands.
                 let raw = r.unread_network.as_deref().and_then(|t| zikaron::json::parse(t.as_bytes()).ok());
-                match (&r.network, raw) {
-                    (Some(n), Some(raw)) if raw.member("name").and_then(|x| x.as_str()) == Some(n.name()) && n.custom().is_none() => {
-                        m.push(("network", raw));
-                    }
-                    (Some(n), _) => m.push(("network", network_value(n))),
-                    (None, _) => {}
+                let network = match (&r.network, raw) {
+                    (Some(n), Some(raw)) if raw.member("name").and_then(|x| x.as_str()) == Some(n.name()) && n.custom().is_none() => Some(raw),
+                    (Some(n), _) => Some(network_value(n)),
+                    (None, _) => None,
+                };
+                Line {
+                    id: r.id.clone(),
+                    author: r.address(Role::Author).map(|a| a.0),
+                    grantee: r.address(Role::Grantee).map(|a| a.0),
+                    author_home: r.author_home.clone(),
+                    grantee_home: r.grantee_home.clone(),
+                    backed_words: r.backed_words,
+                    backed_file: r.backed_file,
+                    backup_at: r.backup_at.clone(),
+                    label: r.label.clone(),
+                    created: r.created.clone(),
+                    network,
                 }
-                obj(m)
             })
             .collect();
-        let mut top = Vec::new();
-        if let Some((id, seat)) = &self.current {
-            top.push(("current", obj(vec![("identity", s(id)), ("seat", s(seat.as_str()))])));
+        Book {
+            current: self.current.as_ref().map(|(id, seat)| (id.clone(), seat.as_str())),
+            lines,
+            left: self.left.iter().map(|(id, seat, home)| (id.clone(), seat.as_str(), home.clone())).collect(),
         }
-        top.push(("identities", Value::Arr(rows)));
-        if !self.left.is_empty() {
-            let left: Vec<Value> = self.left.iter().map(|(id, seat, home)| obj(vec![("home", s(home)), ("identity", s(id)), ("seat", s(seat.as_str()))])).collect();
-            top.push(("left", Value::Arr(left)));
-        }
-        top.push(("shape", s(SHAPE)));
-        json::canon_bytes(&obj(top))
+        .to_bytes()
     }
 
-    /// Read back, naming the field that is wrong. Every member this version writes is required (an empty
-    /// `label`, `created` or `backup.at` is written as such: [`NO_LABEL`], [`NO_CREATED`], [`NO_BACKUP_AT`]).
-    /// Recovery-word rows have different addresses and read as [`Keys::Both`]; an existing key occupies one
-    /// seat ([`Keys::One`]). A row with one key on both seats, or a slot other than [`SLOT_OWN`], is no shape
-    /// this version writes and is refused by name.
+    /// Read back, naming the field that is wrong: the register's shape is the sealed layer's reading
+    /// (`zikaron_seal::identities::Book::parse`); here its seats become keys and roles and the network cell a
+    /// choice. Recovery-word rows read as [`Keys::Both`]; an existing key occupies one seat ([`Keys::One`]).
     pub fn parse(bytes: &[u8]) -> Result<Registry, String> {
-        let v = json::parse(bytes).map_err(|t| format!("{t:?}"))?;
-        let field = |v: &Value, k: &str| -> Option<Value> {
-            match v {
-                Value::Obj(m) => m.iter().find(|(n, _)| n == k).map(|(_, x)| x.clone()),
-                _ => None,
-            }
-        };
-        let text = |v: &Value, k: &str| -> Result<String, String> {
-            match field(v, k) {
-                Some(Value::Str(x)) => Ok(x),
-                _ => Err(k.to_string()),
-            }
-        };
-        let flag = |v: &Value, k: &str| -> Result<bool, String> {
-            match field(v, k) {
-                Some(Value::Bool(b)) => Ok(b),
-                _ => Err(k.to_string()),
-            }
-        };
-        if text(&v, "shape")? != SHAPE {
-            return Err("shape".into());
-        }
-        let Some(Value::Arr(items)) = field(&v, "identities") else {
-            return Err("identities".into());
-        };
-        let mut rows = Vec::new();
-        for it in &items {
-            // A seat address field: [`UNSEATED`] means the seat is empty; otherwise an address, or refused by
-            // name.
-            let seat_addr = |k: &str| -> Result<Option<Address>, String> {
-                let raw = text(it, k)?;
-                if raw == UNSEATED {
-                    return Ok(None);
-                }
-                Address::parse(&raw).map(Some).ok_or_else(|| k.to_string())
-            };
-            let backup = field(it, "backup").ok_or("backup")?;
-            let homes = field(it, "homes").ok_or("homes")?;
-            if text(it, "slot")? != SLOT_OWN {
-                return Err("slot".into());
-            }
-            let kind = Kind::parse(&text(it, "kind")?).ok_or("kind")?;
-            let author = seat_addr("author")?;
-            let grantee = seat_addr("grantee")?;
-            let keys = match (author, grantee) {
-                // One key on both seats: no shape this version writes.
-                (Some(a), Some(g)) if a == g => return Err("grantee".into()),
-                (Some(a), Some(g)) => Keys::Both { author: a, grantee: g },
-                (Some(a), None) => Keys::One { seat: Role::Author, addr: a },
-                (None, Some(g)) => Keys::One { seat: Role::Grantee, addr: g },
-                // Both seats empty: no reading.
+        let book = Book::parse(bytes)?;
+        let role = |w: &str| seat_of(w).ok_or_else(|| w.to_string());
+        let mut rows = Vec::with_capacity(book.lines.len());
+        for l in book.lines {
+            let keys = match (l.author, l.grantee) {
+                (Some(a), Some(g)) => Keys::Both { author: Address(a), grantee: Address(g) },
+                (Some(a), None) => Keys::One { seat: Role::Author, addr: Address(a) },
+                (None, Some(g)) => Keys::One { seat: Role::Grantee, addr: Address(g) },
                 (None, None) => return Err("author".into()),
-            };
-            // The kind field is computed from the key shape; a stored value that differs is refused by name.
-            if keys.kind() != kind {
-                return Err("kind".into());
-            }
-            let row = Row {
-                id: text(it, "id")?,
-                keys,
-                author_home: text(&homes, "author")?,
-                grantee_home: text(&homes, "grantee")?,
-                backed_words: flag(&backup, "words")?,
-                backed_file: flag(&backup, "file")?,
-                backup_at: text(&backup, "at")?,
-                label: text(it, "label")?,
-                created: text(it, "created")?,
-                network: None,
-                unread_network: None,
             };
             // The network cell is read leniently and carried. A cell whose name this build lacks (a row of a
             // later table) keeps that name, so the row still has a choice: no network resolves from it, its
             // homes keep what they have, nothing overwrites it, and writing the table writes the name back. A
             // cell without a name is no choice. One cell never makes the whole table unreadable.
-            let (network, unread_network) = match field(it, "network") {
-                Some(v) => match network_of(&v) {
+            let (network, unread_network) = match &l.network {
+                Some(v) => match network_of(v) {
                     Some(c) => (Some(c), None),
                     None => (
                         v.member("name").and_then(|n| n.as_str()).filter(|n| !n.is_empty()).map(Chosen::named),
-                        Some(String::from_utf8_lossy(&zikaron::json::canon_bytes(&v)).to_string()),
+                        Some(String::from_utf8_lossy(&zikaron::json::canon_bytes(v)).to_string()),
                     ),
                 },
                 None => (None, None),
             };
-            let row = Row { network, unread_network, ..row };
-            // The name is the address of an occupied seat: the author seat's when both are occupied,
-            // otherwise the one seat's.
-            let named = match row.keys {
-                Keys::Both { author, .. } => author.hex(),
-                Keys::One { addr, .. } => addr.hex(),
-            };
-            if row.id != named {
-                return Err("id".into());
-            }
-            if rows.iter().any(|r: &Row| r.id == row.id) {
-                return Err(format!("id {}", row.id));
-            }
-            rows.push(row);
+            rows.push(Row {
+                id: l.id,
+                keys,
+                author_home: l.author_home,
+                grantee_home: l.grantee_home,
+                backed_words: l.backed_words,
+                backed_file: l.backed_file,
+                backup_at: l.backup_at,
+                label: l.label,
+                created: l.created,
+                network,
+                unread_network,
+            });
         }
-        let current = match field(&v, "current") {
+        let current = match book.current {
+            Some((id, seat)) => Some((id, role(seat)?)),
             None => None,
-            Some(c) => {
-                let id = text(&c, "identity")?;
-                let seat = seat_of(&text(&c, "seat")?).ok_or("seat")?;
-                if !rows.iter().any(|r| r.id == id) {
-                    return Err("current".into());
-                }
-                Some((id, seat))
-            }
         };
-        let mut left = Vec::new();
-        match field(&v, "left") {
-            None => {}
-            Some(Value::Arr(a)) => {
-                for it in &a {
-                    let seat = seat_of(&text(it, "seat")?).ok_or("left seat")?;
-                    left.push((text(it, "identity")?, seat, text(it, "home")?));
-                }
-            }
-            Some(_) => return Err("left".into()),
-        }
+        let left = book.left.into_iter().map(|(id, seat, home)| Ok((id, role(seat)?, home))).collect::<Result<_, String>>()?;
         Ok(Registry { current, rows, left })
     }
 }

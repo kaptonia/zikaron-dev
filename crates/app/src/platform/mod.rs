@@ -88,12 +88,12 @@ pub fn window_backend() -> Backend {
 /// Ask the kernel for an exclusive lock on this open file without waiting; true when obtained. The kernel
 /// releases it when the process exits, so stale locks cannot arise.
 pub fn lock_now(file: &std::fs::File) -> bool {
-    imp::lock_now(file)
+    zikaron_os::lock_now(file)
 }
 
 /// The same lock, blocking until obtained.
 pub fn lock_wait(file: &std::fs::File) -> bool {
-    imp::lock_wait(file)
+    zikaron_os::lock_wait(file)
 }
 
 /// The user's home directory; `None` when the system does not provide one. Implemented in `zikaron-os` so the

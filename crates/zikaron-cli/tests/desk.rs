@@ -254,7 +254,8 @@ fn a_door_that_breaks_or_cannot_be_reached_is_named() {
 #[test]
 fn the_cli_schema_lists_the_verbs_done_through_the_desktop() {
     let doc = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../CLI-SCHEMA.md")).expect("CLI-SCHEMA.md");
-    let section = doc.split("## 11 · `--home`").nth(1).expect("section 11");
+    // Section 11 alone: it ends where the next section begins.
+    let section = doc.split("## 11 · `--home`").nth(1).expect("section 11").split("\n## ").next().unwrap_or_default();
     let table = section.split("| Verb | Flags beside `--home` |").nth(1).expect("the verb table");
     let rows: Vec<(String, Vec<String>)> = table
         .lines()

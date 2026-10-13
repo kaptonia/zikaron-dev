@@ -1,6 +1,7 @@
 //! Shell state, shared by the window and the test hooks. This layer does not know the zikaron/1 law: it
 //! knows the build, fonts, channels and pages, plus identities and the archive.
 
+use crate::queue::Kept as _;
 use crate::fault::{Fault, Known};
 use crate::feature::Feature;
 use crate::home::Home;
@@ -481,6 +482,13 @@ pub struct Shell {
     /// "Enable command line": what is at its install path, as last read (`Action::ReadCliPath`, and after
     /// turning it on or off); `None` until read.
     pub cli_path: Option<zikaron_os::cli_path::State>,
+    /// The command line's credential as last read or issued (`None`: none on this machine), for its expiry line
+    /// and the expiry check at every drain ([`Shell::credential_tick`]).
+    pub credential: Option<zikaron_seal::credential::Term>,
+    /// While the command line writes alone: how many entry files this home's ledger had when this instance last
+    /// let its writer lock go (`None`: not counted yet). A different count at the next turn means the command
+    /// line wrote meanwhile, and the copies are read again ([`Shell::take_turn`]).
+    pub seen_entries: Option<usize>,
 }
 
 impl Shell {
@@ -498,8 +506,9 @@ impl Shell {
             faults.push(f);
         }
         // Unreadable machine settings fall back to the default lock (fifteen minutes), with the refusal on
-        // screen; never silently "never lock".
-        let machine = match crate::machine::read() {
+        // screen; never silently "never lock". Locked at start, only the plain part is in hand; the sealed part
+        // is read once unlocked (`after_unlock`).
+        let machine = match crate::machine::read_face() {
             Ok(m) => m,
             Err(f) => {
                 faults.push(f);
@@ -629,6 +638,8 @@ impl Shell {
             door_off: false,
             door_answered: 0,
             cli_path: None,
+            credential: None,
+            seen_entries: None,
         }
     }
 
@@ -677,6 +688,22 @@ impl Shell {
         // Local data opens only now: the home is closed while locked, so land on the seat and open its home as
         // the window does at start.
         let opened_now = self.home.is_none() && self.unlocked();
+        // The sealed machine settings (auto-lock, proxy, the command line's switches, backup records) are in
+        // hand only now.
+        if self.unlocked() {
+            match crate::machine::read() {
+                Ok(m) => {
+                    // The count since the last backup was measured against the record in hand: another record (a
+                    // restore's) makes it unknown until measured again, never an old number against a new record.
+                    if m.backup != self.machine.backup {
+                        self.items_now = None;
+                    }
+                    self.machine = m;
+                }
+                Err(f) => self.faults.push(f),
+            }
+            self.reread_credential();
+        }
         if opened_now {
             let _ = crate::action::boot_home(self);
             if let Some(l) = self.settings.lang {
@@ -694,6 +721,100 @@ impl Shell {
         // Background work stopped while locked: catch up once now (`Action::CatchUp`).
         if opened_now {
             let _ = crate::action::apply(self, crate::action::Action::CatchUp);
+        }
+    }
+
+    /// Read the command line's credential against the vault now open: one that expired, or that holds another
+    /// master key than this vault's (a new master key took effect), is removed and writing alone turned off with
+    /// the reason said; with writing alone on and no credential left (the command line removed an expired one),
+    /// the switch goes off too.
+    pub fn reread_credential(&mut self) {
+        use crate::keybox::Credential;
+        match crate::keybox::credential_now(crate::lastread::now_secs()) {
+            Ok(Credential::Live(t)) => self.credential = Some(t),
+            Ok(Credential::Expired) => crate::action::cli_alone_ended(self, Known::CredentialExpired),
+            Ok(Credential::Stale) => crate::action::cli_alone_ended(self, Known::CliAloneDropped),
+            Ok(Credential::None) => {
+                self.credential = None;
+                if self.machine.cli_alone.is_some() {
+                    crate::action::cli_alone_ended(self, Known::CredentialMissing);
+                }
+            }
+            Err(f) => self.faults.push(f),
+        }
+    }
+
+    /// Take the home's writer lock for a write while the command line writes alone (C4): with it off, or as a
+    /// reader, or already holding it, nothing to do. Taken, the ledger is counted first: if the command line wrote
+    /// meanwhile, the copies of the ledger, the queue and the settings are read again before this write. Not
+    /// taken, the write is not done and the person is told the command line is writing (`CLI_WRITING`).
+    pub fn take_turn(&mut self) -> Result<(), Fault> {
+        if self.machine.cli_alone.is_none() {
+            return Ok(());
+        }
+        let Some(root) = self.home.as_ref().map(|h| h.root().to_path_buf()) else { return Ok(()) };
+        let home = crate::home::Home::bare(root.clone());
+        let Some(lock) = self.lock.as_mut() else { return Ok(()) };
+        if !lock.mode().writable() || lock.held() {
+            return Ok(());
+        }
+        if !lock.regain(&home)? {
+            return Err(match lock.mode() {
+                crate::lock::Mode::Writer => Fault::known(Known::CliWriting, root.display().to_string()),
+                _ => Fault::known(Known::ReadOnly, crate::lang::filln(crate::lang::Key::Tail006, &[&lock.holder().to_string()])),
+            });
+        }
+        if self.seen_entries != Some(entry_files(&home)) {
+            self.reread_home_files(&home);
+        }
+        Ok(())
+    }
+
+    /// The copies of what the command line writes (the ledger, the queue) and the settings, read again from the
+    /// disk: the ledger's rows are reloaded, the queue and settings read now.
+    fn reread_home_files(&mut self, home: &crate::home::Home) {
+        self.stale_rows();
+        self.book_changed();
+        self.rooted = crate::ledgerx::head(home).map(|h| h.is_some()).unwrap_or(false);
+        match crate::queue::Queue::read(home) {
+            Ok(q) => self.queue = q,
+            Err(f) => self.faults.push(f),
+        }
+        match Settings::read(home) {
+            Ok(s) => self.settings = s,
+            Err(f) => self.faults.push(f),
+        }
+    }
+
+    /// At every drain: while the command line writes alone, a writer lets the lock go once nothing that writes
+    /// local data is in flight (counting the ledger as it leaves it); with writing alone off, it takes the lock
+    /// again and keeps it (the command line holding it a moment longer is retried at the next drain).
+    pub fn turn_sync(&mut self) {
+        let alone = self.machine.cli_alone.is_some();
+        let writing = self.tasks.flying().iter().any(|k| k.writes_local());
+        let Some(root) = self.home.as_ref().map(|h| h.root().to_path_buf()) else { return };
+        let home = crate::home::Home::bare(root);
+        let Some(lock) = self.lock.as_mut() else { return };
+        if !lock.mode().writable() {
+            return;
+        }
+        if alone {
+            if lock.held() && !writing {
+                lock.release();
+                self.seen_entries = Some(entry_files(&home));
+            }
+        } else if !lock.held() {
+            if let Err(f) = lock.regain(&home) {
+                self.faults.push(f);
+            }
+        }
+    }
+
+    /// At every drain while unlocked: a credential whose time is up is removed and writing alone turned off, said
+    /// once. While locked the command line removes an expired one itself, and the unlock reads where it stands.
+    pub fn credential_tick(&mut self) {
+        if self.unlocked() && self.credential.is_some_and(|t| t.expired(crate::lastread::now_secs())) {
+            crate::action::cli_alone_ended(self, Known::CredentialExpired);
         }
     }
 
@@ -1293,6 +1414,10 @@ impl Shell {
             door_answered: _,
             // What is at the command-line install path belongs to the machine, not to a ledger's source.
             cli_path: _,
+            // The command line's credential belongs to the machine.
+            credential: _,
+            // Counted against the home whose lock is held; a new home starts uncounted at its first turn.
+            seen_entries: _,
             // The passcode answer and machine settings follow the machine; results held while the test hooks
             // wait follow the session.
             vault_said: _,
@@ -1500,6 +1625,7 @@ impl Shell {
         if let Some(f) = trace::take_full() {
             self.faults.push(f);
         }
+        self.credential_tick();
         let mut got = self.tasks.drain_at(now);
         for o in got.iter_mut() {
             // Passcode tasks: the frame-side half runs here and its answer goes to `vault_said`; a refusal is
@@ -1957,6 +2083,9 @@ impl Shell {
             self.tasks.forget(crate::task::Kind::Held);
             let _ = crate::action::apply(self, crate::action::Action::ListHeld);
         }
+        // The writer lock follows the command line's switch: let go between writes while it writes alone, held
+        // again once it does not.
+        self.turn_sync();
         // The command-line channel: the request in progress advances with what landed, and newly arrived
         // requests are handled in this turn.
         self.door_turn(&got);
@@ -2109,4 +2238,12 @@ fn primary_reading() -> Option<(String, crate::keybox::PrimaryKind)> {
 /// What a gas estimate and its fees are read from: this home's chain, registry contract and nodes (as a set).
 fn gas_source(s: &Settings) -> (Option<u64>, Option<crate::key::Address>, std::collections::BTreeSet<&str>) {
     (s.chain_id, s.registry, s.endpoints.iter().map(String::as_str).collect())
+}
+
+/// How many entry files a home's ledger holds now (names only, nothing opened): what the writer turn compares.
+fn entry_files(home: &crate::home::Home) -> usize {
+    let dir = home.dir(crate::home::Slot::Ledger);
+    std::fs::read_dir(&dir)
+        .map(|d| d.flatten().filter(|e| zikaron_store::layout::classify(&e.file_name().to_string_lossy()) == zikaron_store::Kind::Entry).count())
+        .unwrap_or(0)
 }

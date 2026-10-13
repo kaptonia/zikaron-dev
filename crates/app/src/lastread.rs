@@ -24,7 +24,7 @@ use zikaron::json::{self, Value};
 pub const ANCHORED_FILE: &str = "last-audit.json";
 
 /// The suffix of verdict file names (`grants-held/<id>.verdict.json`).
-pub const VERDICT_SUFFIX: &str = ".verdict.json";
+pub const VERDICT_SUFFIX: &str = zikaron_seal::envelope::VERDICT_SUFFIX;
 
 /// A cache older than this (seconds) is stale: the status dot turns gray (never yellow). The background check
 /// runs either way.

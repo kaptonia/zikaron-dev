@@ -102,6 +102,116 @@ impl Win {
         }
     }
 
+    /// The command line's two ways to write this machine's sealed data, one group: "writes through the desktop"
+    /// (the door; no passcode) and "writes alone" (a credential; the passcode and a validity each time it is
+    /// turned on, on its sheet). The higher outranks the lower: while writing alone is on, the desktop switch is
+    /// greyed and the door stays closed (`machine::Machine::cli_path`).
+    fn set_cli_writes(&mut self, ui: &mut egui::Ui, now: f64) {
+        let m = &self.shell.machine;
+        let alone = m.cli_alone.is_some();
+        let desktop = m.cli_desktop;
+        let unlocked = self.shell.unlocked();
+        let alone_say = match (alone, self.shell.credential) {
+            (true, Some(c)) => cli_expiry_said(c.expires),
+            _ => t(Key::SetCliAloneSay).to_string(),
+        };
+        let desktop_say = if alone { t(Key::SetCliDesktopGrey) } else { t(Key::SetCliDesktopSay) };
+        let (mut flip_desktop, mut flip_alone) = (false, false);
+        stagger(ui, 3, |ui| {
+            card::section(ui, t(Key::SetCliGroup), "", |ui| {
+                card::form(ui, |ui, f| {
+                    f.row_with(ui, None, t(Key::SetCliDesktop), desktop_say, card::Value::None, |ui| flip_desktop = toggle::switch(ui, desktop && !alone, unlocked && !alone).clicked());
+                    f.row_with(ui, None, t(Key::SetCliAlone), &alone_say, card::Value::None, |ui| flip_alone = toggle::switch(ui, alone, unlocked).clicked());
+                });
+            });
+        });
+        if flip_desktop {
+            self.act(Action::SetCliDesktop { on: !desktop }, now);
+        }
+        if flip_alone {
+            if alone {
+                self.act(Action::CliAloneOff, now);
+            } else {
+                self.cli_open();
+            }
+        }
+    }
+
+    /// Go to the command line's two switches (the local data page), from a toast's key.
+    pub(super) fn go_cli_switches(&mut self, now: f64) {
+        self.go(Place::Settings(Section::Data), now);
+    }
+
+    /// Open the "write alone" sheet (every other sheet closes); the validity starts at one day.
+    pub(super) fn cli_open(&mut self) {
+        self.sheets_clear();
+        self.ux.cli_sheet = true;
+        self.ux.cli_unit = 2;
+        self.ux.cli_amount = "1".to_string();
+    }
+
+    /// Close the "write alone" sheet, wiping the passcode typed on it.
+    pub(super) fn cli_close(&mut self) {
+        self.ux.cli_sheet = false;
+        self.ux.cli_pin.clear();
+        self.ux.cli_trouble = None;
+    }
+
+    /// The "write alone" sheet: the passcode, then how long the credential lasts (minutes, hours or days, or
+    /// never), like a token's expiry. The key turns it on only with a whole passcode and a validity in range.
+    pub(super) fn cli_sheet(&mut self, ctx: &egui::Context, now: f64) {
+        if !self.ux.cli_sheet {
+            return;
+        }
+        let len = crate::keybox::PIN_LEN;
+        let busy = self.shell.tasks.in_flight(crate::task::Kind::Vault);
+        let lasts = cli_lasts(self.ux.cli_unit, &self.ux.cli_amount);
+        let pin_full = self.ux.cli_pin.chars() == len;
+        let trouble = self.ux.cli_trouble.clone();
+        let cells: Vec<seg::Cell> = CLI_UNITS.iter().map(|k| seg::Cell::from(t(*k))).collect();
+        let (mut go, mut close) = (false, false);
+        let out = sheet::show(
+            ctx,
+            sheet::Spec::new("cli-alone", tk::SHEET_W),
+            self,
+            |ui, me| {
+                sheet::title(ui, t(Key::SetCliAlone), t(Key::SetCliAloneSay));
+                field(ui, t(Key::IdPinGate), None, |ui| {
+                    pin::pin_row(ui, "cli-alone-pin", &mut me.ux.cli_pin, len, me.ux.pin_shake, !busy, true);
+                });
+                field(ui, t(Key::CliLastsTitle), None, |ui| {
+                    if let Some(i) = seg::seg(ui, "cli-lasts-unit", &cells, me.ux.cli_unit) {
+                        me.ux.cli_unit = i;
+                    }
+                    if me.ux.cli_unit < CLI_NEVER {
+                        let w = ui.available_width().min(160.0);
+                        input::field(ui, &mut me.ux.cli_amount, t(Key::CliLastsAmount), w, input::Look { mono: true, ..Default::default() });
+                    }
+                });
+                if lasts.is_none() {
+                    hint(ui, t(Key::CliLastsBad));
+                }
+                if let Some(f) = &trouble {
+                    states::err_box(ui, "cli-trouble", f.human(), f.next(), t(Key::U3RawError), &f.raw());
+                }
+            },
+            |ui, _me| {
+                go = page::Page::new().primary_with(ui, t(Key::DoCliAloneOn), pin_full && lasts.is_some() && !busy).1.clicked();
+                close = key::key(ui, t(Key::CfBack), Role::Secondary, true).clicked();
+                if busy {
+                    sheet::foot_note(ui, t(Key::VaultBusy));
+                }
+            },
+        );
+        if close || out.esc {
+            self.cli_close();
+        } else if let (true, Some(lasts)) = (go, lasts) {
+            let pin = std::mem::take(&mut self.ux.cli_pin);
+            let r = self.act(Action::SetCliAlone { lasts, pin }, now);
+            self.vault_or(VaultSite::Cli, r, now);
+        }
+    }
+
     fn set_appearance(&mut self, ui: &mut egui::Ui, now: f64) {
         let all = [skin::Appearance::Light, skin::Appearance::Dark, skin::Appearance::System];
         let cur = all.iter().position(|a| *a == self.appearance()).unwrap_or(0);
@@ -985,6 +1095,7 @@ impl Win {
             }
         }
         self.set_cli_path(ui, now);
+        self.set_cli_writes(ui, now);
         if measure {
             self.act(Action::Measure, now);
         }
@@ -1372,4 +1483,48 @@ fn net_cells(ui: &mut egui::Ui, d: &mut Draft, fresh: bool) {
     field(ui, t(Key::SetRegistry), None, |ui| input::mono(ui, &mut d.registry, ""));
     field(ui, t(Key::BasisFrom), None, |ui| input::mono(ui, &mut d.from, ""));
     field(ui, t(Key::SetNodes), None, |ui| input::area(ui, &mut d.nodes, 2));
+}
+
+/// The validity's units on the "write alone" sheet, in order; the last is "never".
+const CLI_UNITS: [Key; 4] = [Key::CliLastsMinutes, Key::CliLastsHours, Key::CliLastsDays, Key::CliLastsNever];
+/// The index of "never" in [`CLI_UNITS`].
+const CLI_NEVER: usize = 3;
+
+/// The validity as chosen: a whole number of the unit, within `machine::Lasts::ok`, or never; `None` when it is
+/// not one.
+fn cli_lasts(unit: usize, amount: &str) -> Option<crate::machine::Lasts> {
+    use crate::machine::Lasts;
+    let per = match unit {
+        0 => 60,
+        1 => 3_600,
+        2 => 86_400,
+        _ => return Some(Lasts::Never),
+    };
+    let n: u64 = amount.trim().parse().ok()?;
+    Some(Lasts::Secs(n.checked_mul(per)?)).filter(|l| l.ok())
+}
+
+/// When the command line's credential expires, said for people (`None`: never).
+pub(super) fn cli_expiry_said(expires: Option<u64>) -> String {
+    match expires {
+        Some(at) => fill1(Key::CliAloneUntil, &crate::when::when(at)),
+        None => t(Key::CliAloneNever).to_string(),
+    }
+}
+
+#[cfg(test)]
+mod cli_lasts_tests {
+    use super::*;
+
+    #[test]
+    fn a_validity_is_a_whole_number_of_its_unit_within_a_minute_and_a_year_or_never() {
+        use crate::machine::Lasts;
+        assert_eq!(cli_lasts(0, "5"), Some(Lasts::Secs(300)));
+        assert_eq!(cli_lasts(1, "2"), Some(Lasts::Secs(7_200)));
+        assert_eq!(cli_lasts(2, "365"), Some(Lasts::Secs(365 * 86_400)));
+        assert_eq!(cli_lasts(2, "366"), None);
+        assert_eq!(cli_lasts(0, "0"), None);
+        assert_eq!(cli_lasts(1, "x"), None);
+        assert_eq!(cli_lasts(CLI_NEVER, ""), Some(Lasts::Never));
+    }
 }

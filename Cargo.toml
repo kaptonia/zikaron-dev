@@ -12,6 +12,7 @@ members = [
   "crates/zikaron-anchor",
   "crates/zikaron-cli",
   "crates/zikaron-glue",
+  "crates/zikaron-seal",
   "crates/zikaron-ui",
   "crates/app",
 ]

@@ -1,6 +1,7 @@
 //! The app's self-check suite. Checks the current tree: computed values, source scans, and the real binary
 //! started as a child process.
 
+use app::queue::Kept as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -27,6 +28,12 @@ fn output_of(cmd: &mut Command) -> std::io::Result<std::process::Output> {
 
 fn src() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
+}
+
+/// One source file of a sibling crate the app wires (`zikaron-seal`, `zikaron-os`): the sealed layer and the
+/// platform piece hold what used to live in the app, and the app's structure pins read it there.
+fn read_crate_file(krate: &str, name: &str) -> std::io::Result<String> {
+    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(krate).join("src").join(name))
 }
 
 /// One app source file by module file name. A folder module (`x/mod.rs` and its children) reads as one text:
@@ -605,7 +612,8 @@ fn the_lock_is_the_kernels_and_nothing_deletes_it() {
     let text = read_src_file("lock.rs").expect("读不出 lock.rs");
     let code = code_only(&text);
     assert!(code.contains("crate::platform::lock_now("), "锁要向内核要(经平台接口)");
-    assert!(code_only(&read_src_file("platform.rs").expect("平台接口")).contains("fn flock("), "平台那一处向内核要 flock");
+    assert!(code_only(&read_src_file("platform.rs").expect("平台接口")).contains("zikaron_os::lock_now(file)"), "平台接口向平台件要锁");
+    assert!(code_only(&read_crate_file("zikaron-os", "unix.rs").expect("平台件")).contains("fn flock("), "平台件那一处向内核要 flock");
     for w in ["remove_file", "unlink", "stale", "陈旧", "pid ==", "SystemTime"] {
         assert!(!code.contains(w), "lock.rs 里有 {w}:陈旧锁的判词一旦出现,就是那条渐近线");
     }
@@ -786,16 +794,16 @@ fn every_legal_action_names_a_verb_that_the_contract_table_carries() {
 /// `keybox::recoverable`, so the button never shows only to be refused.
 #[test]
 fn the_way_out_of_an_empty_locked_box_and_the_key_that_offers_it_ask_one_question() {
-    let keybox = read_src_file("keybox.rs").expect("读不出 keybox.rs");
+    let keybox = read_crate_file("zikaron-seal", "keybox.rs").expect("读不出封存层 keybox.rs");
     let kcode = code_only(&keybox);
     // The refusal asks the question itself instead of recounting slots and seals.
     assert!(
-        kcode.contains("pub fn reset_empty()") && kcode.contains("if recoverable()?"),
+        kcode.contains("pub fn reset_empty(v: &Vault)") && kcode.contains("if recoverable(v)?"),
         "`reset_empty` 要问 `recoverable()`,不许自己再拼一遍条件"
     );
     // It deletes the whole file, and always asks first.
-    let body = kcode.split("pub fn reset_empty()").nth(1).unwrap_or("");
-    let asked = body.find("recoverable()");
+    let body = kcode.split("pub fn reset_empty(v: &Vault)").nth(1).unwrap_or("");
+    let asked = body.find("recoverable(v)");
     let removed = body.find("remove_file");
     assert!(asked.is_some() && removed.is_some() && asked < removed, "`reset_empty` 要先问再删");
     // The window button's condition reads the same answer (the shell field is set from `recoverable` when the
@@ -903,10 +911,10 @@ fn the_shipped_binary_cannot_move_where_the_anchor_key_lives() {
     // Vaults record their KDF level as written by `params()`, which the shipped build never lightens, so
     // shipped vaults are always standard; the level read back is bounds-checked, so a tampered file cannot
     // demand an absurd amount of memory.
-    let keybox = read_src_file("keybox.rs").expect("读不出 keybox.rs");
+    let keybox = read_crate_file("zikaron-seal", "keybox.rs").expect("读不出封存层 keybox.rs");
     let code = code_only(&keybox);
     assert!(code.contains("book.kdf = Some(params())"), "建库那一趟该把这一趟的取式档写进库档");
-    assert!(code.contains("crate::keystore::in_range(n, r, pp)"), "库档读回来那一节要现验界");
+    assert!(code.contains("crate::kdf::in_range(n, r, pp)"), "库档读回来那一节要现验界");
     assert!(code.contains("fn kdf_of(b: &Book)"), "开档那一侧该有「照这一本库那一档」的一处正主");
     assert_eq!(app::keybox::params(), app::keystore::Params::standard(), "没摆过轻档时跑的就是标准档");
 }
@@ -2873,23 +2881,26 @@ fn the_three_actions_that_use_a_key_ask_the_one_passcode_gate() {
 /// owner-only (`zikaron_os::owner_only`), so no file ends up readable by other accounts through umask.
 #[test]
 fn every_small_file_this_desk_lands_is_owner_only() {
+    // The one write path is the platform piece's (`zikaron_os::put_at`), reached through `home::put_at`.
     let home = code_only(&read_src_file("home.rs").expect("读不出 home.rs"));
-    assert!(home.contains("zikaron_os::owner_only(&mut o)"), "落档那一句建临时档时即只本人可读写");
-    assert!(home.contains("create_new(true)"), "临时名撞上了即具名拒,不去截断别人那一份");
-    assert!(home.contains("open_owner_only(&tmp)") && home.contains("replace_lasting(&tmp, &p)"), "临时档建时即只本人,替换进位");
+    assert!(home.contains("zikaron_os::put_at(dir, name, &put_tmp_name()?, bytes)"), "家那一处落档经平台件那一口");
+    let os = code_only(&read_crate_file("zikaron-os", "lib.rs").expect("读不出 zikaron-os"));
+    assert!(os.contains("owner_only(&mut o)"), "落档那一句建临时档时即只本人可读写");
+    assert!(os.contains("create_new(true)"), "临时名撞上了即具名拒,不去截断别人那一份");
+    assert!(os.contains("open_owner_only(&tmp)") && os.contains("rename_over(&tmp, &p)"), "临时档建时即只本人,替换进位");
     // On this system, a file written through the one write path is owner-only on disk.
     let dir = std::env::temp_dir().join(format!("zk-owner-only-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     app::home::put_at(&dir, "probe.json", b"{}").expect("落得下");
     assert!(zikaron_os::is_owner_only(&dir.join("probe.json")).expect("读得回"), "落下的档只本人可读写");
     let _ = std::fs::remove_dir_all(&dir);
-    // The vault writes no files itself: `rename` and `File::create` appear nowhere in keybox.rs.
-    let keybox = code_only(&read_src_file("keybox.rs").expect("读不出 keybox.rs"));
+    // The vault writes no files itself: `rename` and `File::create` appear nowhere in the sealed layer's keybox.rs.
+    let keybox = code_only(&read_crate_file("zikaron-seal", "keybox.rs").expect("读不出封存层 keybox.rs"));
     for own in ["std::fs::rename", "File::create"] {
         assert!(!keybox.contains(own), "keybox.rs 里又自己落档了:{own}");
     }
-    assert!(keybox.contains("crate::home::put_at(&dir, name, &bytes)"), "库档(与摆在旁边的新库)该经落档那一处");
-    assert!(keybox.contains("crate::home::rename_over(&from, &to)"), "新库生效那一下改名也经家那一处");
+    assert!(keybox.contains("crate::land::put_at(&v.dir, name, &bytes)"), "库档(与摆在旁边的新库)该经落档那一处");
+    assert!(keybox.contains("zikaron_os::rename_over(&from, &to)"), "新库生效那一下改名也经平台件那一处");
 }
 
 /// One key, one seat: two seats with the same address cannot be constructed (enforced by the closed table
@@ -3053,7 +3064,8 @@ fn opening_a_home_is_judged_in_one_place() {
     let mut set_lock = 0usize;
     for (name, text) in shipped() {
         let code = code_only(&text);
-        takes += code.matches("lock::take(").count();
+        // Opening a home asks the lock knowing whether the command line writes alone (`lock::take_as`).
+        takes += code.matches("lock::take_as(").count();
         set_home += code.matches("shell.home = Some(").count();
         set_lock += code.matches("shell.lock = Some(").count();
         let _ = name;
@@ -3113,22 +3125,23 @@ fn the_exported_key_file_is_for_its_owner_only_and_the_rest_are_not() {
 /// passcode attempt limit; `write_book` requires the lock by type.
 #[test]
 fn the_key_store_is_written_only_with_its_lock_in_hand() {
-    let code = code_only(&read_src_file("keybox.rs").expect("读不出 keybox.rs"));
+    let code = code_only(&read_crate_file("zikaron-seal", "keybox.rs").expect("读不出封存层 keybox.rs"));
     // The writer takes a reference to the lock, and the lock is taken in one place only.
-    assert!(code.contains("fn write_book(_held: &Held, b: &Book)"), "写库那一处该收手里那一把锁");
-    assert_eq!(code.matches("fn lock_book()").count(), 1, "取库锁那一句只许一处");
-    assert!(code.contains("crate::lock::grab_waiting("), "库档那一把要等得起(拿不到即等着)");
+    assert!(code.contains("fn write_book(v: &Vault, _held: &Held, b: &Book)"), "写库那一处该收手里那一把锁");
+    assert_eq!(code.matches("fn lock_book(v: &Vault)").count(), 1, "取库锁那一句只许一处");
+    assert!(code.contains("zikaron_os::lock_wait("), "库档那一把要等得起(拿不到即等着)");
     // Every vault writer has taken the lock earlier in the same function: count the "write" and "take lock" places.
-    let writes = code.matches("write_book(&held").count() + code.matches("write_book(held,").count();
+    let writes = code.matches("write_book(v, &held").count() + code.matches("write_book(v, held,").count();
     assert_eq!(code.matches("write_book(").count(), writes + 1, "有一处写库没有把手里那一把递进去(+1 是定义那一处)");
     // Every exit that changes the vault starts by taking the lock (lock-taking places equal the number of exits).
     // Fifteen exits: set passcode, unlock, check the passcode (it counts tries), reseal at the lower bound,
     // change passcode, recover, record recovery seals, remove recovery seals, place slot, remove slot, remove
     // every slot, reset empty vault, stage a new vault, commit it, drop a staged one.
-    assert_eq!(code.matches("lock_book()?").count(), 15, "要改库的那几口各拿一次锁");
+    assert_eq!(code.matches("lock_book(v)?").count(), 15, "要改库的那几口各拿一次锁");
     // The vault lock and the home's writer lock are separate: the vault lock lives in the machine directory,
-    // named in one place by `places`.
-    assert!(code.contains("crate::places::keybox_lock_file()"), "锁座那一份档的名由 places 一处给");
+    // named in one place by `places` and handed in where the app wires the vault.
+    let wiring = code_only(&read_src_file("keybox.rs").expect("读不出 keybox.rs"));
+    assert!(wiring.contains("crate::places::keybox_lock_file()"), "锁座那一份档的名由 places 一处给");
     let places = code_only(&read_src_file("places.rs").expect("读不出 places.rs"));
     assert!(places.contains("fn keybox_lock_file()"), "锁座那一份档的名住 places");
     assert!(!code.contains("crate::lock::take("), "库那一把不许借家的写者锁那一口");
@@ -3160,7 +3173,7 @@ fn the_queue_remembers_what_it_anchored() {
     assert_eq!(q.push(&a, 4), Pushed::Anchored, "锚成过的一枚再也排不进来");
     assert_eq!(q.len(), 1, "另一枚照旧在队里");
     // There is one queueing entry point, and each of its three outcomes has a sentence (closed table).
-    let code = code_only(&read_src_file("queue.rs").expect("读不出 queue.rs"));
+    let code = code_only(&read_crate_file("zikaron-seal", "queue.rs").expect("读不出 queue.rs"));
     assert_eq!(code.matches("pub fn push(").count(), 1, "入队只此一处");
     assert_eq!(code.matches("pub fn drop_ids(").count(), 1, "只出队的那一口只此一处");
     assert_eq!(code.matches("pub fn anchored_out(").count(), 1, "出队并记事实的那一口只此一处");
@@ -3300,7 +3313,7 @@ fn which_identity_is_current_is_asked_in_two_named_places() {
 /// re-queueing a deleted entry states the ledger fact, never a false chain fact.
 #[test]
 fn only_the_receipt_path_records_that_an_entry_was_anchored() {
-    let queue = code_only(&read_src_file("queue.rs").expect("读不出 queue.rs"));
+    let queue = code_only(&read_crate_file("zikaron-seal", "queue.rs").expect("读不出 queue.rs"));
     assert_eq!(queue.matches("self.anchored.push(").count(), 1, "写「锚成过」那一句只许一处");
     let at = queue.find("pub fn anchored_out(").expect("收据那一路自己的口");
     let body = &queue[at..queue[at..].find("\n    }\n").map(|e| at + e).unwrap_or(queue.len())];
@@ -3308,9 +3321,10 @@ fn only_the_receipt_path_records_that_an_entry_was_anchored() {
     let at = queue.find("pub fn drop_ids(").expect("只出队那一口");
     let body = &queue[at..queue[at..].find("\n    }\n").map(|e| at + e).unwrap_or(queue.len())];
     assert!(!body.contains("anchored"), "只出队那一口一个字节也不碰 `anchored`");
-    // The receipt exit is called only by `settle`.
-    let at = queue.find("pub fn settle(").expect("出队的唯一一处判");
-    let body = &queue[at..queue[at..].find("\n}\n").map(|e| at + e).unwrap_or(queue.len())];
+    // The receipt exit is called only by `settle` (the desktop's queue file; the model is the sealed layer's).
+    let app_queue = code_only(&read_src_file("queue.rs").expect("读不出 queue.rs"));
+    let at = app_queue.find("pub fn settle(").expect("出队的唯一一处判");
+    let body = &app_queue[at..app_queue[at..].find("\n}\n").map(|e| at + e).unwrap_or(app_queue.len())];
     assert!(body.contains("q.anchored_out(ids)"), "收据说成了那一路走记事实的那一口");
     for (name, text) in shipped() {
         if name == "queue.rs" {
@@ -3461,7 +3475,7 @@ fn deleting_an_identity_drops_its_recovery_seal_and_the_comment_says_so() {
     assert!(code_only(del).contains("crate::keybox::drop_recovery(&row.id)?"), "删身份要撤它的恢复封");
     assert!(code_only(del).contains("Known::PrimaryDelete"), "主身份不直接删");
     assert!(del.contains("may still hold a seal for it: dropped with it"), "删身份那一处的注释要说旧库里那一道封随之撤掉");
-    let kb = read_src_file("keybox.rs").expect("读不出 keybox.rs");
+    let kb = read_crate_file("zikaron-seal", "keybox.rs").expect("读不出封存层 keybox.rs");
     assert!(kb.contains("outside what this file can wipe"), "keybox 档头讲抹零那一句要写明它管不到的那几样");
 }
 
@@ -4645,8 +4659,8 @@ fn a_task_whose_home_moved_on_writes_nothing() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The ticket is checked only at the write gates (`home::put_at`, `home::land_numbered`, the ledger's append),
-/// never by a task.
+/// The ticket is checked only at the write gates (`home::put_at`, `home::land_numbered`, the ledger's append,
+/// and the key vault's changes where the app wires the sealed layer's vault), never by a task.
 #[test]
 fn the_ticket_is_asked_only_at_the_write_gates() {
     let mut at: Vec<String> = Vec::new();
@@ -4657,7 +4671,7 @@ fn the_ticket_is_asked_only_at_the_write_gates() {
         }
     }
     at.sort();
-    assert_eq!(at, vec!["home.rs".to_string(), "home.rs".to_string(), "local.rs".to_string(), "task.rs".to_string()], "查票只在写口");
+    assert_eq!(at, vec!["home.rs".to_string(), "home.rs".to_string(), "keybox.rs".to_string(), "local.rs".to_string(), "task.rs".to_string()], "查票只在写口");
     let home = code_only(&read_src_file("home.rs").unwrap());
     let put_at = home.split("pub fn put_at(").nth(1).and_then(|b| b.split("\npub fn ").next()).unwrap_or_default();
     assert!(put_at.contains("ticket_void()"), "put_at 收票");
@@ -5007,6 +5021,35 @@ fn alone_in(module: &str, test: &str) -> bool {
     true
 }
 
+/// Every test the family's component registry names (`family-components.json`, each `tests[]` path and name)
+/// is a function in that file now: a renamed or removed test is found here, not by a reader of the registry.
+#[test]
+fn every_registered_test_names_a_function_that_is_there() {
+    use zikaron::json::Value;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let v = zikaron::json::parse(&std::fs::read(root.join("family-components.json")).expect("the component registry")).expect("JSON");
+    let Some(Value::Arr(components)) = v.member("components") else { panic!("no components") };
+    let mut missing = Vec::new();
+    let mut seen = 0;
+    for c in components {
+        let Some(Value::Arr(tests)) = c.member("tests") else { continue };
+        for t in tests {
+            let (Some(Value::Str(path)), Some(Value::Str(name))) = (t.member("path"), t.member("name")) else {
+                missing.push(format!("{t:?}"));
+                continue;
+            };
+            seen += 1;
+            let code = std::fs::read_to_string(root.join(path)).map(|x| code_only(&x)).unwrap_or_default();
+            let there = code.match_indices(&format!("fn {name}")).any(|(i, m)| code[i + m.len()..].starts_with(['(', '<']));
+            if !there {
+                missing.push(format!("{path} {name}"));
+            }
+        }
+    }
+    assert!(seen > 0, "the registry names its tests");
+    assert!(missing.is_empty(), "registered tests that are not there: {missing:#?}");
+}
+
 #[path = "checks_more/gaps.rs"]
 mod gaps;
 #[path = "checks_more/gaps_b10m.rs"]
@@ -5047,5 +5090,7 @@ mod unsafe_confined;
 mod recovery_seals;
 #[path = "checks_more/window_habits.rs"]
 mod window_habits;
+#[path = "checks_more/cli_writes.rs"]
+mod cli_writes;
 #[path = "checks_more/door_serial.rs"]
 mod door_serial;

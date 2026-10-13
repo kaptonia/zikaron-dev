@@ -44,6 +44,7 @@ impl Win {
         self.ux.confirm_genesis = false;
         self.ux.sheet_shake = None;
         self.ux.bk_clear();
+        self.cli_close();
     }
 
     /// Whether any sheet is up (Esc belongs to it, not to the layer under it).
@@ -254,6 +255,7 @@ impl Win {
         if self.shell.vault.gate_up() {
             return;
         }
+        self.cli_sheet(ctx, now);
         self.estimate_due(ctx);
         self.new_anchor_sheet(ctx, now);
         self.conflict_sheet(ctx, now);

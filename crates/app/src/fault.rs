@@ -345,6 +345,23 @@ pub enum Known {
     /// A sent batch is void: none of its transactions was included, no node holds any of them, and its nonce
     /// was used on chain by another transaction. Its entries are back in the queue.
     BatchVoided,
+    /// The command line's credential has expired (it is removed on the way out).
+    CredentialExpired,
+    /// No command-line credential on this machine (the switch is off, or it was removed).
+    CredentialMissing,
+    /// A credential file not in its shape, or one that does not open.
+    CredentialShape,
+    /// The desktop holds this home's writer lock: the command line does not write beside it.
+    HomeHeld,
+    /// Writing alone is on: the switch for writing through the desktop does not flip until it is off.
+    CliAloneOn,
+    /// A new master key took effect: the command line's credential no longer opens anything, so it was removed
+    /// and writing alone turned off (said once, after the change).
+    CliAloneDropped,
+    /// The home's writer mark names another machine (or does not read): the command line does not write it.
+    HomeOtherMachine,
+    /// The command line holds the home's writer lock while writing alone: this desktop write is not done.
+    CliWriting,
 }
 
 impl Known {
@@ -369,7 +386,7 @@ impl Known {
         Known::NodeRefused,
     ];
 
-    pub const ALL: [Known; 162] = [
+    pub const ALL: [Known; 170] = [
         Known::FontMissing,
         Known::FileMissing,
         Known::Denied,
@@ -532,6 +549,14 @@ impl Known {
         Known::CliPathNotAllowed,
         Known::CliPathUnsupported,
         Known::BatchVoided,
+        Known::CredentialExpired,
+        Known::CredentialMissing,
+        Known::CredentialShape,
+        Known::HomeHeld,
+        Known::CliAloneOn,
+        Known::CliAloneDropped,
+        Known::HomeOtherMachine,
+        Known::CliWriting,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -698,6 +723,14 @@ impl Known {
             Known::CliPathNotAllowed => "CLI_PATH_NOT_ALLOWED",
             Known::CliPathUnsupported => "CLI_PATH_UNSUPPORTED",
             Known::BatchVoided => "BATCH_VOIDED",
+            Known::CredentialExpired => "CREDENTIAL_EXPIRED",
+            Known::CredentialMissing => "CREDENTIAL_MISSING",
+            Known::CredentialShape => "CREDENTIAL_SHAPE",
+            Known::HomeHeld => "HOME_HELD",
+            Known::CliAloneOn => "CLI_ALONE_ON",
+            Known::CliAloneDropped => "CLI_ALONE_DROPPED",
+            Known::HomeOtherMachine => "HOME_OTHER_MACHINE",
+            Known::CliWriting => "CLI_WRITING",
         }
     }
 }
@@ -872,6 +905,14 @@ impl Known {
             Known::CliPathNotAllowed => L::FaultWhatCliPathNotAllowed,
             Known::CliPathUnsupported => L::FaultWhatCliPathUnsupported,
             Known::BatchVoided => L::FaultWhatBatchVoided,
+            Known::CredentialExpired => L::FaultWhatCredentialExpired,
+            Known::CredentialMissing => L::FaultWhatCredentialMissing,
+            Known::CredentialShape => L::FaultWhatCredentialShape,
+            Known::HomeHeld => L::FaultWhatHomeHeld,
+            Known::CliAloneOn => L::FaultWhatCliAloneOn,
+            Known::CliAloneDropped => L::FaultWhatCliAloneDropped,
+            Known::HomeOtherMachine => L::FaultWhatHomeOtherMachine,
+            Known::CliWriting => L::FaultWhatCliWriting,
         }
     }
 
@@ -1040,6 +1081,14 @@ impl Known {
             Known::CliPathNotAllowed => L::FaultNextCliPathNotAllowed,
             Known::CliPathUnsupported => L::FaultNextCliPathUnsupported,
             Known::BatchVoided => L::FaultNextBatchVoided,
+            Known::CredentialExpired => L::FaultNextCredentialExpired,
+            Known::CredentialMissing => L::FaultNextCredentialMissing,
+            Known::CredentialShape => L::FaultNextCredentialShape,
+            Known::HomeHeld => L::FaultNextHomeHeld,
+            Known::CliAloneOn => L::FaultNextCliAloneOn,
+            Known::CliAloneDropped => L::FaultNextCliAloneDropped,
+            Known::HomeOtherMachine => L::FaultNextHomeOtherMachine,
+            Known::CliWriting => L::FaultNextCliWriting,
         }
     }
 }
@@ -1209,6 +1258,14 @@ pub fn translate(k: Known) -> &'static str {
         Known::CliPathNotAllowed => "系统不许动命令行那一处",
         Known::CliPathUnsupported => "这样开的应用接不进终端的命令路径",
         Known::BatchVoided => "这一批交易作废了:没有一笔入块、没有节点还持有、nonce 已被别的交易用掉;条目已回到排队",
+        Known::CredentialExpired => "命令行凭据已过期,已删去",
+        Known::CredentialMissing => "这台机器上没有命令行凭据",
+        Known::CredentialShape => "命令行凭据读不出,或开不了",
+        Known::HomeHeld => "桌面正持着这一处数据的写者锁",
+        Known::CliAloneOn => "纯命令行写入开着,经桌面写入不可拨",
+        Known::CliAloneDropped => "主钥换了,命令行凭据失效,纯命令行写入已关",
+        Known::HomeOtherMachine => "另一台机器是这一处数据的写者",
+        Known::CliWriting => "命令行正在写入这本账,这一步没有做",
     }
 }
 
@@ -1509,5 +1566,73 @@ pub fn classify(e: &std::io::Error, subject: &str) -> Fault {
         ErrorKind::NotFound => Fault::known(Known::FileMissing, tail),
         ErrorKind::PermissionDenied => Fault::known(Known::Denied, tail),
         _ => Fault::unknown(tail),
+    }
+}
+
+/// The sealed layer's code as this fault table's member (`None`: a system error with no code of its own, said as
+/// unknown). Exhaustive: a code the sealed layer adds does not compile until it is said here.
+pub fn known_of_sealed(c: zikaron_seal::Code) -> Option<Known> {
+    use zikaron_seal::Code as C;
+    Some(match c {
+        C::FileMissing => Known::FileMissing,
+        C::Denied => Known::Denied,
+        C::Unknown => return None,
+        C::Locked => Known::Locked,
+        C::LockedOut => Known::LockedOut,
+        C::KeyboxMissing => Known::KeyboxMissing,
+        C::KeyboxShape => Known::KeyboxShape,
+        C::KeyboxSlot => Known::KeyboxSlot,
+        C::KeyboxLocked => Known::KeyboxLocked,
+        C::KeyboxNotEmpty => Known::KeyboxNotEmpty,
+        C::KdfBelowFloor => Known::KdfBelowFloor,
+        C::KeystoreParams => Known::KeystoreParams,
+        C::KeyMalformed => Known::KeyMalformed,
+        C::PinSet => Known::PinSet,
+        C::PinShape => Known::PinShape,
+        C::PinWrong => Known::PinWrong,
+        C::RecoveryNoMatch => Known::RecoveryNoMatch,
+        C::RecoveryNotPrimary => Known::RecoveryNotPrimary,
+        C::LocalSeal => Known::LocalSeal,
+        C::Ledger => Known::Ledger,
+        C::ContentShape => Known::ContentShape,
+        C::SettingsShape => Known::SettingsShape,
+        C::QueueShape => Known::QueueShape,
+        C::MachineShape => Known::MachineShape,
+        C::IdentitiesShape => Known::IdentitiesShape,
+        C::CredentialExpired => Known::CredentialExpired,
+        C::CredentialMissing => Known::CredentialMissing,
+        C::CredentialShape => Known::CredentialShape,
+        C::HomeHeld => Known::HomeHeld,
+        C::HomeOtherMachine => Known::HomeOtherMachine,
+    })
+}
+
+/// A refusal of the sealed layer (`zikaron-seal`) as one of this table's faults, its evidence unchanged.
+impl From<zikaron_seal::Trouble> for Fault {
+    fn from(t: zikaron_seal::Trouble) -> Fault {
+        match known_of_sealed(t.code) {
+            Some(k) => Fault::known(k, t.tail),
+            None => Fault::unknown(t.tail),
+        }
+    }
+}
+
+/// So the sealed layer can read its own refusals back from a fault (`envelope::Unread::of`).
+impl zikaron_seal::Coded for Fault {
+    fn sealed_code(&self) -> Option<zikaron_seal::Code> {
+        use zikaron_seal::Code as C;
+        let k = self.which()?;
+        [
+            C::FileMissing, C::Denied, C::Locked, C::LockedOut, C::KeyboxMissing, C::KeyboxShape, C::KeyboxSlot, C::KeyboxLocked,
+            C::KeyboxNotEmpty, C::KdfBelowFloor, C::KeystoreParams, C::KeyMalformed, C::PinSet, C::PinShape, C::PinWrong,
+            C::RecoveryNoMatch, C::RecoveryNotPrimary, C::LocalSeal, C::Ledger, C::ContentShape, C::SettingsShape, C::QueueShape,
+            C::MachineShape, C::IdentitiesShape, C::CredentialExpired, C::CredentialMissing, C::CredentialShape, C::HomeHeld, C::HomeOtherMachine,
+        ]
+        .into_iter()
+        .find(|c| known_of_sealed(*c) == Some(k))
+    }
+
+    fn sealed_tail(&self) -> &str {
+        self.tail()
     }
 }

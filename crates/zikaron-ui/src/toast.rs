@@ -140,6 +140,11 @@ impl Toasts {
         self.cur.as_ref().map(|s| s.text.as_str())
     }
 
+    /// The keys of the toast on screen now (label and what it does), before "details" and "close".
+    pub fn showing_keys(&self) -> Vec<(String, Act)> {
+        self.cur.as_ref().map(|s| s.keys.clone()).unwrap_or_default()
+    }
+
     /// The tone of the sentence on screen now.
     pub fn showing_tone(&self) -> Option<Tone> {
         self.cur.as_ref().map(|s| s.tone)

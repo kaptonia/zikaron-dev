@@ -316,10 +316,17 @@ pub enum Said {
     NoMachine,
     OnDesktop,
     Queued,
+    SealedNoKey,
+    CredentialExpired,
+    CredentialMissing,
+    CredentialShape,
+    HomeHeld,
+    HomeOtherMachine,
+    Adopted,
 }
 
 impl Said {
-    pub const ALL: [Said; 48] = [
+    pub const ALL: [Said; 55] = [
         Said::Usage,
         Said::NotAVerb,
         Said::NotAFlag,
@@ -368,6 +375,13 @@ impl Said {
         Said::NoMachine,
         Said::OnDesktop,
         Said::Queued,
+        Said::SealedNoKey,
+        Said::CredentialExpired,
+        Said::CredentialMissing,
+        Said::CredentialShape,
+        Said::HomeHeld,
+        Said::HomeOtherMachine,
+        Said::Adopted,
     ];
 
     /// The words, one table: Chinese and English.
@@ -421,6 +435,13 @@ impl Said {
             Said::NoMachine => ("找不到本机数据所在的文件夹", "This machine's data folder cannot be found"),
             Said::OnDesktop => ("此动作须在桌面上做", "This action must be done on the desktop"),
             Said::Queued => ("已在队列,待用户在桌面上发", "Queued; waiting for the user to send it from the desktop"),
+            Said::SealedNoKey => ("ZIKARON Desk 封存的数据,签名钥由桌面的钥库给,不收 --key 或 --key-file", "sealed data of ZIKARON Desk is signed with the key its vault keeps; --key and --key-file are not taken"),
+            Said::CredentialExpired => ("命令行凭据已过期,已删去;请在桌面重新打开纯命令行写入", "The command-line credential has expired and was removed; turn writing alone on again on the desktop"),
+            Said::CredentialMissing => ("这台机器上没有命令行凭据:桌面的纯命令行写入没有打开", "This machine has no command-line credential: writing alone is not on in the desktop"),
+            Said::CredentialShape => ("命令行凭据读不出、开不了,或不是这台机器钥库的;请在桌面关掉再打开纯命令行写入", "The command-line credential cannot be read, does not open, or is not this machine vault's; turn writing alone off and on again on the desktop"),
+            Said::HomeHeld => ("桌面正在写这一处数据,这一笔没有写;请稍后再试", "The desktop is writing this data folder; nothing was written. Try again shortly"),
+            Said::HomeOtherMachine => ("这一处数据的写者标记是另一台机器的(或读不出),这一笔没有写;请在写它的那台机器上写", "This data folder's writer mark names another machine (or does not read); nothing was written. Write on the machine that writes it"),
+            Said::Adopted => ("这本账已被 ZIKARON Desk 采用,原目录不再写;请在桌面打开纯命令行写入,写桌面封存的那一本", "ZIKARON Desk has adopted this ledger; its folder is no longer written. Turn writing alone on in the desktop and write its sealed copy"),
         }
     }
 

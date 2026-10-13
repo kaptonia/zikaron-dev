@@ -2,6 +2,25 @@
 
 [中文](CHANGELOG.md) | English
 
+## Next version (unreleased)
+
+This version lets the command line write the data the desktop keeps sealed even while the desktop is closed or locked, authorised by you on the desktop, for a time you choose, and taken back whenever you like; the machine settings keep only the two the passcode gate needs in plain. **Data an earlier version left in an older form is not read and nothing converts it: bring it across by hand as in "Upgrading from an earlier version" in section 2 of the manual.**
+
+### Command-line writing
+
+- **Two switches**: the "Command line" group in Settings > Local data. "Command line writes through the desktop" decides whether the door is open (`--home`, no passcode); "Command line writes alone" asks for the passcode and a validity (minutes, hours, days, or never expiring) each time it is turned on. While writing alone is on, the desktop switch is greyed and the door is closed: there is one command-line path at any time.
+- **Credential**: turning writing alone on writes a credential in the machine folder that only you can read and write; with it the command line writes the sealed ledger and anchor queue directly, taking no passcode and no `--key`. Turning the switch off removes it; its expiry removes it with a line saying so; a new master key makes it worthless, turns the switch off and says so; a changed passcode leaves it working; a credential failure counts no passcode try.
+- **Taking turns with the lock**: while writing alone is on, the desktop takes the data folder's writer lock only for each write and lets it go after, reading things again first if the command line wrote; a desktop write that meets the command line writing is not done and says so, with a key to the switches. The command line meeting the desktop writing answers `E_HOME_HELD`; a data folder whose writer mark names another machine answers `E_HOME_OTHER_MACHINE`.
+- **The folder after adoption**: once a plain ledger the command line made is taken in by the desktop ("Import key…", then "Adopt in place"), writing its original folder answers `E_ADOPTED` and the folder is never touched; the machine folder keeps only a blind list (the SHA-256 of a random salt followed by the root entry id), never a ledger name, path or entry id.
+- **`retract`** writes a sealed ledger with the credential like the other entry-writing verbs; `init` is not taken there.
+- New refusal reasons: `E_CREDENTIAL_MISSING`, `E_CREDENTIAL_EXPIRED`, `E_CREDENTIAL_SHAPE`, `E_HOME_HELD`, `E_HOME_OTHER_MACHINE`, `E_ADOPTED`.
+- **Handing the ledger over is done on the desktop by hand**: `succeed --home` always answers `E_ON_DESKTOP` and is not handed to the desktop.
+
+### Local data
+
+- **Machine settings in two files**: `machine.json` holds only the language and the appearance (the passcode gate needs them); auto-lock, proxy, network, the command line's switches, the data folders used and the whole-machine backup record are in the encrypted machine settings, read once unlocked. Other settings an earlier version kept in `machine.json` are not read and go at the next save.
+- **This version's form only**: local files in an earlier version's encrypted form, plain files and older key store forms are not read and nothing converts them (the reason is named and the file left as it is); upgrade by hand as in section 2 of the manual.
+
 ## 0.1.2
 
 This release reworks how the app talks to nodes (proxies, rate limits, comparing several nodes), lets the command line write and put records on chain through the running desktop app, adds resending a stuck batch with higher fees, and moves local data to a new version of its encrypted format. The ledger law and the record kit format (zikaron/1) are unchanged: ledgers, record kits and data folders written by 0.1.1 read and write as before in 0.1.2. Encrypted local files written by 0.1.2 cannot be read by 0.1.1, so do not open the same data with 0.1.1 after upgrading.

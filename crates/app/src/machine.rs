@@ -1,14 +1,20 @@
-//! Machine-level settings file.
+//! Machine-level settings.
 //!
 //! Most settings are per home (`settings.rs`), but some belong to the machine regardless of identity or data
-//! directory: auto-lock, appearance, language, network choice, proxy, backup records. They live in
-//! `machine.json` in the machine directory (next to `where.json` and the key vault), written through
-//! `home::put_at` (mode 0600, atomic rename). The file stays plain because the passcode screen reads the
-//! appearance and language before unlocking, and nothing in it is user content.
+//! directory: auto-lock, appearance, language, network choice, proxy, the command line's switches, backup
+//! records. They live in the machine directory (next to `where.json` and the key vault) in two files:
+//!
+//! - `machine.json`, plain, holding only what the passcode screen reads before unlocking: `appearance` and
+//!   `lang`. Nothing else is read from it; any other member (an earlier version's settings) is never read and
+//!   goes at the next write.
+//! - the sealed machine settings (`places::machine_file`, `local::Doc::MachineSealed`), holding the rest; read
+//!   only once unlocked. While locked, a change to them is refused (`LOCKED`) and never written over them.
 //!
 //! ─── Shape ───
 //!
-//! `{"appearance":"light","auto_lock":false,"auto_lock_secs":900,"backup":{"at":1790000000,"count":12,"path":"/…"},"lang":"en","network":"sepolia","shape":"zikaron-desk/machine/1"}`,
+//! The settings as one whole (a backup carries them so, and the sealed file is the whole without `appearance`
+//! and `lang`):
+//! `{"appearance":"light","auto_lock":false,"auto_lock_secs":900,"backup":{"at":1790000000,"count":12,"index":true,"path":"/…"},"lang":"en","network":"sepolia","shape":"zikaron-desk/machine/1"}`,
 //! canonical key order.
 //!
 //! - `appearance`: `light`, `dark`, or `system` (follow the OS); absent means light.
@@ -19,13 +25,17 @@
 //! - `lang`: the last chosen language (`zh` or `en`), used by the passcode screen before unlocking.
 //! - `cli_anchor`: how the CLI's `anchor` command is handled by the desktop app: `queue` shows the request and
 //!   sends nothing; absent (or `send`, never written) sends as the send button does.
+//! - `cli_desktop`: whether the command line may write through the desktop (its door); absent means on.
+//! - `cli_alone`: whether the command line writes alone, with a credential lasting this many seconds (or
+//!   `never` expiring); absent means off. When on, the desktop's door stays closed ([`Machine::cli_path`]).
 //! - `network`: the network last chosen in the wizard (a `deploy::KNOWN` row or `deploy::CUSTOM`); absent means
 //!   not chosen. It only decides which option is preselected; a home's network comes from its identity or
 //!   settings (`identity::Row::network`).
 //!
-//! Unknown members are preserved, so changing one field never erases others. No file means all defaults. A wrong shape, or a known
-//! member with an unknown value, fails the whole file with `MACHINE_SHAPE` and leaves it untouched; the shell
-//! then locks with the default timeout and reports the error (never silently "never lock").
+//! Unknown members of the sealed part are preserved, so changing one field never erases others. No file means
+//! all defaults. A wrong shape, or a known member with an unknown value, fails the whole file with
+//! `MACHINE_SHAPE` and leaves it untouched; the shell then locks with the default timeout and reports the error
+//! (never silently "never lock").
 
 use crate::fault::{Fault, Known};
 use zikaron::json::{self, Value};
@@ -98,6 +108,50 @@ impl CliAnchor {
     }
 }
 
+/// How long a command-line credential lasts once issued: a number of seconds, or never expiring.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Lasts {
+    Secs(u64),
+    Never,
+}
+
+/// The longest a credential may last when it expires: a year.
+pub const LASTS_MAX: u64 = 365 * 86_400;
+/// The shortest: a minute.
+pub const LASTS_MIN: u64 = 60;
+/// The word written for a credential that never expires.
+pub const NEVER: &str = "never";
+
+impl Lasts {
+    /// Whether this length may be chosen (between [`LASTS_MIN`] and [`LASTS_MAX`], or never).
+    pub fn ok(self) -> bool {
+        match self {
+            Lasts::Secs(n) => (LASTS_MIN..=LASTS_MAX).contains(&n),
+            Lasts::Never => true,
+        }
+    }
+
+    /// When a credential issued at `issued` expires (`None`: never).
+    pub fn expires(self, issued: u64) -> Option<u64> {
+        match self {
+            Lasts::Secs(n) => Some(issued + n),
+            Lasts::Never => None,
+        }
+    }
+}
+
+/// Which way the command line writes now. Exactly one at any time: writing alone outranks the desktop's door,
+/// so while it is on the door is closed whatever its own switch says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CliPath {
+    /// Through the desktop's door (the desktop switch on, writing alone off).
+    Desktop,
+    /// Alone, with the credential (writing alone on; the desktop switch is greyed out).
+    Alone,
+    /// Neither (both off).
+    Closed,
+}
+
 /// Member names of the machine file (top level and the backup record).
 pub mod member {
     pub const SHAPE: &str = "shape";
@@ -109,6 +163,8 @@ pub mod member {
     pub const LANG: &str = "lang";
     pub const PROXY: &str = "proxy";
     pub const CLI_ANCHOR: &str = "cli_anchor";
+    pub const CLI_DESKTOP: &str = "cli_desktop";
+    pub const CLI_ALONE: &str = "cli_alone";
     pub const BACKUP_FAILED: &str = "backup_failed";
     pub const AT: &str = "at";
     pub const COUNT: &str = "count";
@@ -149,37 +205,102 @@ pub struct Machine {
     pub proxy: Option<String>,
     /// How the CLI's `anchor` command is handled; written only when not the default.
     pub cli_anchor: CliAnchor,
+    /// Whether the command line may write through the desktop's door; written only when off.
+    pub cli_desktop: bool,
+    /// Whether the command line writes alone, and how long its credential lasts; `None` is off.
+    pub cli_alone: Option<Lasts>,
     /// Unknown members, preserved unchanged.
     extra: Vec<(String, Value)>,
+    /// Whether the sealed part was read (unlocked); a change to it is written only then.
+    held: bool,
+}
+
+impl Machine {
+    /// Which way the command line writes now ([`CliPath`]).
+    pub fn cli_path(&self) -> CliPath {
+        match (self.cli_alone.is_some(), self.cli_desktop) {
+            (true, _) => CliPath::Alone,
+            (false, true) => CliPath::Desktop,
+            (false, false) => CliPath::Closed,
+        }
+    }
+
+    /// Whether the sealed part of these settings was read (they are real, not the defaults shown while locked).
+    pub fn held(&self) -> bool {
+        self.held
+    }
 }
 
 impl Default for Machine {
     fn default() -> Self {
-        Machine { auto_lock: LOCK_ON_DEFAULT, auto_lock_secs: LOCK_DEFAULT, backup: None, backup_failed: None, network: None, appearance: None, lang: None, homes: Vec::new(), aside_at: Vec::new(), proxy: None, cli_anchor: CliAnchor::Send, extra: Vec::new() }
+        Machine { auto_lock: LOCK_ON_DEFAULT, auto_lock_secs: LOCK_DEFAULT, backup: None, backup_failed: None, network: None, appearance: None, lang: None, homes: Vec::new(), aside_at: Vec::new(), proxy: None, cli_anchor: CliAnchor::Send, cli_desktop: true, cli_alone: None, extra: Vec::new(), held: false }
     }
 }
 
-/// Where the file is.
+/// Where the plain file is.
 pub fn path() -> Result<std::path::PathBuf, Fault> {
     Ok(crate::home::machine_dir()?.join(FILE))
 }
 
-/// Read the settings. No file means defaults; a wrong shape is an error.
-pub fn read() -> Result<Machine, Fault> {
-    let p = path()?;
-    let bytes = match std::fs::read(&p) {
-        Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Machine::default()),
-        Err(e) => return Err(crate::fault::classify(&e, &p.display().to_string())),
-    };
-    parse(&bytes, &p)
+/// Where the sealed file is.
+pub fn sealed_path() -> Result<std::path::PathBuf, Fault> {
+    Ok(crate::home::machine_dir()?.join(crate::places::machine_file()))
 }
 
-/// Write settings given as whole-file bytes (a restore's staged machine settings), validated like the file.
-pub fn write_bytes(bytes: &[u8]) -> Result<(), Fault> {
-    let m = parse(bytes, &path()?)?;
+/// The plain part: the language and appearance (no file means neither chosen).
+fn read_plain(into: &mut Machine) -> Result<(), Fault> {
+    let p = path()?;
+    match std::fs::read(&p) {
+        Ok(b) => parse_plain(&b, &p, into),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(crate::fault::classify(&e, &p.display().to_string())),
+    }
+}
+
+/// The sealed part (no file means defaults); `LOCKED` while locked.
+fn read_sealed() -> Result<Machine, Fault> {
+    let p = sealed_path()?;
+    let mut m = match crate::local::read(&p, crate::local::Doc::MachineSealed)? {
+        Some(b) => parse(&b, &p)?,
+        // No file yet: defaults, held only with the key in hand (a first run before its passcode has none).
+        None if crate::keybox::local_key().is_err() => return Ok(Machine::default()),
+        None => Machine::default(),
+    };
+    // Only the plain file says these.
+    m.lang = None;
+    m.appearance = None;
+    m.held = true;
+    Ok(m)
+}
+
+/// Read the settings, both parts. No file means defaults; a wrong shape is an error, and so is the vault being
+/// locked (the sealed part is not in hand).
+pub fn read() -> Result<Machine, Fault> {
+    let mut m = read_sealed()?;
+    read_plain(&mut m)?;
+    Ok(m)
+}
+
+/// Read what can be read now: the plain part always, the sealed part when unlocked (otherwise its defaults, and
+/// [`Machine::held`] false). For the screens shown before unlocking (language, appearance) and the start.
+pub fn read_face() -> Result<Machine, Fault> {
+    let mut m = match read_sealed() {
+        Ok(m) => m,
+        // The key is not in hand (locked, or no vault yet): the sealed part waits for it.
+        Err(_) if crate::keybox::local_key().is_err() => Machine::default(),
+        Err(f) => return Err(f),
+    };
+    read_plain(&mut m)?;
+    Ok(m)
+}
+
+/// Write the plain part given as its file's bytes (a restore's staged plain settings), validated like the file.
+pub fn write_plain_bytes(bytes: &[u8]) -> Result<(), Fault> {
+    let p = path()?;
+    let mut m = Machine::default();
+    parse_plain(bytes, &p, &mut m)?;
     let _turn = turn();
-    write_now(&m)
+    crate::home::put_at(&crate::home::machine_dir()?, FILE, &plain_bytes(&m)?)
 }
 
 /// Process-wide lock held by every write and every read-modify-write ([`update`]). Without it a background
@@ -192,13 +313,60 @@ fn turn() -> std::sync::MutexGuard<'static, ()> {
 }
 
 /// Read, modify and write the settings under the lock, returning what was written. All field changes go
-/// through here. Unreadable settings are never overwritten (the read fails first).
+/// through here. Unreadable settings are never overwritten (the read fails first). While locked only the plain
+/// part can change: a change to the sealed part is refused (`LOCKED`) and nothing is written.
 pub fn update(change: impl FnOnce(&mut Machine)) -> Result<Machine, Fault> {
     let _turn = turn();
-    let mut m = read()?;
+    let mut m = read_face()?;
+    let before = sealed_bytes(&m)?;
     change(&mut m);
+    if !m.held && sealed_bytes(&m)? != before {
+        return Err(Fault::known(Known::Locked, crate::places::machine_file()));
+    }
     write_now(&m)?;
     Ok(m)
+}
+
+/// The plain file: only `appearance` and `lang` are read; every other member is not, and goes at the next
+/// write (an earlier version kept every setting here).
+fn parse_plain(bytes: &[u8], p: &std::path::Path, into: &mut Machine) -> Result<(), Fault> {
+    let v = json::parse(bytes).map_err(|t| Fault::known(Known::MachineShape, format!("{}: {t:?}", p.display())))?;
+    let Value::Obj(members) = v else {
+        return Err(Fault::known(Known::MachineShape, p.display().to_string()));
+    };
+    for (k, val) in members {
+        match (k.as_str(), &val) {
+            (member::APPEARANCE, Value::Str(a)) if APPEARANCES.contains(&a.as_str()) => into.appearance = Some(a.clone()),
+            (member::APPEARANCE, _) => return Err(Fault::known(Known::MachineShape, member::APPEARANCE.to_string())),
+            (member::LANG, Value::Str(l)) if crate::lang::Lang::ALL.iter().any(|x| x.as_str() == l) => {
+                into.lang = crate::lang::Lang::ALL.into_iter().find(|x| x.as_str() == l);
+            }
+            (member::LANG, _) => return Err(Fault::known(Known::MachineShape, member::LANG.to_string())),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// The plain file's bytes: `appearance` and `lang` when chosen, nothing else. An appearance not in
+/// [`APPEARANCES`] is an error and nothing is written.
+pub fn plain_bytes(m: &Machine) -> Result<Vec<u8>, Fault> {
+    if let Some(a) = m.appearance.as_ref().filter(|a| !APPEARANCES.contains(&a.as_str())) {
+        return Err(Fault::known(Known::MachineShape, a.clone()));
+    }
+    let mut members: Vec<(String, Value)> = Vec::new();
+    if let Some(a) = &m.appearance {
+        members.push((member::APPEARANCE.into(), Value::Str(a.clone())));
+    }
+    if let Some(l) = m.lang {
+        members.push((member::LANG.into(), Value::Str(l.as_str().to_string())));
+    }
+    Ok(json::canon_bytes(&Value::Obj(members)))
+}
+
+/// The sealed file's bytes: the whole ([`to_bytes`]) without `appearance` and `lang`.
+pub fn sealed_bytes(m: &Machine) -> Result<Vec<u8>, Fault> {
+    to_bytes(&Machine { appearance: None, lang: None, ..m.clone() })
 }
 
 fn parse(bytes: &[u8], p: &std::path::Path) -> Result<Machine, Fault> {
@@ -264,6 +432,11 @@ fn parse(bytes: &[u8], p: &std::path::Path) -> Result<Machine, Fault> {
                 out.cli_anchor = CliAnchor::ALL.into_iter().find(|x| x.as_str() == w).unwrap_or_default();
             }
             (member::CLI_ANCHOR, _) => return Err(Fault::known(Known::MachineShape, member::CLI_ANCHOR.to_string())),
+            (member::CLI_DESKTOP, Value::Bool(b)) => out.cli_desktop = *b,
+            (member::CLI_DESKTOP, _) => return Err(Fault::known(Known::MachineShape, member::CLI_DESKTOP.to_string())),
+            (member::CLI_ALONE, Value::Int(n)) if Lasts::Secs(*n).ok() => out.cli_alone = Some(Lasts::Secs(*n)),
+            (member::CLI_ALONE, Value::Str(w)) if w == NEVER => out.cli_alone = Some(Lasts::Never),
+            (member::CLI_ALONE, _) => return Err(Fault::known(Known::MachineShape, member::CLI_ALONE.to_string())),
             _ => out.extra.push((k, val)),
         }
     }
@@ -274,19 +447,25 @@ fn parse(bytes: &[u8], p: &std::path::Path) -> Result<Machine, Fault> {
 }
 
 /// Write the settings. An invalid value (e.g. an auto-lock time not in [`LOCK_CHOICES`]) is an error and the
-/// file is untouched.
+/// files are untouched.
 pub fn write(m: &Machine) -> Result<(), Fault> {
     let _turn = turn();
     write_now(m)
 }
 
-/// [`write`], with the lock already held.
+/// [`write`], with the lock already held: the sealed part first (when held), then the plain part.
 fn write_now(m: &Machine) -> Result<(), Fault> {
-    let bytes = to_bytes(m)?;
-    crate::home::put_at(&crate::home::machine_dir()?, FILE, &bytes)
+    let sealed = sealed_bytes(m)?;
+    let plain = plain_bytes(m)?;
+    let dir = crate::home::machine_dir()?;
+    if m.held {
+        crate::local::put(&dir, &crate::places::machine_file(), crate::local::Doc::MachineSealed, &sealed)?;
+    }
+    crate::home::put_at(&dir, FILE, &plain)
 }
 
-/// Parse settings from bytes with the file's checks (a restore validates the backup's copy before staging).
+/// Parse settings from their whole bytes with the file's checks (a restore validates the backup's copy before
+/// staging).
 pub fn from_bytes(bytes: &[u8]) -> Result<Machine, Fault> {
     parse(bytes, &path()?)
 }
@@ -326,6 +505,15 @@ pub fn to_bytes(m: &Machine) -> Result<Vec<u8>, Fault> {
     }
     if m.cli_anchor != CliAnchor::Send {
         members.push((member::CLI_ANCHOR.into(), Value::Str(m.cli_anchor.as_str().to_string())));
+    }
+    if !m.cli_desktop {
+        members.push((member::CLI_DESKTOP.into(), Value::Bool(false)));
+    }
+    match m.cli_alone {
+        Some(l) if !l.ok() => return Err(Fault::known(Known::MachineShape, member::CLI_ALONE.to_string())),
+        Some(Lasts::Secs(n)) => members.push((member::CLI_ALONE.into(), Value::Int(n))),
+        Some(Lasts::Never) => members.push((member::CLI_ALONE.into(), Value::Str(NEVER.to_string()))),
+        None => {}
     }
     members.push((member::AUTO_LOCK_SECS.into(), Value::Int(m.auto_lock_secs)));
     if let Some(l) = m.lang {
@@ -394,9 +582,9 @@ pub fn proxy_choice(m: &Machine) -> zikaron_net::Choice {
 }
 
 /// The current proxy choice (read when opening a new connection; unreadable settings follow the system, as
-/// the default does).
+/// the default does, and so does a locked vault, whose sealed part is not in hand).
 pub fn proxy_now() -> zikaron_net::Choice {
-    read().map(|m| proxy_choice(&m)).unwrap_or(zikaron_net::Choice::System)
+    read_face().map(|m| proxy_choice(&m)).unwrap_or(zikaron_net::Choice::System)
 }
 
 /// A user-facing line for the settings page describing how new connections go: through which proxy, or
@@ -517,6 +705,66 @@ mod tests {
         assert_eq!(again.matches("\"proxy\"").count(), 1, "{again}");
         assert!(again.contains("\"proxy\":\"none\""), "{again}");
         assert_eq!(proxy_choice(&parse(again.as_bytes(), p).expect("reads back")), zikaron_net::Choice::Off);
+    }
+
+    /// The four states of the command line's two switches, one test each ("the higher outranks the lower"):
+    /// both off, no path; through the desktop alone, the door; writing alone on, alone whatever the desktop
+    /// switch says (it is greyed and the door stays closed).
+    fn path_of(desktop: bool, alone: Option<Lasts>) -> CliPath {
+        Machine { cli_desktop: desktop, cli_alone: alone, ..Machine::default() }.cli_path()
+    }
+
+    #[test]
+    fn both_switches_off_leave_the_command_line_no_way_to_write() {
+        assert_eq!(path_of(false, None), CliPath::Closed);
+    }
+
+    #[test]
+    fn through_the_desktop_on_and_alone_off_is_the_door() {
+        assert_eq!(path_of(true, None), CliPath::Desktop);
+        assert_eq!(Machine::default().cli_path(), CliPath::Desktop, "the default is the door, as before the switches");
+    }
+
+    #[test]
+    fn alone_on_outranks_the_desktop_switch_on() {
+        assert_eq!(path_of(true, Some(Lasts::Secs(3_600))), CliPath::Alone);
+    }
+
+    #[test]
+    fn alone_on_with_the_desktop_switch_off_is_alone_too() {
+        assert_eq!(path_of(false, Some(Lasts::Never)), CliPath::Alone);
+    }
+
+    /// The switches are sealed members: written only when not the default, read back as written; a validity out
+    /// of range, or any other value, fails the whole file. The plain file never carries them.
+    #[test]
+    fn the_command_line_switches_round_trip_in_the_sealed_part_only() {
+        let p = std::path::Path::new("machine.sealed");
+        let m = Machine { cli_desktop: false, cli_alone: Some(Lasts::Secs(86_400)), lang: Some(crate::lang::Lang::En), ..Machine::default() };
+        let sealed = sealed_bytes(&m).expect("writes");
+        let back = parse(&sealed, p).expect("reads back");
+        assert_eq!((back.cli_desktop, back.cli_alone), (false, Some(Lasts::Secs(86_400))));
+        let plain = String::from_utf8(plain_bytes(&m).expect("writes")).expect("utf-8");
+        assert_eq!(plain, "{\"lang\":\"en\"}", "only the language and appearance stay plain");
+        let never = Machine { cli_alone: Some(Lasts::Never), ..Machine::default() };
+        assert_eq!(parse(&sealed_bytes(&never).expect("writes"), p).expect("reads").cli_alone, Some(Lasts::Never));
+        assert!(!String::from_utf8(sealed_bytes(&Machine::default()).expect("writes")).expect("utf-8").contains("cli_"), "defaults are not written");
+        for bad in ["\"cli_alone\":59,", "\"cli_alone\":31536001,", "\"cli_alone\":\"later\",", "\"cli_desktop\":1,"] {
+            let text = format!("{{{bad}\"shape\":\"{SHAPE}\"}}");
+            assert!(matches!(parse(text.as_bytes(), p).err().and_then(|f| f.which()), Some(Known::MachineShape)), "{bad}");
+        }
+        assert!(to_bytes(&Machine { cli_alone: Some(Lasts::Secs(1)), ..Machine::default() }).is_err(), "out of range is not written");
+    }
+
+    /// The plain file reads its two members and nothing else: an earlier version's members are not read.
+    #[test]
+    fn the_plain_file_reads_the_language_and_appearance_only() {
+        let p = std::path::Path::new("machine.json");
+        let mut m = Machine::default();
+        parse_plain(format!("{{\"appearance\":\"dark\",\"auto_lock_secs\":300,\"lang\":\"en\",\"shape\":\"{SHAPE}\"}}").as_bytes(), p, &mut m).expect("reads");
+        assert_eq!((m.appearance.as_deref(), m.lang, m.auto_lock_secs), (Some(appearance::DARK), Some(crate::lang::Lang::En), LOCK_DEFAULT));
+        assert!(parse_plain(b"{\"lang\":\"fr\"}", p, &mut Machine::default()).is_err(), "a language this version does not know");
+        assert!(plain_bytes(&Machine { appearance: Some("sepia".into()), ..Machine::default() }).is_err(), "an appearance not in the table is not written");
     }
 
     /// Idle locking is due exactly at the limit, not before.

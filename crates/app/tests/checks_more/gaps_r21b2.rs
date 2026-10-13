@@ -338,7 +338,8 @@ fn every_keyed_kind_is_renamed_by_the_one_naming() {
 /// The naming function reads `Doc::keyed`; it keeps no list of kinds of its own.
 #[test]
 fn which_kinds_are_renamed_is_judged_once() {
-    let code = super::code_only(&super::read_src_file("local.rs").expect("local.rs"));
+    // How each kind is named on disk is the sealed layer's (`zikaron_seal::envelope`).
+    let code = super::code_only(&super::read_crate_file("zikaron-seal", "envelope.rs").expect("envelope.rs"));
     let body = |head: &str| {
         let at = code.find(head).unwrap_or_else(|| panic!("{head}"));
         code[at..at + code[at..].find("\n}\n").expect("end")].to_string()

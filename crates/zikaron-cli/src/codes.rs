@@ -141,6 +141,20 @@ pub enum Reason {
     Queued,
     /// `--home`: the desktop's action layer refused (its code in `token`, its evidence in `detail`).
     DesktopRefused,
+    /// Writing a sealed home: the command line's credential has expired (it was removed on the way out).
+    CredentialExpired,
+    /// Writing a sealed home: this machine has no command-line credential (writing alone is off).
+    CredentialMissing,
+    /// Writing a sealed home: the credential is not in its shape, does not open, or holds another master key
+    /// than this machine's vault's.
+    CredentialShape,
+    /// Writing a sealed home: the desktop (or another writer) holds the home's writer lock.
+    HomeHeld,
+    /// Writing a sealed home: the home's writer mark names another machine, or does not read.
+    HomeOtherMachine,
+    /// Writing a plain ledger that ZIKARON Desk has adopted (its root is on the desktop's adopted list): written
+    /// from now on through the desktop's sealed copy, never here.
+    Adopted,
 }
 
 impl Reason {
@@ -175,10 +189,16 @@ impl Reason {
             Reason::OnDesktop => "E_ON_DESKTOP",
             Reason::Queued => "E_QUEUED",
             Reason::DesktopRefused => "E_DESKTOP_REFUSED",
+            Reason::CredentialExpired => "E_CREDENTIAL_EXPIRED",
+            Reason::CredentialMissing => "E_CREDENTIAL_MISSING",
+            Reason::CredentialShape => "E_CREDENTIAL_SHAPE",
+            Reason::HomeHeld => "E_HOME_HELD",
+            Reason::HomeOtherMachine => "E_HOME_OTHER_MACHINE",
+            Reason::Adopted => "E_ADOPTED",
         }
     }
 
-    pub const ALL: [Reason; 29] = [
+    pub const ALL: [Reason; 35] = [
         Reason::Args,
         Reason::Unreadable,
         Reason::Key,
@@ -208,6 +228,12 @@ impl Reason {
         Reason::OnDesktop,
         Reason::Queued,
         Reason::DesktopRefused,
+        Reason::CredentialExpired,
+        Reason::CredentialMissing,
+        Reason::CredentialShape,
+        Reason::HomeHeld,
+        Reason::HomeOtherMachine,
+        Reason::Adopted,
     ];
 }
 

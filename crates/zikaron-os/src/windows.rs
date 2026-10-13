@@ -1017,3 +1017,41 @@ mod tests {
         assert_eq!(text(Path::new("relative")), "relative");
     }
 }
+
+// ───────────────────────── The single-writer lock (a byte-range lock) ─────────────────────────
+
+#[repr(C)]
+struct Overlapped {
+    internal: usize,
+    internal_high: usize,
+    offset: u32,
+    offset_high: u32,
+    event: Handle,
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn LockFileEx(file: Handle, flags: u32, reserved: u32, low: u32, high: u32, overlapped: *mut Overlapped) -> i32;
+}
+
+const LOCKFILE_FAIL_IMMEDIATELY: u32 = 0x1;
+const LOCKFILE_EXCLUSIVE_LOCK: u32 = 0x2;
+
+/// The locked range: one byte far beyond any data in the file. Windows locks are mandatory, and the writer
+/// lock file holds the holder's pid, which the settings page reads while the lock is held.
+const LOCK_OFFSET_HIGH: u32 = 0x4000_0000;
+
+fn lock_with(file: &std::fs::File, flags: u32) -> bool {
+    use std::os::windows::io::AsRawHandle;
+    let mut at = Overlapped { internal: 0, internal_high: 0, offset: 0, offset_high: LOCK_OFFSET_HIGH, event: std::ptr::null_mut() };
+    // SAFETY: the handle stays open for the call (`file` holds it) and `at` outlives it.
+    unsafe { LockFileEx(file.as_raw_handle() as Handle, flags, 0, 1, 0, &mut at) != 0 }
+}
+
+pub fn lock_now(file: &std::fs::File) -> bool {
+    lock_with(file, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY)
+}
+
+pub fn lock_wait(file: &std::fs::File) -> bool {
+    lock_with(file, LOCKFILE_EXCLUSIVE_LOCK)
+}

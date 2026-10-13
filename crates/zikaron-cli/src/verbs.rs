@@ -265,7 +265,7 @@ fn init(a: &Args) -> Answer {
         body.push((Field::StatementMd, s(&x)));
     }
     seal_and_append(
-        &dir,
+        Landing::Dir(&dir),
         &[],
         &author,
         EntryType::Genesis.as_str(),
@@ -471,18 +471,39 @@ fn annotate(a: &Args) -> Answer {
 /// same way as `annotate`: the core builds, signs and checks it, the storage crate lands it.
 fn retract(a: &Args) -> Answer {
     use zikaron_glue::retraction as convention;
-    let key = a.key("key");
-    let author = match entry::address(&key) {
-        Some(x) => x,
-        None => return out::denied(Reason::Key, vec![]),
+    let at = a.need("ledger");
+    // A home the desktop keeps sealed is retracted in with the credential, as the other entry-writing verbs
+    // write it (`write_entry`); a key given for it is misuse.
+    let home = if crate::sealed::is_home(&at) {
+        if a.one("key").is_some() || a.one(args::KEY_FILE).is_some() {
+            out::misuse(Reason::Args, out::Subject::Flags(vec!["key", args::KEY_FILE]), out::Said::SealedNoKey);
+        }
+        let now = now_secs();
+        match crate::sealed::open(&at, now) {
+            Ok(h) => Some((h, now)),
+            Err(t) => return crate::sealed::refused(&t),
+        }
+    } else {
+        None
     };
-    let dir = match ledger::open(&a.need("ledger")) {
-        Ok(d) => d,
-        Err(t) => return ledger_trouble(&t),
-    };
-    let items = match ledger::pile(&dir) {
-        Ok(x) => x,
-        Err(t) => return ledger_trouble(&t),
+    let (key, author, dir, items) = match &home {
+        Some((h, _)) => (h.key, h.author.clone(), None, h.items.clone()),
+        None => {
+            let key = a.key("key");
+            let author = match entry::address(&key) {
+                Some(x) => x,
+                None => return out::denied(Reason::Key, vec![]),
+            };
+            let dir = match ledger::open(&at) {
+                Ok(d) => d,
+                Err(t) => return ledger_trouble(&t),
+            };
+            let items = match ledger::pile(&dir) {
+                Ok(x) => x,
+                Err(t) => return ledger_trouble(&t),
+            };
+            (key, author, Some(dir), items)
+        }
     };
     // Ask which entry to follow first: giving only one of `--seq` and `--prev` is misuse, and misuse goes out
     // before any answer (same order as `write_entry`).
@@ -504,8 +525,13 @@ fn retract(a: &Args) -> Answer {
         Ok(id) => id,
         Err(why) => return out::denied(Reason::Retraction, vec![(Key::Token, s(why.token()))]),
     };
+    let landing = match (&home, &dir) {
+        (Some((h, now)), _) => Landing::Sealed(h, *now),
+        (None, Some(d)) => Landing::Dir(d),
+        (None, None) => return out::denied(Reason::Ledger, vec![]),
+    };
     seal_and_append(
-        &dir,
+        landing,
         &items,
         &author,
         convention::ENTRY_TYPE,
@@ -1452,12 +1478,40 @@ fn contract(_a: &Args) -> Answer {
 // Shared parts.
 
 fn write_entry(a: &Args, kind: EntryType, body: Vec<(Field, Value)>) -> Answer {
+    let at = a.need("ledger");
+    // A home ZIKARON Desk keeps sealed: written with the command line's credential (`sealed`), the key the
+    // desktop's vault keeps for the home; a key given here is misuse.
+    if crate::sealed::is_home(&at) {
+        if a.one("key").is_some() || a.one(args::KEY_FILE).is_some() {
+            out::misuse(Reason::Args, out::Subject::Flags(vec!["key", args::KEY_FILE]), out::Said::SealedNoKey);
+        }
+        let now = now_secs();
+        let home = match crate::sealed::open(&at, now) {
+            Ok(h) => h,
+            Err(t) => return crate::sealed::refused(&t),
+        };
+        let (seq, prev) = match next_link(a, &home.items) {
+            Ok(x) => x,
+            Err(answer) => return answer,
+        };
+        return seal_and_append(
+            Landing::Sealed(&home, now),
+            &home.items,
+            &home.author.clone(),
+            kind.as_str(),
+            seq,
+            prev.as_deref(),
+            entry::shape(body),
+            &home.key,
+            a.one("root").as_deref(),
+        );
+    }
     let key = a.key("key");
     let author = match entry::address(&key) {
         Some(x) => x,
         None => return out::denied(Reason::Key, vec![]),
     };
-    let dir = match ledger::open(&a.need("ledger")) {
+    let dir = match ledger::open(&at) {
         Ok(d) => d,
         Err(t) => return ledger_trouble(&t),
     };
@@ -1470,7 +1524,7 @@ fn write_entry(a: &Args, kind: EntryType, body: Vec<(Field, Value)>) -> Answer {
         Err(answer) => return answer,
     };
     seal_and_append(
-        &dir,
+        Landing::Dir(&dir),
         &items,
         &author,
         kind.as_str(),
@@ -1482,12 +1536,24 @@ fn write_entry(a: &Args, kind: EntryType, body: Vec<(Field, Value)>) -> Answer {
     )
 }
 
+/// Seconds since the epoch now (when a sealed home's credential is checked, and its queue's time).
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Where a sealed entry lands: a ledger directory the command line keeps (its own bytes), or a home the desktop
+/// keeps sealed (the sealed layer's ledger and queue, at the time given).
+enum Landing<'a> {
+    Dir(&'a LedgerDir),
+    Sealed(&'a crate::sealed::Opened, u64),
+}
+
 /// Seal one entry and land it, after the one write gate: the core audits this pile with the candidate
 /// offline, and a chain finding the pile did not already have refuses the write by name (`E_WOULD_BREAK`,
 /// the findings' names) with not one byte written (`ledger::new_findings`). Every entry-writing verb comes here,
 /// `init` and `retract` included, after the tip and the root are asked.
 fn seal_and_append(
-    dir: &LedgerDir,
+    landing: Landing,
     items: &[Vec<u8>],
     author: &str,
     entry_type: &str,
@@ -1497,6 +1563,13 @@ fn seal_and_append(
     key: &[u8; 32],
     root: Option<&str>,
 ) -> Answer {
+    // A plain ledger the desktop adopted is written through its sealed copy from then on, never here: checked
+    // against this machine's blind list before anything is written (no passcode, no credential needed).
+    if let Landing::Dir(_) = landing {
+        if let Some(refused) = adopted_here(items) {
+            return refused;
+        }
+    }
     let sealed = match entry::seal(author, entry_type, seq, prev, body.clone(), key) {
         Ok(x) => x,
         // The core's token passes through unchanged: no translation, no regrouping. A body refusal also tells
@@ -1522,9 +1595,28 @@ fn seal_and_append(
         }
         Err(r) => return out::denied(r, vec![]),
     }
-    match ledger::append(dir, &sealed.entry, &sealed.bytes) {
-        Ok(stored) => wrote(&sealed.entry.id_hex(), &dir.root().to_string_lossy(), seq, matches!(stored, Stored::Written)),
-        Err(t) => ledger_trouble(&t),
+    match landing {
+        Landing::Dir(dir) => match ledger::append(dir, &sealed.entry, &sealed.bytes) {
+            Ok(stored) => wrote(&sealed.entry.id_hex(), &dir.root().to_string_lossy(), seq, matches!(stored, Stored::Written)),
+            Err(t) => ledger_trouble(&t),
+        },
+        Landing::Sealed(home, now) => match home.append(&sealed.entry.id_hex(), &sealed.bytes, now) {
+            Ok(written) => wrote(&sealed.entry.id_hex(), &home.ledger_root(), seq, written),
+            Err(t) => crate::sealed::refused(&t),
+        },
+    }
+}
+
+/// The refusal for a plain ledger this machine's desktop adopted (`zikaron_seal::adopted`), by its root id; `None`
+/// when it was not adopted here (or has no root yet, or this user has no machine folder). A list that does not
+/// read is refused by name: nothing is written past a check that could not be made.
+fn adopted_here(items: &[Vec<u8>]) -> Option<Answer> {
+    let root = items.iter().filter_map(|b| zikaron::entry::check(b).ok()).find(|e| e.seq == 0)?.id;
+    let (machine, _) = zikaron_os::machine::here().ok()?;
+    match zikaron_seal::adopted::contains(&machine, &root) {
+        Ok(false) => None,
+        Ok(true) => Some(out::denied(Reason::Adopted, vec![]).telling(out::Said::Adopted.text().to_string())),
+        Err(t) => Some(crate::sealed::refused(&t)),
     }
 }
 

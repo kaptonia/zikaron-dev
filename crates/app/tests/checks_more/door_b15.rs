@@ -447,7 +447,7 @@ fn the_door_table_is_the_contracts_and_each_flag_reaches_its_action() {
         return;
     }
     let doc = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../CLI-SCHEMA.md")).expect("CLI-SCHEMA.md");
-    let table = doc.split("## 11 · `--home`").nth(1).and_then(|s| s.split("| Verb | Flags beside `--home` |").nth(1)).expect("§11 table");
+    let table = doc.split("## 11 · `--home`").nth(1).map(|s| s.split("\n## ").next().unwrap_or_default()).and_then(|s| s.split("| Verb | Flags beside `--home` |").nth(1)).expect("§11 table");
     let rows: Vec<(String, Vec<String>)> = table
         .lines()
         .filter_map(|l| l.strip_prefix("| `"))

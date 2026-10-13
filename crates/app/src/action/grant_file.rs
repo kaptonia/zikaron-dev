@@ -1,3 +1,4 @@
+use crate::queue::Kept as _;
 use super::*;
 
 /// Everything a grant file export can be refused for without reading the chain: the id's shape, a home, the

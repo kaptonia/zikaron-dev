@@ -160,7 +160,7 @@ pub(super) fn open_home_at(shell: &mut Shell, root: &str, pointer: bool) -> Resu
     let home = crate::home::Home::open_or_create(root)?;
     // Re-entering the home whose writer lock is already held: reuse it instead of opening a second descriptor
     // and judging itself a reader.
-    let lock = if crate::lock::holds_writer(shell.lock.as_ref(), &home) { None } else { Some(crate::lock::take(&home)?) };
+    let lock = if crate::lock::holds_writer(shell.lock.as_ref(), &home) { None } else { Some(crate::lock::take_as(&home, shell.machine.cli_alone.is_some())?) };
     let mode = lock.as_ref().map(|l| l.mode()).unwrap_or(crate::lock::Mode::Writer);
     // Check the label (local data format, version 2) against the identity and seat it is opened as; a writer
     // gives a home laid without one its label now.
@@ -310,7 +310,7 @@ pub(super) fn migrate_landed(shell: &mut Shell, old: &std::path::Path, root: &st
     let moved = crate::home::Home::open(root)?;
     let root = moved.root().display().to_string();
     // The old place is left untouched; the person deletes it after moving. The lock moves to the new home.
-    let lock = crate::lock::take(&moved)?;
+    let lock = crate::lock::take_as(&moved, shell.machine.cli_alone.is_some())?;
     // Identity homes are recorded in the register: repoint the entry from the old place to the new one
     // (signing key ownership and the next startup both read it). The register is the last fallible step
     // before the shell is touched: if an earlier step fails, register and shell still point to the old place;

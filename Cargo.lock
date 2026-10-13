@@ -87,18 +87,13 @@ checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
 name = "app"
 version = "0.1.2"
 dependencies = [
- "aes",
  "bip39",
- "chacha20poly1305",
- "ctr",
  "eframe",
- "hkdf",
  "hmac",
  "k256",
  "log",
  "pbkdf2",
  "rfd",
- "scrypt",
  "sha2",
  "winit",
  "zikaron",
@@ -108,6 +103,7 @@ dependencies = [
  "zikaron-net",
  "zikaron-os",
  "zikaron-pack",
+ "zikaron-seal",
  "zikaron-store",
  "zikaron-ui",
 ]
@@ -3559,6 +3555,7 @@ dependencies = [
  "zikaron-glue",
  "zikaron-kit",
  "zikaron-os",
+ "zikaron-seal",
  "zikaron-store",
 ]
 
@@ -3595,6 +3592,24 @@ version = "0.1.2"
 [[package]]
 name = "zikaron-pack"
 version = "0.1.2"
+
+[[package]]
+name = "zikaron-seal"
+version = "0.1.2"
+dependencies = [
+ "aes",
+ "chacha20poly1305",
+ "ctr",
+ "hkdf",
+ "hmac",
+ "scrypt",
+ "sha2",
+ "zikaron",
+ "zikaron-glue",
+ "zikaron-kit",
+ "zikaron-os",
+ "zikaron-store",
+]
 
 [[package]]
 name = "zikaron-store"

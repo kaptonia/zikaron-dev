@@ -88,7 +88,7 @@ struct Package {
 impl Drop for Package {
     fn drop(&mut self) {
         for k in self.keys.iter_mut() {
-            zikaron_ui::secret::wipe(&mut k.bytes);
+            zikaron_os::wipe(&mut k.bytes);
         }
     }
 }
@@ -98,7 +98,7 @@ struct Wiped(Vec<u8>);
 
 impl Drop for Wiped {
     fn drop(&mut self) {
-        zikaron_ui::secret::wipe(&mut self.0);
+        zikaron_os::wipe(&mut self.0);
     }
 }
 
@@ -115,7 +115,7 @@ struct Slots(Vec<(String, Vec<u8>)>);
 impl Drop for Slots {
     fn drop(&mut self) {
         for (_, b) in self.0.iter_mut() {
-            zikaron_ui::secret::wipe(b);
+            zikaron_os::wipe(b);
         }
     }
 }
@@ -348,7 +348,7 @@ fn seal(package: &[u8], password: &str, created: u64) -> Result<Vec<u8>, Fault> 
     let mut nn = [0u8; NONCE];
     nn.copy_from_slice(&n);
     let ct = crate::cryptx::xchacha_seal(&key, &nn, &aad, package);
-    zikaron_ui::secret::wipe(&mut key);
+    zikaron_os::wipe(&mut key);
     let ct = ct.ok_or_else(|| Fault::known(Known::BackupShape, "seal".to_string()))?;
     let mut out = aad;
     out.extend_from_slice(&ct);
@@ -400,7 +400,7 @@ fn open(bytes: &[u8], password: &str) -> Result<(u64, Wiped), Fault> {
     let mut nn = [0u8; NONCE];
     nn.copy_from_slice(&nonce);
     let plain = crate::cryptx::xchacha_open(&key, &nn, aad, body);
-    zikaron_ui::secret::wipe(&mut key);
+    zikaron_os::wipe(&mut key);
     let plain = plain.ok_or_else(|| Fault::known(Known::BackupPassword, String::new()))?;
     Ok((created, Wiped(plain)))
 }
@@ -436,17 +436,14 @@ fn collect() -> Result<Package, Fault> {
     // identity's homes stay on this machine. Each file travels by its logical path (what it is), never by its
     // on-disk name (which depends on this vault's names key). The record of checked chain facts (`checkedx`)
     // stays here: an export carries no chain readings, and a restored machine asks again.
-    for f in crate::local::all_files()?.into_iter().filter(|f| !matches!(f.doc, Doc::Registry | Doc::Checked | Doc::BackupIndex) && !matches!(f.whose, Whose::Left { .. })) {
+    // The machine settings travel whole in their own field (`machine`), the sealed part with the plain.
+    for f in crate::local::all_files()?.into_iter().filter(|f| !matches!(f.doc, Doc::Registry | Doc::Checked | Doc::BackupIndex | Doc::MachineSealed) && !matches!(f.whose, Whose::Left { .. })) {
         let raw = read_file(&f.at)?;
         let bytes = crate::local::open_with(&key, &crate::local::expect_found(&f)?, &raw, &f.rel)?;
         let rel = crate::local::logical_rel(f.doc, &f.rel, &bytes)?;
         files.push(FileOf { whose: f.whose, rel, doc: f.doc, bytes });
     }
-    let machine = match std::fs::read(crate::machine::path()?) {
-        Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(e) => return Err(classify(&e, "machine.json")),
-    };
+    let machine = crate::machine::to_bytes(&crate::machine::read()?)?;
     // The read-only networks table travels when this machine has a readable one (it is plain, like the machine
     // settings); an unreadable table stays behind, since the app already refuses it by name.
     let nets_at = crate::readnets::path_in(&crate::home::machine_dir()?);
@@ -712,6 +709,9 @@ pub fn restore(path: &Path, password: &str, from: From) -> Result<Restored, Faul
     // The last-backup record is this backup: a failed attempt the backed-up machine had recorded
     // (`backup_failed`) is not carried over.
     machine.backup_failed = None;
+    // A restore is a new master key: no command-line credential survives it (none travels in a backup), so the
+    // restored machine has writing alone off.
+    machine.cli_alone = None;
     let mut reg = crate::identity::Registry::parse(&p.registry).map_err(|w| Fault::known(Known::BackupShape, w))?;
     // The homes the backed-up machine's deleted identities left are that machine's, not this one's.
     reg.left.clear();
@@ -728,7 +728,7 @@ pub fn restore(path: &Path, password: &str, from: From) -> Result<Restored, Faul
                 e.copy_from_slice(&k.bytes);
                 slots.0.push((crate::places::seed_slot(&k.id), k.bytes.clone()));
                 let seats = crate::key::seat_slots(&e);
-                zikaron_ui::secret::wipe(&mut e);
+                zikaron_os::wipe(&mut e);
                 slots.0.extend(seats.ok_or_else(|| Fault::known(Known::BackupShape, format!("key {}", k.id)))?);
             }
             "key" => slots.0.push((k.account.clone(), k.bytes.clone())),
@@ -892,7 +892,9 @@ pub fn restore(path: &Path, password: &str, from: From) -> Result<Restored, Faul
         std::fs::create_dir_all(&room).map_err(|e| classify(&e, &room.display().to_string()))?;
         let held: Vec<(Doc, String)> = p.files.iter().map(|f| (f.doc, f.rel.clone())).collect();
         crate::local::stage_next(&room.join(INDEX_FILE), &key, &machine_id(Doc::BackupIndex, &index_rel()), &index_bytes(created, &held))?;
-        crate::local::stage_next(&m.join(crate::machine::FILE), &key, &machine_id(Doc::Machine, crate::machine::FILE), &crate::machine::to_bytes(&machine)?)?;
+        crate::local::stage_next(&m.join(crate::machine::FILE), &key, &machine_id(Doc::Machine, crate::machine::FILE), &crate::machine::plain_bytes(&machine)?)?;
+        let sealed = crate::places::machine_file();
+        crate::local::stage_next(&m.join(&sealed), &key, &machine_id(Doc::MachineSealed, &sealed), &crate::machine::sealed_bytes(&machine)?)?;
         // What this machine had that the backup lacks (former homes, the kept home's other files, machine files)
         // stays sealed under the old key and is planned to be moved aside intact once the change takes effect, never
         // deleted.

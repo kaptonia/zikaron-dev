@@ -161,6 +161,10 @@ enum Out {
 /// The toast key that opens the old data the last fetch left (not a task kind).
 const OLD_DATA_TAG: u64 = u64::MAX;
 
+/// The toast key that goes to the command line's two switches (settings, local data), after a desktop write the
+/// command line's turn held back (`CLI_WRITING`).
+const CLI_SWITCHES_TAG: u64 = u64::MAX - 1;
+
 impl Win {
     /// One frame. `update` only calls this and does not use `eframe::Frame`, so tests can run the same code in
     /// a headless frame (`probe_face`).
@@ -259,19 +263,26 @@ impl Win {
         let left = if self.rail_shown() { tk::RAIL_W } else { 0.0 };
         let drawn = self.toasts.draw(ctx, left);
         if let Some(tag) = drawn.pressed {
-            if tag == OLD_DATA_TAG {
-                if let Some(p) = self.shell.last_aside.clone() {
-                    self.act(Action::ViewOldData { root: p.display().to_string() }, now);
-                }
-            } else {
-                self.view_task(tag, now);
-            }
+            self.toast_pressed(tag, now);
         }
         zikaron_ui::layer::fade_out(ctx);
         // Background work lands through a channel the frame only drains: while any is in flight, repaint again
         // shortly (animations request their own frames).
         if !self.shell.tasks.flying().is_empty() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+    }
+
+    /// A toast's key was pressed: its tag says where to go.
+    fn toast_pressed(&mut self, tag: u64, now: f64) {
+        if tag == OLD_DATA_TAG {
+            if let Some(p) = self.shell.last_aside.clone() {
+                self.act(Action::ViewOldData { root: p.display().to_string() }, now);
+            }
+        } else if tag == CLI_SWITCHES_TAG {
+            self.go_cli_switches(now);
+        } else {
+            self.view_task(tag, now);
         }
     }
 
@@ -742,6 +753,9 @@ impl Win {
             // What is at the command line's install location shows on its row, no toast.
             Applied::CliPathRead(_) => (String::new(), Tone::Note),
             Applied::CliAnchorSet(to) => (fill1(Key::SaidCliAnchor, t(cli_anchor_label(to))), Tone::Note),
+            Applied::CliDesktopSet(on) => (t(if on { Key::SaidCliDesktopOn } else { Key::SaidCliDesktopOff }).to_string(), Tone::Note),
+            Applied::CliAloneSet(Some(expires)) => (fill1(Key::SaidCliAloneOn, &settings::cli_expiry_said(expires)), Tone::Note),
+            Applied::CliAloneSet(None) => (t(Key::SaidCliAloneOff).to_string(), Tone::Note),
             // The request shows now and the system's attention is asked once; the user sends from the queue page.
             Applied::SendAsked { count } => {
                 self.shell.attention = true;
@@ -883,6 +897,14 @@ impl Win {
                 _ => {}
             },
             VaultSite::Backup => self.bk_back(r, now),
+            VaultSite::Cli => match r {
+                Applied::CliAloneSet(_) => self.cli_close(),
+                Applied::Trouble(f) => {
+                    self.ux.pin_shake = Some(now);
+                    self.ux.cli_trouble = Some(f);
+                }
+                _ => {}
+            },
             VaultSite::Attest => match r {
                 Applied::Attested { .. } => {
                     self.ux.pin_shake = None;
@@ -961,6 +983,12 @@ impl Win {
                 next = fill2(Key::FundsNeedHave, &eth_cap(need), &eth_held(have));
             }
             act = self.shell.anchor.map(|a| (t(Key::IdDoCopy).to_string(), a.hex()));
+        }
+        // The command line holds the turn: say so, with a key to its switch.
+        if f.which() == Some(crate::fault::Known::CliWriting) {
+            let go = vec![(t(Key::CliWritingGo).to_string(), zikaron_ui::toast::Act::Tag(CLI_SWITCHES_TAG))];
+            self.toasts.say_keys(what, &next, &f.raw(), Tone::Bad, now, go);
+            return;
         }
         self.toasts.say_with(what, &next, &f.raw(), Tone::Bad, now, act);
     }
@@ -1104,6 +1132,13 @@ struct Ux {
     bk_pin: crate::secret::Secret,
     bk_dir: String,
     bk_trouble: Option<crate::fault::Fault>,
+    /// The "write alone" sheet is open, and what was typed on it: the passcode, the validity's unit
+    /// (`CLI_UNITS`) and amount, and the last refusal.
+    cli_sheet: bool,
+    cli_pin: crate::secret::Secret,
+    cli_unit: usize,
+    cli_amount: String,
+    cli_trouble: Option<crate::fault::Fault>,
     /// The backup password for fetching a restored identity's ledger.
     fetch_pw: crate::secret::Secret,
     /// The backup password of the last fetch, kept until the fetch answers: a conflict's "fetch and replace"
@@ -1275,6 +1310,8 @@ enum VaultSite {
     Attest,
     /// The whole-machine backup sheets.
     Backup,
+    /// The "write alone" sheet (the command line's credential).
+    Cli,
 }
 
 /// Identity sheets. Closed.

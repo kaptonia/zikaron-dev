@@ -110,6 +110,12 @@ pub fn adopt(dir: &std::path::Path, into: &Home) -> Result<Adopted, Fault> {
         book.append(&entry, b)?;
         linked += 1;
     }
+    // The adopted ledger goes on this machine's blind list (`zikaron_seal::adopted`), so the command line refuses
+    // to write its folder from now on; the folder itself is not touched.
+    let root = survey.items.iter().filter_map(|b| zikaron::entry::check(b).ok()).find(|e| e.seq == 0).map(|e| e.id);
+    if let Some(root) = root {
+        zikaron_seal::adopted::mark(&crate::home::machine_dir()?, &root)?;
+    }
     let v = auditx::offline(into)?;
     Ok(Adopted {
         sighting_entries: seen.entries,

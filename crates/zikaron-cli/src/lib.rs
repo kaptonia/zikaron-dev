@@ -41,5 +41,6 @@ pub mod entry;
 pub mod kitout;
 pub mod ledger;
 pub mod out;
+pub mod sealed;
 pub mod sent;
 pub mod verbs;
