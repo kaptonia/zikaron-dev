@@ -436,10 +436,10 @@ impl Said {
 
 /// The line for people when the law refuses an entry's body (`E_BODY_FIELD`): which member, and which flags
 /// give it.
-pub fn body_line(member: &str, flags: &str) -> String {
+pub fn body_line(member: &str, (zh, en): (&str, &str)) -> String {
     match lang() {
-        Lang::Zh => format!("{member}: 缺或不成形,由 {flags} 给"),
-        Lang::En => format!("{member}: missing or malformed; given by {flags}"),
+        Lang::Zh => format!("{member}: 缺或不成形,由 {zh} 给"),
+        Lang::En => format!("{member}: missing or malformed; given by {en}"),
     }
 }
 

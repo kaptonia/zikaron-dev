@@ -1030,3 +1030,31 @@ fn a_disk_failure_says_the_systems_words_in_detail() {
     assert!(said.contains("\"detail\":\"E_IO: ") && said.contains("\"path\":"), "{said}");
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).ok();
 }
+
+/// The line for people when the law refuses an entry's body speaks the system's language whole, the flags that
+/// give the member too: an English system reads no Chinese in it, a Chinese one reads the Chinese words.
+#[test]
+fn a_refused_body_is_said_in_the_systems_language_flags_and_all() {
+    let w = scratch("bodyline");
+    assert_eq!(run_in(&w, &["init", "--ledger", "b", "--key", A_KEY, "--statement", "start"]).code, 0);
+    let said = |lang: &str| -> (i32, String, String) {
+        let o = Command::new(BIN)
+            .args(["history", "--ledger", "b", "--key", A_KEY, "--content", &format!("0x{}", "aa".repeat(32))])
+            .current_dir(&w)
+            .env(zikaron_os::HOME_VAR, own_home())
+            .env_remove("LC_ALL")
+            .env_remove("LC_MESSAGES")
+            .env_remove("LANGUAGE")
+            .env("LANG", lang)
+            .output()
+            .expect("runs");
+        (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).into_owned(), String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or_default().to_string())
+    };
+    let (en_code, en_out, en) = said("en_US.UTF-8");
+    let (zh_code, zh_out, zh) = said("zh_CN.UTF-8");
+    assert_eq!((en_code, zh_code), (1, 1));
+    assert_eq!(en_out, zh_out, "stdout is the same in either language");
+    assert_eq!(en, "mode: missing or malformed; given by --mark and --toolchain (or --file)");
+    assert!(!en.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)), "no Chinese on an English system: {en}");
+    assert_eq!(zh, "mode: 缺或不成形,由 --mark 与 --toolchain(或 --file) 给");
+}

@@ -1034,6 +1034,7 @@ pub enum Key {
     Tail033,
     Tail034,
     Tail035,
+    TailGasBehind,
     Tail043,
     Tail044,
     Tail045,
@@ -1970,7 +1971,7 @@ pub enum Key {
 
 impl Key {
     /// All keys, in [`TABLE`] order.
-    pub const ALL: [Key; 1904] = [
+    pub const ALL: [Key; 1905] = [
         Key::PageRevoke,
         Key::PageAdopt,
         Key::PageSucceed,
@@ -2943,6 +2944,7 @@ impl Key {
         Key::Tail033,
         Key::Tail034,
         Key::Tail035,
+        Key::TailGasBehind,
         Key::Tail043,
         Key::Tail044,
         Key::Tail045,
@@ -3879,7 +3881,7 @@ impl Key {
 }
 
 /// Every UI string: `(key, Chinese, English)`. One row per key, both languages in each row.
-pub const TABLE: [(Key, &str, &str); 1904] = [
+pub const TABLE: [(Key, &str, &str); 1905] = [
     (Key::PageRevoke, "撤销授权", "Revoke grant"),
     (Key::PageAdopt, "导入上链存证", "Import anchor proofs"),
     (Key::PageSucceed, "移交账本", "Hand over ledger"),
@@ -4868,6 +4870,7 @@ pub const TABLE: [(Key, &str, &str); 1904] = [
     (Key::Tail033, "Gas 费估算不是字符串:{0}", "Gas estimate is not a string: {0}"),
     (Key::Tail034, "Gas 费估算不是数字:{0}", "Gas estimate is not a number: {0}"),
     (Key::Tail035, "本批 {0} 条尚未估算 Gas 费", "Gas not estimated for this batch ({0})"),
+    (Key::TailGasBehind, "估 Gas 费期间链、注册合约或节点改了,这一估作废", "The chain, registry or nodes changed while gas was being estimated; that estimate is void"),
     (Key::Tail043, "该记录已有 {0} 份独占授权,有效期重叠", "{0} exclusive grants already cover this record with overlapping validity"),
     (Key::Tail044, "有效期须为十进制整数,实际为 {0}", "Validity must be decimal integers; got {0}"),
     (Key::Tail045, "有效期起止须同时填写或同时留空", "Fill in both ends of the validity period, or neither"),

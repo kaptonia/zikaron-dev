@@ -1519,11 +1519,11 @@ ZIKARON Desk 自己数据目录里的账本是加密的，命令行没有口令�
 
 **`anchor` 重跑先问。** 不带 `--home` 的 `anchor` 把它为同一次锚定（同一条链、同一把钥、同一个去处、同一段数据）签过的每一笔交易的 nonce 与哈希记在机器目录的 `cli-sent/` 里，不记私钥，也不记节点。同一条命令再跑时，先按哈希问节点那几笔的下落：已入块即照答入块，不再发；还在节点池里就接着等收据；都不在而 nonce 没被用掉，按同一个 nonce 重签再发，至多一笔能入块；nonce 已被别的交易用掉即答 `E_TX_VOID`（退出码 1），什么也不发，再跑一次即重新发起。所以成功之后把同一条命令再跑一遍，答的是先前那一笔，不会再付一次费。
 
-**经桌面（`--home`）。** 给 `--home <桌面的数据目录>` 时，`init`、`history`、`grant`、`revoke`、`adopt`、`attest`、`succeed`、`annotate`、`retract`、`anchor`、`kit-export` 这十一个动词交给正在运行、已解锁、并以写者打开这个数据目录的 ZIKARON Desk 去做：条目以桌面的身份写进桌面的账本，窗口里随即可见；命令行这一路不持私钥，也不要口令。带 `--home` 时一律不收 `--ledger`、`--key`、`--root`、`--seq`、`--prev`；`history` 收 `--file` 与 `--note`，`anchor` 不收别的参数。`attest` 一律答 `E_ON_DESKTOP`（退出码 1）：连署要口令，口令只在桌面上输。`kit-export` 收 `--entry`、`--note`、`--out`，附件与证明包在桌面上选。桌面锁着、没开这个数据目录或已退出时答 `E_DESKTOP`（退出码 4）；桌面拒绝这一动作时答 `E_DESKTOP_REFUSED`，`token` 是桌面自己的代码（网络方面的拒绝退出码 4，其余 1）。`anchor` 照「设置 > 网络」的「命令行上链」：「自动发送」即照队列页的「全部上链」发出，「仅加入队列」只入队、答 `E_QUEUED`（退出码 3）。各动词带 `--home` 时收哪些参数，见 `CLI-SCHEMA.md` 第 11 节。
+**经桌面（`--home`）。** 给 `--home <桌面的数据目录>` 时，`init`、`history`、`grant`、`revoke`、`adopt`、`attest`、`annotate`、`retract`、`anchor`、`kit-export` 这十个动词交给正在运行、已解锁、并以写者打开这个数据目录的 ZIKARON Desk 去做：条目以桌面的身份写进桌面的账本，窗口里随即可见；命令行这一路不持私钥，也不要口令。带 `--home` 时一律不收 `--ledger`、`--key`、`--root`、`--seq`、`--prev`；`history` 收 `--file` 与 `--note`，`anchor` 不收别的参数。`attest` 一律答 `E_ON_DESKTOP`（退出码 1）：连署要口令，口令只在桌面上输。`succeed` 带 `--home` 也一律答 `E_ON_DESKTOP`（退出码 1），不去问桌面：把账本移交给另一把钥是终局的事，只在桌面上亲手做。`kit-export` 收 `--entry`、`--note`、`--out`，附件与证明包在桌面上选。桌面锁着、没开这个数据目录或已退出时答 `E_DESKTOP`（退出码 4）；桌面拒绝这一动作时答 `E_DESKTOP_REFUSED`，`token` 是桌面自己的代码（网络方面的拒绝退出码 4，其余 1）。`anchor` 照「设置 > 网络」的「命令行上链」：「自动发送」即照队列页的「全部上链」发出，「仅加入队列」只入队、答 `E_QUEUED`（退出码 3）。各动词带 `--home` 时收哪些参数，见 `CLI-SCHEMA.md` 第 11 节。
 
 **授权文件。** `check-grant --grant` 可以给授权条目文件，也可以给应用导出的授权文件（`.zkgrant`）：命令行按应用的同一读法拆开（包的形、里面记录包的法、授权码、授权码里每一跳都在包里），核的是这份文件为之而立的那一跳；拆不开即拒 `E_GRANT_FILE`。
 
-**写条目被拒时。** 条目的某一项缺了或格式不对，标准输出为 `E_ENTRY`，其 `token` 为 `E_BODY_FIELD`（退出码 1）；标准错误另有一行人话，点名是哪一项、由哪个参数给，例如 `statement_md: 缺或不成形,由 --statement 给`（英文系统上是英文）。这一行只给人看，不属输出约定。
+**写条目被拒时。** 条目的某一项缺了或格式不对，标准输出为 `E_ENTRY`，其 `token` 为 `E_BODY_FIELD`（退出码 1）；标准错误另有一行人话，点名是哪一项、由哪个参数给，例如 `mode: 缺或不成形,由 --mark 与 --toolchain(或 --file) 给`（英文系统上整行是英文）。这一行只给人看，不属输出约定。
 
 **`history` 记一份文件。** `history --file <文件>` 按应用记录文件的同一约定填：`content` 是这份文件字节的 SHA-256，`mode` 是 `{"mark":"bytes-sha256/1","toolchain":<"bytes-sha256/1" 这串字的 SHA-256>}`。同一份文件，命令行与应用记下的这两项逐字相同。`--file` 代替 `--content`、`--mark`、`--toolchain`，不能与它们同给；不给 `--file` 时这三项照旧自己给，不填的由法拒。
 

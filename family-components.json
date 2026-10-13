@@ -1775,6 +1775,7 @@
     "crates/zikaron-ui/src/mark.rs",
     "crates/zikaron-ui/src/menu.rs",
     "crates/zikaron-ui/src/motion.rs",
+    "crates/zikaron-ui/src/nav.rs",
     "crates/zikaron-ui/src/page.rs",
     "crates/zikaron-ui/src/paint.rs",
     "crates/zikaron-ui/src/palette.rs",
@@ -1793,6 +1794,26 @@
     "crates/zikaron-ui/src/tokens.rs",
     "crates/zikaron-ui/src/toolbar.rs",
     "crates/zikaron-ui/src/width.rs"
+   ],
+   "symbols": [
+    "zikaron_ui::nav::History",
+    "zikaron_ui::nav::Item",
+    "zikaron_ui::nav::Group",
+    "zikaron_ui::nav::Frame",
+    "zikaron_ui::nav::Pages",
+    "zikaron_ui::nav::hist",
+    "zikaron_ui::nav::route",
+    "zikaron_ui::nav::entered",
+    "zikaron_ui::nav::push",
+    "zikaron_ui::nav::back",
+    "zikaron_ui::nav::fwd",
+    "zikaron_ui::nav::set_tab",
+    "zikaron_ui::nav::go",
+    "zikaron_ui::nav::rail_to",
+    "zikaron_ui::nav::home",
+    "zikaron_ui::nav::rail_list",
+    "zikaron_ui::nav::page_area",
+    "zikaron_ui::nav::entry_key"
    ],
    "tests": [
     {

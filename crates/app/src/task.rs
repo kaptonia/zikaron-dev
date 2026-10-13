@@ -665,6 +665,9 @@ pub enum Keystore {
 /// The result of a task. The only shape that returns to the UI thread.
 pub struct Outcome {
     pub kind: Kind,
+    /// The serial this task got when it started ([`Tasks::serial_of`]): who asked for it reads its own result
+    /// by this, never by its kind (another task of the kind may have started since).
+    pub serial: u64,
     pub result: Result<Done, Fault>,
     /// The epoch of the ledger's source when this task started (see `Tasks::new_epoch`).
     pub epoch: u64,
@@ -810,6 +813,12 @@ impl Tasks {
         self.in_flight(k) && self.hands.iter().any(|(x, s, h)| *x == k && s == serial && h.is_finished())
     }
 
+    /// The serial of the task of this kind in flight now (`None` when none is): taken right after starting one,
+    /// it names that task's outcome ([`Outcome::serial`]).
+    pub fn serial_of(&self, k: Kind) -> Option<u64> {
+        self.flying_serial.get(&k).copied().filter(|_| self.in_flight(k))
+    }
+
     /// How many times this kind has landed (the stamp for [`Tasks::answered_since`]).
     pub fn landings(&self, k: Kind) -> u64 {
         self.landings.get(&k).copied().unwrap_or(0)
@@ -859,7 +868,7 @@ impl Tasks {
             };
             stage_clear(kind);
             // Sending fails only when the UI side is gone, and then nobody wants the result.
-            let _ = tx.send(Outcome { kind, result, epoch, stale: false, earlier: false });
+            let _ = tx.send(Outcome { kind, serial, result, epoch, stale: false, earlier: false });
         });
         match started {
             Ok(h) => self.hands.push((kind, serial, h)),
@@ -869,7 +878,7 @@ impl Tasks {
             Err(e) => {
                 stage_clear(kind);
                 let f = Fault::unknown(crate::lang::filln(crate::lang::Key::Tail236, &[&crate::lang::filln(crate::lang::Key::Tail219, &[&kind.as_str().to_string()]), &e.to_string()]));
-                let _ = failed_tx.send(Outcome { kind, result: Err(f), epoch, stale: false, earlier: false });
+                let _ = failed_tx.send(Outcome { kind, serial, result: Err(f), epoch, stale: false, earlier: false });
             }
         }
         Spawned::Started

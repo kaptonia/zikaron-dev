@@ -50,6 +50,12 @@ pub fn ask(a: &Args) -> Answer {
     }
 }
 
+/// "This must be done on the desktop": refused, exit 1, nothing written (the desktop's answer for an action that
+/// asks its passcode, and this crate's own for a verb the desktop does by hand only).
+pub fn on_desktop() -> Answer {
+    out::denied(Reason::OnDesktop, vec![]).telling(Said::OnDesktop.text().to_string())
+}
+
 /// Each flag the verb takes beside `--home`, in its row's order (a repeatable flag's values in the order given),
 /// read as the verb reads it without `--home`: whole numbers within the spec's ceiling, entry ids in their one
 /// form, a file that must exist and read, places made whole.
@@ -114,7 +120,7 @@ fn answer_of(r: Reply) -> Answer {
         // Under `--home` a package takes no proof bundles (they are chosen on the desktop).
         Reply::Kit { kit_id, path, entries, files, dropped } => verbs::kit_written(&dropped, entries, files, &kit_id, &path, 0),
         Reply::Queued { count } => out::partial(Reason::Queued, vec![(Key::Count, zikaron::json::Value::Int(count))]).telling(Said::Queued.text().to_string()),
-        Reply::OnDesktop => out::denied(Reason::OnDesktop, vec![]).telling(Said::OnDesktop.text().to_string()),
+        Reply::OnDesktop => on_desktop(),
         Reply::Refused { code, tail, network, zh, en } => {
             let members = vec![(Key::Token, s(&code)), (Key::Detail, s(&tail))];
             // A network refusal is the absence of an answer (`zikaron/1` §9.4), never a negative one.

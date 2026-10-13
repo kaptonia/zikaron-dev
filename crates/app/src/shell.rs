@@ -72,189 +72,8 @@ impl Banner {
     }
 }
 
-/// The pages. Only pages that exist are listed; a page not built is not in the navigation.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Page {
-    /// First run: what this machine still needs.
-    FirstRun,
-    /// Identity and keys.
-    Identity,
-    /// Archive and single writer.
-    Archive,
-    /// Mirror and chain.
-    Mirror,
-    /// Ledger view.
-    Ledger,
-    /// Disclosure kit output.
-    Kit,
-    /// Depth.
-    Depth,
-    /// Grant drafting.
-    Grant,
-    /// Grant ledger and double-sale guard.
-    Grants,
-    /// First-window checklist.
-    FirstWindow,
-    /// Revocation.
-    Revoke,
-    /// Adoption.
-    Adopt,
-    /// Succession.
-    Succeed,
-    /// Reading others' ledgers.
-    Reader,
-    /// Self-audit clock.
-    Audit,
-    /// Due diligence.
-    Diligence,
-    /// Record verification.
-    Verifier,
-    /// Checking a received record (a tab of the verify page).
-    Delivery,
-    /// Grant vault.
-    Vault,
-    /// Revocation sentinel.
-    Sentinel,
-    /// Multi-upstream ledger.
-    Upstreams,
-    /// Badges.
-    Badge,
-    /// Relicensing.
-    Relicense,
-    /// Grant check (shared, no identity needed).
-    Check,
-    /// Watch and notifications (shared).
-    Watch,
-    /// Anchoring desk.
-    Anchoring,
-    /// Anchor queue.
-    Queue,
-    /// Skeleton: this shell's own readings.
-    Skeleton,
-    /// About.
-    About,
-}
-
-impl Page {
-    /// Ordered by family: ledger and anchoring, grants, adoption and succession, disclosure and reading,
-    /// machine and settings. Icons follow the family (see [`Page::icon`]): one icon per family, so a repeated
-    /// icon marks pages of one family.
-    pub const ALL: [Page; 29] = [
-        // Ledger and anchoring.
-        Page::Ledger,
-        Page::Anchoring,
-        Page::Queue,
-        Page::Audit,
-        // Grants.
-        Page::Grant,
-        Page::Grants,
-        Page::Revoke,
-        Page::FirstWindow,
-        // Adoption and succession.
-        Page::Adopt,
-        Page::Succeed,
-        // Disclosure and reading.
-        Page::Kit,
-        Page::Depth,
-        Page::Reader,
-        // Shared.
-        Page::Check,
-        Page::Watch,
-        // Grantee.
-        Page::Diligence,
-        Page::Verifier,
-        Page::Delivery,
-        Page::Vault,
-        Page::Upstreams,
-        Page::Sentinel,
-        Page::Relicense,
-        Page::Badge,
-        // Machine and settings.
-        Page::FirstRun,
-        Page::Identity,
-        Page::Archive,
-        Page::Mirror,
-        Page::Skeleton,
-        Page::About,
-    ];
-
-    /// The name this page shows now. Page names come only from here (rail, header, tests).
-    ///
-    /// Kept separate from `key()` so "page names follow the language" can fail on its own: a broken string
-    /// table breaks every sentence, a break here only page names.
-    pub fn title(self) -> &'static str {
-        crate::lang::t(self.key())
-    }
-
-    /// The page name comes from the string table: no sentence is hard-coded in the interface.
-    pub fn key(self) -> crate::lang::Key {
-        match self {
-            Page::FirstRun => crate::lang::Key::PageFirstRun,
-            Page::Identity => crate::lang::Key::PageIdentity,
-            Page::Archive => crate::lang::Key::PageArchive,
-            Page::Mirror => crate::lang::Key::PageMirror,
-            Page::Ledger => crate::lang::Key::PageLedger,
-            Page::Kit => crate::lang::Key::PageKit,
-            Page::Depth => crate::lang::Key::PageDepth,
-            Page::Grant => crate::lang::Key::PageGrant,
-            Page::Grants => crate::lang::Key::PageGrants,
-            Page::FirstWindow => crate::lang::Key::PageFirstWindow,
-            Page::Revoke => crate::lang::Key::PageRevoke,
-            Page::Adopt => crate::lang::Key::PageAdopt,
-            Page::Succeed => crate::lang::Key::PageSucceed,
-            Page::Reader => crate::lang::Key::PageReader,
-            Page::Audit => crate::lang::Key::PageAudit,
-            Page::Diligence => crate::lang::Key::PageDiligence,
-            Page::Verifier => crate::lang::Key::PageVerifier,
-            Page::Delivery => crate::lang::Key::PageDelivery,
-            Page::Vault => crate::lang::Key::PageVault,
-            Page::Sentinel => crate::lang::Key::PageSentinel,
-            Page::Upstreams => crate::lang::Key::PageUpstreams,
-            Page::Badge => crate::lang::Key::PageBadge,
-            Page::Relicense => crate::lang::Key::PageRelicense,
-            Page::Check => crate::lang::Key::PageCheck,
-            Page::Watch => crate::lang::Key::PageWatch,
-            Page::Anchoring => crate::lang::Key::PageAnchoring,
-            Page::Queue => crate::lang::Key::PageQueue,
-            Page::Skeleton => crate::lang::Key::PageSkeleton,
-            Page::About => crate::lang::Key::PageAbout,
-        }
-    }
-
-    /// The page icon. One per family: pages of a family share a shape, so a repeat marks the family.
-    pub fn icon(self) -> zikaron_ui::icons::Icon {
-        use zikaron_ui::icons::Icon;
-        match self {
-            // Ledger and anchoring.
-            Page::Ledger | Page::Anchoring | Page::Queue | Page::Audit => Icon::Ledger,
-            // Grants.
-            Page::Grant | Page::Grants | Page::Revoke | Page::FirstWindow => Icon::Grant,
-            // Adoption and succession.
-            Page::Adopt | Page::Succeed => Icon::Anchor,
-            // Disclosure and reading.
-            Page::Kit | Page::Depth | Page::Reader => Icon::Kit,
-            // Grantee: verification and due diligence read bytes from the other party, like the disclosure
-            // family.
-            Page::Diligence | Page::Verifier | Page::Delivery => Icon::Kit,
-            // Shared: checking reads the other party's payload, like the disclosure family.
-            Page::Check => Icon::Kit,
-            Page::Watch => Icon::Ledger,
-            // Grantee credentials hold grants, like the grant family.
-            Page::Vault
-            | Page::Sentinel
-            | Page::Upstreams
-            | Page::Badge
-            | Page::Relicense => Icon::Grant,
-            // Machine and settings.
-            Page::FirstRun
-            | Page::Identity
-            | Page::Archive
-            | Page::Mirror
-            | Page::Skeleton
-            | Page::About => Icon::Gear,
-        }
-    }
-}
+/// The pages: this product's page table (`crate::nav`), named here as the shell records the page shown.
+pub use crate::nav::Page;
 
 /// Whether this pass actually got an answer from the chain. Only results that carry chain readings count;
 /// those that turn unreachability into "unknown" (a review with an empty fragment, a check whose basis was
@@ -694,7 +513,7 @@ impl Shell {
         trace::mark(Feature::H1);
 
         Shell {
-            page: Page::FirstRun,
+            page: Default::default(),
             resume_blocked: None,
             tasks: Tasks::new(),
             fonts: found,
@@ -1711,9 +1530,13 @@ impl Shell {
                 if o.kind == crate::task::Kind::Migrate {
                     self.swapping = false;
                 }
-                // An estimate started before its chain, registry or nodes changed describes the old setup.
+                // An estimate started before its chain, registry or nodes changed describes the old setup: it is
+                // answered as one, by name (the batch has no estimate for the setup now), never dropped.
                 let behind = o.kind == crate::task::Kind::Gas && self.gas_out_of_date();
-                if o.stale || behind {
+                if behind && !o.stale {
+                    let f = crate::fault::Fault::known(crate::fault::Known::GasNotShown, crate::lang::t(crate::lang::Key::TailGasBehind).to_string());
+                    self.said.insert(o.kind, crate::action::Applied::Trouble(f));
+                } else if o.stale {
                     if let Err(f) = &o.result {
                         self.faults.push(f.clone());
                     }

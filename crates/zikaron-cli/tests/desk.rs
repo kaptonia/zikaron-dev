@@ -157,7 +157,6 @@ fn the_request_carries_each_flag_as_read() {
         (vec!["grant".into(), "--grantee".into(), "0xg".into(), "--window-from".into(), "+5".into(), "--window-to".into(), "9".into(), "--scope".into(), "s".into()], vec![("grantee", "0xg".into()), ("window-from", "5".into()), ("window-to", "9".into()), ("scope", "s".into())]),
         (vec!["history".into(), "--file".into(), file.display().to_string(), "--note".into(), "n".into()], vec![("file", std::fs::canonicalize(&file).unwrap().display().to_string()), ("note", "n".into())]),
         (vec!["kit-export".into(), "--entry".into(), "ab".repeat(32), "--entry".into(), format!("0x{}", "cd".repeat(32)), "--out".into(), "rel/out".into()], vec![("entry", format!("0x{}", "ab".repeat(32))), ("entry", format!("0x{}", "cd".repeat(32))), ("out", std::path::absolute("rel/out").unwrap().display().to_string())]),
-        (vec!["succeed".into(), "--to".into(), "0xt".into(), "--effective".into(), "12".into()], vec![("to", "0xt".into()), ("effective", "12".into())]),
         // The anchors file is sent as the JSON it holds, in canonical bytes.
         (vec!["adopt".into(), "--anchors".into(), anchors.display().to_string(), "--attestor".into(), "0xa".into()], vec![("anchors", r#"[{"chainId":1,"content":"0xc","payloadKind":"bare","tx":"0xt"}]"#.into()), ("attestor", "0xa".into())]),
     ];
@@ -268,4 +267,21 @@ fn the_cli_schema_lists_the_verbs_done_through_the_desktop() {
         .collect();
     let real: Vec<(String, Vec<String>)> = zikaron_cli::verbs::HOME.iter().map(|(v, fl)| (v.to_string(), fl.iter().map(|f| f.to_string()).collect())).collect();
     assert_eq!(rows, real);
+}
+
+/// Handing the ledger to another key is done on the desktop by hand only: `succeed --home` with a desktop
+/// listening for that home answers `E_ON_DESKTOP` (exit 1) in either language, the desktop is asked nothing,
+/// and nothing is written into the home.
+#[test]
+fn succeed_through_the_desktop_is_done_on_the_desktop_only() {
+    let b = Bench::new("succeed");
+    let (closer, rx) = desktop(&b.place(), |_| Some(Reply::Wrote { entry_id: "0xe".into(), ledger: "/l".into(), seq: 1 }.to_bytes()));
+    for (lang, line) in [(EN, "This action must be done on the desktop"), (ZH, "此动作须在桌面上做")] {
+        let (code, out, err) = b.run(&["succeed", "--home", b.home.to_str().unwrap(), "--to", &format!("0x{}", "11".repeat(20)), "--kind", "rekey", "--effective", "5"], lang);
+        assert_eq!((code, String::from_utf8_lossy(&out).to_string()), (1, r#"{"ok":false,"reason":"E_ON_DESKTOP"}"#.to_string()), "{lang}: {err}");
+        assert_eq!(err.lines().next(), Some(line), "{lang}");
+    }
+    closer.close();
+    assert!(rx.try_recv().is_err(), "the desktop was asked nothing");
+    assert_eq!(std::fs::read_dir(&b.home).expect("home").count(), 0, "nothing written into the home");
 }

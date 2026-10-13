@@ -242,8 +242,12 @@ fn each_writing_verb_lands_its_entry() {
     assert!(matches!(r, Reply::Wrote { seq: 3, .. }), "revoke: {r:?}");
     let r = ask(&mut shell, b.ask("retract", &[("subject", &work_entry), ("note", "gone")]));
     assert!(matches!(r, Reply::Wrote { seq: 4, .. }), "retract: {r:?}");
+    // Handing the ledger to another key is done on the desktop by hand only: not a door verb, refused by name,
+    // nothing written.
+    let before = head(&shell);
     let r = ask(&mut shell, b.ask("succeed", &[("to", &format!("0x{}", "12".repeat(20))), ("kind", "handover"), ("effective", "5"), ("statement", "s")]));
-    assert!(matches!(r, Reply::Wrote { seq: 5, .. }) || matches!(&r, Reply::Refused { .. }), "succeed: {r:?}");
+    assert!(matches!(&r, Reply::Refused { code, network: false, .. } if code == "DOOR_UNREAD"), "succeed: {r:?}");
+    assert_eq!(head(&shell), before, "nothing written");
     assert!(!me.is_empty());
     // A refusal answers the action layer's code: a malformed subject.
     let r = ask(&mut shell, b.ask("retract", &[("subject", "not-an-id")]));

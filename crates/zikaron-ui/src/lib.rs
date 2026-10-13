@@ -27,6 +27,7 @@ pub mod layer;
 pub mod mark;
 pub mod menu;
 pub mod motion;
+pub mod nav;
 pub mod page;
 pub mod paint;
 pub mod pick;

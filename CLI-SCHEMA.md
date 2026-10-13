@@ -34,10 +34,10 @@ not repeated here.
    One line for people may precede stdout on stderr when an entry-writing verb is refused by the law
    for its body (`E_BODY_FIELD`, exit 1): it names the member the core's body table refused
    (`zikaron::entry::body_fault`, the same table the thirteen steps judge by) and the flags that give
-   it, in the system's language (section 3): e.g. `statement_md: missing or malformed; given by --statement`,
-   or `statement_md: 缺或不成形,由 --statement 给` in Chinese (the flags part comes from one table,
-   `body_flags` in `verbs.rs`, and is the same text in both). It is not part of this contract: stdout and the
-   exit code are the same with or without it.
+   it, the whole line in the system's language (section 3), the flags part too (one table of both languages,
+   `body_flags` in `verbs.rs`): e.g. `mode: missing or malformed; given by --mark and --toolchain (or --file)`,
+   or `mode: 缺或不成形,由 --mark 与 --toolchain(或 --file) 给` in Chinese. It is not part of this contract:
+   stdout and the exit code are the same with or without it.
 5. **Statuses are passed through as they are.** GREEN / PARTIAL / FAIL, COMPLETE / GAPS /
    UNAVAILABLE / BROKEN_CHAIN, KIT_OK / BADGE_OK / PAIRED and every token are bytes written by the
    base layer; the command line does not merge, rewrite or translate them.
@@ -530,7 +530,7 @@ beside `ok`; it reads nothing and writes nothing.
 
 ## 11 · `--home`: through the desktop
 
-With `--home <the desktop's data folder>`, eleven verbs are done by the running ZIKARON Desk in that data folder,
+With `--home <the desktop's data folder>`, ten verbs are done by the running ZIKARON Desk in that data folder,
 through its own action layer, instead of here: the entry is written into the desktop's ledger with the desktop's
 own identity, recorded in its trail, and seen in its window at once, with nothing reopened or refreshed. The
 ledger is one ledger and the state one state. The command line holds no key and no passcode on this path, and
@@ -559,12 +559,17 @@ done waits.
 `entryId`, `ledger` (the desktop's ledger folder), `seq`, `written` (always `true`) for an entry written; `anchor`
 as in section 6 (the desktop sends the batch its queue holds, all that can be sent, the way its queue page's send
 key does: the gas estimate first, then the batch, then the receipt wait, by its own nodes and rules); `kit-export`
-as in section 6 with `proofs` 0. Besides those:
+as in section 6 with `proofs` 0. The desktop answers each request from the outcome of the work that request
+started, never from another of its kind: a batch broadcast whose receipt wait does not start (the desktop locks
+meanwhile) is `E_TX_NOT_YET` with its `tx` and `count` 0, never a loss; an estimate made while the chain,
+registry or nodes changed is refused by name (`E_DESKTOP_REFUSED`, `token` `GAS_NOT_ESTIMATED`, the change in
+`detail`); work that lands after the data folder was closed is `E_DESKTOP` with `detail` `CLOSED`. Besides
+those:
 
 | Reason | Exit | When |
 |---|---|---|
 | `E_DESKTOP` | 4 | no answer from the desktop for that data folder (section 4 lists the six `detail` words) |
-| `E_ON_DESKTOP` | 1 | `attest`: attesting for someone asks for the passcode, which is given on the desktop alone |
+| `E_ON_DESKTOP` | 1 | `attest`: attesting for someone asks for the passcode, which is given on the desktop alone; `succeed`: handing the ledger to another key is final and rare, and is done on the desktop by hand alone (the desktop is not asked) |
 | `E_QUEUED` | 3 | `anchor` while the desktop's setting "putting on chain from the command line" is *Queue only*: nothing is sent; `count` entries wait, and the desktop shows the request at once |
 | `E_DESKTOP_REFUSED` | 1 or 4 | the desktop refused by name: `token` its code, `detail` its evidence; 4 for a network refusal |
 
@@ -583,12 +588,11 @@ hand out a private key), or they do not touch a data folder.
 | `revoke` | `grant` `case` |
 | `adopt` | `anchors` `attestor` `attestation` |
 | `attest` | none |
-| `succeed` | `to` `kind` `effective` `statement` |
 | `annotate` | `subject` `note` |
 | `retract` | `subject` `note` |
 | `anchor` | none |
 | `kit-export` | `entry` `note` `out` |
 
-`attest` always answers `E_ON_DESKTOP`; `history` records the file by the record convention, as the desktop's own
+`attest` always answers `E_ON_DESKTOP`. `succeed` takes `--home` and always answers `E_ON_DESKTOP` (exit 1) without asking the desktop: nothing is written, and its flags beside `--home` are judged as without it. `history` records the file by the record convention, as the desktop's own
 record does; `kit-export` takes the
 entries named (all of them without `--entry`), and attachments and proof bundles are chosen on the desktop.

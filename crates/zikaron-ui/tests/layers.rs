@@ -927,10 +927,10 @@ fn a_row_with_no_line_under_its_title_centres_the_title() {
         rows.clear();
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.set_width(520.0);
-            rows.push(full::radio_row(ui, egui::Id::new("r-bare"), false, "单行标题", None, "").rect);
-            rows.push(full::radio_row(ui, egui::Id::new("r-two"), false, "两行标题", None, "底下一行").rect);
+            rows.push(full::radio_row(ui, egui::Id::new("r-bare"), false, "Lone title", None, "").rect);
+            rows.push(full::radio_row(ui, egui::Id::new("r-two"), false, "Two line title", None, "a line under it").rect);
             card::form(ui, |ui, f| {
-                rows.push(f.big(ui, None, "大行标题", "", None).rect);
+                rows.push(f.big(ui, None, "Big lone title", "", None).rect);
             });
         });
     };
@@ -938,12 +938,17 @@ fn a_row_with_no_line_under_its_title_centres_the_title() {
     for _ in 0..2 {
         out = f.run(0.1, vec![], |ctx| draw(ctx, &mut rows));
     }
+    // Read where the row put each title (the anchor it laid the text at), never the drawn glyphs' own height: that
+    // follows the system's font, which differs from machine to machine.
     let drawn = texts(&out);
-    let mid = |t: &str| drawn.iter().find(|(x, _)| x == t).map(|(_, r)| r.center().y).unwrap_or_else(|| panic!("{t} drawn"));
-    assert!((rows[0].height() - (24.0 + Type::Strong.line())).abs() < 0.5, "one line high: {:?}", rows[0]);
-    assert!((mid("单行标题") - rows[0].center().y).abs() < 1.5, "centred: {} in {:?}", mid("单行标题"), rows[0]);
-    assert!(mid("两行标题") < rows[1].center().y - 4.0, "with a line under it, the title sits above the middle");
-    assert!((mid("大行标题") - rows[2].center().y).abs() < 1.5, "a large row's lone title centred: {} in {:?}", mid("大行标题"), rows[2]);
+    let at = |t: &str| drawn.iter().find(|(x, _)| x == t).map(|(_, r)| *r).unwrap_or_else(|| panic!("{t} drawn"));
+    let line = Type::Strong.line();
+    assert!((rows[0].height() - (24.0 + line)).abs() < 0.5, "one line high: {:?}", rows[0]);
+    // A choice row lays its title from the top of the lines it has: alone, one line centred in the row.
+    assert!((at("Lone title").top() + line / 2.0 - rows[0].center().y).abs() < 0.5, "centred: {:?} in {:?}", at("Lone title"), rows[0]);
+    assert!(at("Two line title").top() + line / 2.0 < rows[1].center().y - 4.0, "with a line under it, the title sits above the middle");
+    // A large row lays a lone title on its middle.
+    assert!((at("Big lone title").center().y - rows[2].center().y).abs() < 0.5, "a large row's lone title centred: {:?} in {:?}", at("Big lone title"), rows[2]);
 }
 
 /// A passcode row takes focus and keys only when it lies on top (`layer::on_top`): with a sheet over it, a press

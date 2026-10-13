@@ -17,7 +17,7 @@ use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::FromRawHandle;
 use std::path::Path;
 
-type Handle = *mut c_void;
+pub(crate) type Handle = *mut c_void;
 
 const INVALID_HANDLE_VALUE: Handle = -1isize as Handle;
 const GENERIC_READ: u32 = 0x8000_0000;
@@ -699,12 +699,13 @@ pub fn spawn(cmd: &mut std::process::Command) -> std::io::Result<std::process::C
 
 // ───────────────────────── "Enable command line": the user's `Path` ─────────────────────────
 
+// The registry calls, declared once for this crate (the proxy reading uses the same three).
 #[link(name = "advapi32")]
 unsafe extern "system" {
-    fn RegOpenKeyExW(key: Handle, sub: *const u16, options: u32, access: u32, out: *mut Handle) -> i32;
-    fn RegQueryValueExW(key: Handle, name: *const u16, reserved: *mut u32, kind: *mut u32, data: *mut u8, len: *mut u32) -> i32;
+    pub(crate) fn RegOpenKeyExW(key: Handle, sub: *const u16, options: u32, access: u32, out: *mut Handle) -> i32;
+    pub(crate) fn RegQueryValueExW(key: Handle, name: *const u16, reserved: *mut u32, kind: *mut u32, data: *mut u8, len: *mut u32) -> i32;
     fn RegSetValueExW(key: Handle, name: *const u16, reserved: u32, kind: u32, data: *const u8, len: u32) -> i32;
-    fn RegCloseKey(key: Handle) -> i32;
+    pub(crate) fn RegCloseKey(key: Handle) -> i32;
 }
 
 #[link(name = "user32")]
@@ -712,9 +713,9 @@ unsafe extern "system" {
     fn SendMessageTimeoutW(window: Handle, msg: u32, wparam: usize, lparam: isize, flags: u32, timeout: u32, result: *mut usize) -> isize;
 }
 
-const HKEY_CURRENT_USER: Handle = 0x8000_0001usize as Handle;
+pub(crate) const HKEY_CURRENT_USER: Handle = 0x8000_0001usize as Handle;
 const HKEY_LOCAL_MACHINE: Handle = 0x8000_0002usize as Handle;
-const KEY_READ: u32 = 0x2_0019;
+pub(crate) const KEY_READ: u32 = 0x2_0019;
 const KEY_WRITE: u32 = 0x2_0006;
 const REG_EXPAND_SZ: u32 = 2;
 const ERROR_FILE_NOT_FOUND_REG: i32 = 2;

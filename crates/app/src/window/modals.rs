@@ -95,7 +95,7 @@ impl Win {
         self.layers_clear();
         // Remember where the wizard was opened from: its way out returns to that seat and page.
         if self.ux.wizard.is_none() {
-            self.ux.wiz_from = Some((self.shell.settings.role, self.ux.stack, self.ux.place, self.ux.hist.get(&self.ux.stack).cloned()));
+            self.ux.wiz_from = Some((self.shell.settings.role, self.ux.nav.stack, self.ux.nav.place, self.ux.nav.hist.get(&self.ux.nav.stack).cloned()));
             // Whether this is a true first run (`firstrun::fresh_machine`) is recorded once as the wizard opens and
             // holds for the whole run (setting the passcode in step 1 must not make a way out appear halfway
             // through).
@@ -124,13 +124,13 @@ impl Win {
             if self.shell.settings.role != role && !self.shell.seat_unseated() {
                 self.act(Action::SwitchRole, now);
             }
-            self.ux.stack = stack;
+            self.ux.nav.stack = stack;
             if let Some(p) = place {
                 self.go(p, now);
             }
             // Back to the exact page it was opened on (a settings section, a detail page), with its history.
             if let Some(h) = hist {
-                self.ux.hist.insert(stack, h);
+                self.ux.nav.hist.insert(stack, h);
             }
         }
     }

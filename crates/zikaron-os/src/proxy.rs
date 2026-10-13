@@ -197,24 +197,17 @@ mod imp {
 mod imp {
     //! Windows: the user's Internet settings in the registry (read only).
     use super::Proxies;
+    // The registry calls are the crate's one declaration (`windows.rs`).
+    use crate::windows::{Handle, RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY_CURRENT_USER, KEY_READ};
 
-    const HKEY_CURRENT_USER: isize = 0x8000_0001u32 as i32 as isize;
-    const KEY_READ: u32 = 0x20019;
     const PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
-
-    #[link(name = "advapi32")]
-    unsafe extern "system" {
-        fn RegOpenKeyExW(key: isize, sub: *const u16, options: u32, access: u32, out: *mut isize) -> i32;
-        fn RegQueryValueExW(key: isize, name: *const u16, reserved: *mut u32, kind: *mut u32, data: *mut u8, len: *mut u32) -> i32;
-        fn RegCloseKey(key: isize) -> i32;
-    }
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
     /// One value's bytes (`None` when absent).
-    fn raw(key: isize, name: &str) -> Option<Vec<u8>> {
+    fn raw(key: Handle, name: &str) -> Option<Vec<u8>> {
         let n = wide(name);
         let mut len: u32 = 0;
         // SAFETY: the first call asks the size; the second reads into a buffer of that size.
@@ -231,14 +224,14 @@ mod imp {
         }
     }
 
-    fn text(key: isize, name: &str) -> String {
+    fn text(key: Handle, name: &str) -> String {
         let b = raw(key, name).unwrap_or_default();
         let units: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|u| *u != 0).collect();
         String::from_utf16_lossy(&units)
     }
 
     pub fn read() -> Option<Proxies> {
-        let mut key: isize = 0;
+        let mut key: Handle = std::ptr::null_mut();
         let p = wide(PATH);
         // SAFETY: opened for reading only, closed below.
         if unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, p.as_ptr(), 0, KEY_READ, &mut key) } != 0 {

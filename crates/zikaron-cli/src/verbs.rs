@@ -69,21 +69,25 @@ const ACCEPTS: [(&str, &[&str], &[&str]); 22] = [
 
 /// The verbs the desktop does when `--home` names its home, and the flags each takes beside `--home` then (the
 /// desktop writes with its own identity, into its own ledger: the flags that name a key, a ledger or a link are
-/// not taken). Closed: a verb not here does not take `--home` (its row in [`ACCEPTS`] does not list it).
-/// `CLI-SCHEMA.md` §11 is the readable form.
-pub const HOME: [(&str, &[&str]); 11] = [
+/// not taken). Closed: a verb not here is not handed to the desktop (a verb in [`BY_HAND`] takes `--home` and is
+/// refused here). `CLI-SCHEMA.md` §11 is the readable form.
+pub const HOME: [(&str, &[&str]); 10] = [
     ("init", &["statement"]),
     ("history", &["file", "note"]),
     ("grant", &["grantee", "work", "terms", "history", "window-from", "window-to", "scope", "upstream"]),
     ("revoke", &["grant", "case"]),
     ("adopt", &["anchors", "attestor", "attestation"]),
     ("attest", &[]),
-    ("succeed", &["to", "kind", "effective", "statement"]),
     ("annotate", &["subject", "note"]),
     ("retract", &["subject", "note"]),
     ("anchor", &[]),
     ("kit-export", &["entry", "note", "out"]),
 ];
+
+/// The verbs that take `--home` but are done on the desktop by hand only: a final, rare change of who holds the
+/// ledger. With `--home` they answer `E_ON_DESKTOP` here (exit 1) and nothing is asked of the desktop ([`run`]).
+/// Closed; a verb takes `--home` exactly when it is in [`HOME`] or here.
+pub const BY_HAND: [&str; 1] = ["succeed"];
 
 /// The flag that hands a verb to the desktop.
 pub const HOME_FLAG: &str = "home";
@@ -140,8 +144,12 @@ pub fn run(a: &Args) -> Answer {
     if let Some(allowed) = accepts(a.verb(), a.homed()) {
         a.close(&allowed);
     }
-    // `--home`: the desktop does the verb (`desk`).
+    // `--home`: the desktop does the verb (`desk`); a verb done on the desktop by hand only ([`BY_HAND`]) is
+    // refused here and nothing is asked of it.
     if a.homed() {
+        if BY_HAND.contains(&a.verb()) {
+            return crate::desk::on_desktop();
+        }
         return crate::desk::ask(a);
     }
     match a.verb() {
@@ -316,33 +324,35 @@ fn history(a: &Args) -> Answer {
 }
 
 /// Which flags give a body member the core refused (`entry::body_fault`'s path), per entry type: the words of
-/// the stderr line. A member no flag gives (an unlisted type has no table) says none.
-fn body_flags(kind: EntryType, member: &str) -> &'static str {
+/// the stderr line, in both languages (Chinese, English) as the rest of that line is; the line takes the
+/// system's (`out::body_line`). A member no flag gives (an unlisted type has no table) says none.
+fn body_flags(kind: EntryType, member: &str) -> Option<(&'static str, &'static str)> {
+    let one = |f: &'static str| Some((f, f));
     match (kind, member) {
-        (EntryType::Genesis, "statement_md") => "--statement",
-        (EntryType::History, "content") => "--content(或 --file)",
-        (EntryType::History, "mode") => "--mark 与 --toolchain(或 --file)",
-        (EntryType::History, "mode.mark") => "--mark",
-        (EntryType::History, "mode.toolchain") => "--toolchain",
-        (EntryType::History, "note_md") => "--note",
-        (EntryType::Grant, "grantee") => "--grantee",
-        (EntryType::Grant, "work") => "--work",
-        (EntryType::Grant, "terms") => "--terms",
-        (EntryType::Grant, "history") => "--history",
-        (EntryType::Grant, "window" | "window.from" | "window.to") => "--window-from 与 --window-to",
-        (EntryType::Grant, "scope_md") => "--scope",
-        (EntryType::Revocation, "grant") => "--grant",
-        (EntryType::Revocation, "case") => "--case",
-        (EntryType::Adoption, "attestor") => "--attestor",
-        (EntryType::Adoption, "attestation") => "--attestation",
-        (EntryType::Adoption, _) => "--anchors",
-        (EntryType::Succession, "to") => "--to",
-        (EntryType::Succession, "kind") => "--kind",
-        (EntryType::Succession, "effective") => "--effective",
-        (EntryType::Succession, "statement_md") => "--statement",
-        (EntryType::Annotation, "subject") => "--subject",
-        (EntryType::Annotation, "note_md") => "--note",
-        _ => "",
+        (EntryType::Genesis, "statement_md") => one("--statement"),
+        (EntryType::History, "content") => Some(("--content(或 --file)", "--content (or --file)")),
+        (EntryType::History, "mode") => Some(("--mark 与 --toolchain(或 --file)", "--mark and --toolchain (or --file)")),
+        (EntryType::History, "mode.mark") => one("--mark"),
+        (EntryType::History, "mode.toolchain") => one("--toolchain"),
+        (EntryType::History, "note_md") => one("--note"),
+        (EntryType::Grant, "grantee") => one("--grantee"),
+        (EntryType::Grant, "work") => one("--work"),
+        (EntryType::Grant, "terms") => one("--terms"),
+        (EntryType::Grant, "history") => one("--history"),
+        (EntryType::Grant, "window" | "window.from" | "window.to") => Some(("--window-from 与 --window-to", "--window-from and --window-to")),
+        (EntryType::Grant, "scope_md") => one("--scope"),
+        (EntryType::Revocation, "grant") => one("--grant"),
+        (EntryType::Revocation, "case") => one("--case"),
+        (EntryType::Adoption, "attestor") => one("--attestor"),
+        (EntryType::Adoption, "attestation") => one("--attestation"),
+        (EntryType::Adoption, _) => one("--anchors"),
+        (EntryType::Succession, "to") => one("--to"),
+        (EntryType::Succession, "kind") => one("--kind"),
+        (EntryType::Succession, "effective") => one("--effective"),
+        (EntryType::Succession, "statement_md") => one("--statement"),
+        (EntryType::Annotation, "subject") => one("--subject"),
+        (EntryType::Annotation, "note_md") => one("--note"),
+        _ => None,
     }
 }
 
@@ -1495,8 +1505,8 @@ fn seal_and_append(
             let answer = out::denied(Reason::Entry, vec![(Key::Token, s(t.as_str()))]);
             let kind = EntryType::of(entry_type);
             return match (t, zikaron::entry::body_fault(kind, &body)) {
-                (zikaron::tokens::Token::BodyField, Some(member)) if !body_flags(kind, member).is_empty() => {
-                    answer.telling(out::body_line(member, body_flags(kind, member)))
+                (zikaron::tokens::Token::BodyField, Some(member)) if body_flags(kind, member).is_some() => {
+                    answer.telling(out::body_line(member, body_flags(kind, member).unwrap_or_default()))
                 }
                 _ => answer,
             };

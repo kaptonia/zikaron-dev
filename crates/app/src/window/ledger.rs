@@ -46,8 +46,8 @@ impl Win {
         let cells = [seg::Cell::from(t(Key::U3FilterAll)), seg::Cell::from(t(Key::LedgerUnconfirmed)), seg::Cell::from(t(Key::KindGrant))];
         if let Some(i) = seg::seg(ui, "ledger-filter", &cells, self.ux.u3.led_filter) {
             self.ux.u3.led_filter = i;
-            self.ux.entry = motion::Entry::Fade;
-            self.ux.entry_key = self.ux.entry_key.wrapping_add(1);
+            self.ux.nav.entry = motion::Entry::Fade;
+            self.ux.nav.entry_key = self.ux.nav.entry_key.wrapping_add(1);
         }
     }
 

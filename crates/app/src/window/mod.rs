@@ -320,25 +320,6 @@ impl eframe::App for Win {
     }
 }
 
-/// Where a watch row's "next" leads: an unanswered node goes to network settings; expiring holdings and
-/// missing chains go to my grants.
-fn gap_target(g: crate::watchx::Gap) -> Place {
-    use crate::watchx::Say;
-    match g.say {
-        Say::AuditUnavailable => Place::Settings(Section::Network),
-        Say::HoldingNoNow | Say::HoldingExpired | Say::HoldingSoon => Place::Page(Page::Vault),
-        _ => Place::Page(g.go),
-    }
-}
-
-/// The settled place for [`gap_target`] (the link is named after it).
-fn gap_place(g: crate::watchx::Gap, role: crate::roles::Role) -> Place {
-    match gap_target(g) {
-        Place::Page(p) => crate::nav::home_of(p, role),
-        other => other,
-    }
-}
-
 fn gap_say(g: crate::watchx::Gap) -> String {
     use crate::watchx::Say;
     let n = g.n.to_string();
@@ -492,7 +473,7 @@ impl Win {
         if let Some(k) = task_of(&a) {
             self.ux.origin.retain(|(x, _, _)| *x != k);
             let h = self.hist().clone();
-            self.ux.origin.push((k, self.ux.stack, h));
+            self.ux.origin.push((k, self.ux.nav.stack, h));
         }
         // Report troubles recorded before this press first; those this press records are reported below.
         self.tell_faults(now);
@@ -1134,17 +1115,10 @@ struct Ux {
     search: std::collections::BTreeMap<&'static str, String>,
     /// The date range under each list's search field: start and end day, `YYYY-MM-DD` or empty (per face).
     range: std::collections::BTreeMap<&'static str, (String, String)>,
-    /// The current place. `None` until settled (the first frame follows `shell.page`).
-    place: Option<Place>,
-    /// Which view the user is in, and each view's page history.
-    stack: Stack,
-    hist: std::collections::BTreeMap<Stack, History>,
-    /// How the page on screen entered, and a counter that changes on every page change (entrance animations
-    /// key on it).
-    entry: motion::Entry,
-    entry_key: u64,
-    /// The page's body scroll offset last frame (the toolbar's hairline and detail titles follow it).
-    scroll_y: f32,
+    /// The shell's navigation over this product's pages: the current place (`None` until settled; the first
+    /// frame follows `shell.page`), which view the user is in and each view's page history, how the page on
+    /// screen entered, and the body's scroll offset.
+    nav: pages::Frame,
     /// Whether the wizard is open, and at which step.
     wizard: Option<crate::nav::Step>,
     /// Whether this start has asked "open the wizard by itself" yet.
@@ -1575,6 +1549,8 @@ mod identity;
 mod kit;
 mod ledger;
 mod modals;
+mod pages;
+mod probes;
 mod others;
 mod settings;
 mod shared;
@@ -1584,6 +1560,8 @@ mod watch;
 mod wizard;
 mod works;
 pub use self::faces::*;
+pub use self::probes::*;
+use self::pages::*;
 use self::chrome::stagger;
 use self::common::*;
 use self::others::*;

@@ -4764,8 +4764,8 @@ fn the_window_has_a_least_size_and_every_page_fits_it() {
     use app::nav::{Place, Section, View};
     use zikaron_ui::tokens;
     assert_eq!(app::window::MIN_W, tokens::RAIL_W + 2.0 * tokens::PAGE_PAD + tokens::MAIN_MIN_W, "the least width is the layout's floors");
-    let faces = read_src_file("window/faces.rs").expect("faces");
-    assert_eq!(code_only(&faces).matches(".with_min_inner_size([MIN_W, MIN_H])").count(), 1, "the window asks the system for that least size, once");
+    let probes = read_src_file("window/probes.rs").expect("probes");
+    assert_eq!(code_only(&probes).matches(".with_min_inner_size([MIN_W, MIN_H])").count(), 1, "the window asks the system for that least size, once");
     let anywhere: usize = shipped().iter().map(|(_, t)| code_only(t).matches("with_min_inner_size").count()).sum();
     assert_eq!(anywhere, 1, "and nowhere else in what ships asks for another least size");
     let ctx = zikaron_ui::egui::Context::default();
@@ -5047,3 +5047,5 @@ mod unsafe_confined;
 mod recovery_seals;
 #[path = "checks_more/window_habits.rs"]
 mod window_habits;
+#[path = "checks_more/door_serial.rs"]
+mod door_serial;

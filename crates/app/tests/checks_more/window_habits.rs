@@ -9,6 +9,9 @@
 //! - Pages with drop zones of their own (a record kit, a new grant, checking a grant; a relicense is the new
 //!   grant's form and opens only with an upstream grant in hand) declare it as they draw and the whole-window
 //!   drop stands aside; a page without one leaves the drop to the window.
+//! - The window kit's files (the shell, the window's state and its own helpers) name no page, place, view,
+//!   history or wizard step of this product: they reach them only through this product's table
+//!   (`window/pages.rs`, `crate::nav`).
 
 use app::action::{apply, Action, Applied};
 use app::nav::{tab as T, Place, Step, View};
@@ -136,4 +139,28 @@ fn each_word_names_one_judgement() {
     let at = ledger.find("\"ledger-filter\"").expect("the ledger's filter");
     let cells = &ledger[ledger[..at].rfind("let cells").expect("its cells")..at];
     assert!(cells.contains("Key::LedgerUnconfirmed") && !cells.contains("Key::ItemUnanchored"), "{cells}");
+}
+
+/// The window's own files carry no page of this product: no file the family's component registry lists under
+/// the window kit (`ui-kit`'s home in `family-components.json`, read as it stands) writes a route, place, view,
+/// settings section, history, old page, tab or wizard step of this product. The shell reaches them only through
+/// this product's table (`window/pages.rs`, `crate::nav`); the product's drivers and probes live in
+/// `window/probes.rs`. The kit crate (`zikaron-ui`) cannot name them at all (it does not depend on the app).
+#[test]
+fn the_ui_kit_files_name_no_page_of_this_product() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let registry = std::fs::read_to_string(root.join("family-components.json")).expect("the component registry");
+    let at = registry.find("\"id\": \"ui-kit\"").expect("the ui-kit component");
+    let home = &registry[at..];
+    let home = &home[home.find("\"home\"").expect("its home")..];
+    let home = &home[..home.find(']').expect("its home's end")];
+    let files: Vec<&str> = home.split('"').filter(|x| x.starts_with("crates/app/") && x.ends_with(".rs")).collect();
+    assert!(files.contains(&"crates/app/src/window/chrome.rs") && files.contains(&"crates/app/src/window/mod.rs"), "{files:?}");
+    for f in files {
+        let code = super::code_only(&std::fs::read_to_string(root.join(f)).expect(f));
+        for name in ["Route::", "Place::", "View::", "Section::", "Stack::", "Page::", "tab::", "Step::", "nav::rail(", "nav::history_of", "nav::stack_of"] {
+            let named = code.match_indices(name).any(|(i, _)| !code[..i].ends_with(|c: char| c.is_alphanumeric() || c == '_'));
+            assert!(!named, "{f} names `{name}`");
+        }
+    }
 }
