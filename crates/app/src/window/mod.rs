@@ -44,8 +44,10 @@ pub const MIN_H: f32 = 560.0;
 
 #[derive(Default)]
 struct Typed {
-    /// The proxy address being typed (settings, network page, "enter one").
+    /// The proxy address being typed (settings, network page, "enter one"); never a saved password.
     proxy: String,
+    /// A node address typed on the proxy section to see how it would go.
+    proxy_try: String,
     home: String,
     cap: String,
     migrate: String,
@@ -1182,6 +1184,9 @@ struct Ux {
     proxy_manual: bool,
     /// The proxy address line was filled once from the machine settings.
     proxy_seeded: bool,
+    /// The last way said for the node address tried: the address, the saved setting it was judged under, when,
+    /// and the sentence.
+    proxy_tried: Option<(String, Option<String>, f64, String)>,
     open_cadence: bool,
     /// Background tasks the user started (one per kind, may repeat). Only these toast when they land.
     asked: Vec<crate::task::Kind>,

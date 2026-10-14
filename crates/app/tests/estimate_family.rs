@@ -168,16 +168,17 @@ fn places_that_answer_differently_are_not_the_calls() {
     assert_eq!((r.value, r.sources, r.single_source), (Value::Str("0x5209".into()), 2, false));
 }
 
-/// Places that all answer, none with a quantity (text that is not one, a number that is not text): the
+/// Places that all answer, none with a quantity (text that is not one, a number that is not text, `null`): the
 /// reading refuses as the chain's shape, not as unreachable, and not as the call's.
 #[test]
 fn places_answering_no_quantity_are_the_chains_shape() {
     let a = node("200 OK", "{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\"0xzz\"}".into());
     let b = node("200 OK", "{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":16}".into());
     assert_eq!(estimate(&[a, b]), (Some(Known::ChainShape), false));
-    // Every place says null: their word that they have none, not a shape.
+    // Every place says null: a call has an outcome or a refusal, never "none", so null is the chain's shape, as
+    // one node's null is on the command line's path (`send::estimate_gas`).
     let (a, b) = (node("200 OK", "{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":null}".into()), node("200 OK", "{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":null}".into()));
-    assert_eq!(estimate(&[a, b]), (Some(Known::Unreachable), false));
+    assert_eq!(estimate(&[a, b]), (Some(Known::ChainShape), false));
 }
 
 /// With several places refusing, the member and whether it is about the call are both read off the first

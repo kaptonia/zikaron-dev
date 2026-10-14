@@ -2031,8 +2031,10 @@ fn a_backup_without_the_table_leaves_this_machines_table() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
-/// The proxy choice is saved by one action: `system`, `none`, or a parsed address in canonical spelling;
-/// unparseable addresses and credentials are refused and nothing is written.
+/// The proxy choice is saved by one action: `system`, `none`, or a parsed address in canonical spelling, kept
+/// with its credentials in the sealed settings and said back without the password; a user name typed again
+/// without its password keeps the saved one; unparseable addresses and credentials that do not read are
+/// refused (the refusal never repeats a typed password) and nothing is written.
 #[test]
 fn the_proxy_choice_is_saved_as_read_or_refused_untouched() {
     vault_open();
@@ -2040,32 +2042,37 @@ fn the_proxy_choice_is_saved_as_read_or_refused_untouched() {
     let ctx = zikaron_ui::egui::Context::default();
     let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
     let on_disk = || std::fs::read(app::machine::path().expect("机器设置的路")).unwrap_or_default();
-    for (typed, written) in [
-        ("system", "system"),
-        ("  none  ", "none"),
-        (" SOCKS5://Proxy.Example:1080/ ", "socks5://proxy.example:1080"),
-        ("http://[::1]:7890", "http://[::1]:7890"),
-        ("HTTP://127.0.0.1:8080", "http://127.0.0.1:8080"),
+    for (typed, said, written) in [
+        ("system", "system", "system"),
+        ("  none  ", "none", "none"),
+        (" SOCKS5://Proxy.Example:1080/ ", "socks5://proxy.example:1080", "socks5://proxy.example:1080"),
+        ("http://[::1]:7890", "http://[::1]:7890", "http://[::1]:7890"),
+        ("HTTP://127.0.0.1:8080", "http://127.0.0.1:8080", "http://127.0.0.1:8080"),
+        ("https://u:p%20w@proxy.example:443", "https://u@proxy.example:443", "https://u:p%20w@proxy.example:443"),
+        ("https://u@proxy.example:443", "https://u@proxy.example:443", "https://u:p%20w@proxy.example:443"),
+        ("socks4a://id@127.0.0.1:1080", "socks4://id@127.0.0.1:1080", "socks4://id@127.0.0.1:1080"),
     ] {
         match apply(&mut shell, Action::SetProxy { choice: typed.into() }) {
-            Applied::ProxySet(w) => assert_eq!(w, written, "{typed:?}"),
+            Applied::ProxySet(w) => assert_eq!(w, said, "{typed:?}"),
             other => panic!("{typed:?}: {other:?}"),
         }
         assert_eq!(app::machine::read().expect("读").proxy.as_deref(), Some(written));
     }
-    for (typed, tail_key) in [
-        ("proxy.example:8080", app::lang::Key::TailProxyShape),
-        ("https://127.0.0.1:1", app::lang::Key::TailProxyShape),
-        ("http://127.0.0.1", app::lang::Key::TailProxyShape),
-        ("", app::lang::Key::TailProxyShape),
-        ("http://u:p@127.0.0.1:1", app::lang::Key::TailProxyCredentials),
+    for (typed, shown, tail_key) in [
+        ("proxy.example:8080", "proxy.example:8080", app::lang::Key::TailProxyShape),
+        ("ftp://127.0.0.1:1", "ftp://127.0.0.1:1", app::lang::Key::TailProxyShape),
+        ("http://127.0.0.1", "http://127.0.0.1", app::lang::Key::TailProxyShape),
+        ("", "", app::lang::Key::TailProxyShape),
+        ("http://:secret@127.0.0.1:1", "http://@127.0.0.1:1", app::lang::Key::TailProxyCredentials),
+        ("socks4://id:secret@127.0.0.1:1", "socks4://id@127.0.0.1:1", app::lang::Key::TailProxyCredentials),
     ] {
         let before = on_disk();
         match apply(&mut shell, Action::SetProxy { choice: typed.into() }) {
             Applied::Trouble(f) => {
                 assert!(f.said().starts_with("SETTINGS_SHAPE"), "{typed:?}: {}", f.said());
                 let tails: Vec<String> = app::lang::TABLE.iter().filter(|(k, _, _)| *k == tail_key).flat_map(|(_, zh, en)| [zh.to_string(), en.to_string()]).collect();
-                assert!(tails.iter().any(|t| f.tail() == t.replace("{0}", typed)), "{typed:?}: {}", f.tail());
+                assert!(tails.iter().any(|t| f.tail() == t.replace("{0}", shown)), "{typed:?}: {}", f.tail());
+                assert!(!f.tail().contains("secret") && !f.said().contains("secret"), "{typed:?}");
             }
             other => panic!("{typed:?}: {other:?}"),
         }
@@ -2073,24 +2080,33 @@ fn the_proxy_choice_is_saved_as_read_or_refused_untouched() {
     }
 }
 
-/// The proxy line on the settings page says how a new connection goes and, when it goes direct, why.
+/// The proxy lines say how a connection goes (through which proxy, by its user name and never its password),
+/// and, when it goes direct, why; the system's script deciding, or not used and why, by name.
 #[test]
 fn the_proxy_line_says_the_way_and_why_it_is_straight() {
-    use zikaron_net::{Choice, Kind, Proxy, Reading, Way};
+    use zikaron_net::{Choice, Kind, PacTrouble, Proxy, Reading, Script, Way};
     let texts = |k: app::lang::Key| -> Vec<String> { app::lang::TABLE.iter().filter(|(x, _, _)| *x == k).flat_map(|(_, zh, en)| [zh.to_string(), en.to_string()]).collect() };
-    let plain = Reading { way: Way::Direct, choice: Choice::System, loopback: false, auto_config_ignored: false, system_unread: false };
-    let p = Proxy { kind: Kind::Socks5, host: "127.0.0.1".into(), port: 1080 };
-    let via = app::machine::proxy_said(&Reading { way: Way::Through(p), choice: Choice::Off, ..plain.clone() });
-    assert!(texts(app::lang::Key::ProxyNowVia).iter().any(|t| via == t.replace("{0}", "socks5://127.0.0.1:1080")), "{via}");
-    for (r, k) in [
-        (Reading { loopback: true, choice: Choice::Manual(Proxy { kind: Kind::Http, host: "p".into(), port: 1 }), ..plain.clone() }, app::lang::Key::ProxyNowLoopback),
-        (Reading { system_unread: true, ..plain.clone() }, app::lang::Key::ProxyNowUnread),
-        (Reading { auto_config_ignored: true, ..plain.clone() }, app::lang::Key::ProxyNowAutoConfig),
-        (plain.clone(), app::lang::Key::ProxyNowDirect),
-    ] {
-        let said = app::machine::proxy_said(&r);
-        assert!(texts(k).contains(&said), "{k:?}: {said}");
+    let plain = Reading { way: Way::Direct, then: Vec::new(), choice: Choice::System, loopback: false, local: false, system_unread: false, script: Script::None };
+    let p = zikaron_net::proxy_of("socks5://me:secret@127.0.0.1:1080").expect("typed");
+    for (say, via_key) in [(app::machine::proxy_said as fn(&Reading) -> String, app::lang::Key::ProxyNowVia), (app::machine::proxy_goes, app::lang::Key::ProxyGoesVia)] {
+        let via = say(&Reading { way: Way::Through(p.clone()), choice: Choice::Off, ..plain.clone() });
+        assert!(texts(via_key).iter().any(|t| via == t.replace("{0}", "socks5://me@127.0.0.1:1080")), "{via}");
+        assert!(!via.contains("secret"));
     }
+    let manual = Choice::Manual(Proxy { kind: Kind::Http, host: "p".into(), port: 1, auth: None });
+    for (r, now, goes) in [
+        (Reading { loopback: true, choice: manual.clone(), ..plain.clone() }, app::lang::Key::ProxyNowLoopback, app::lang::Key::ProxyGoesLoopback),
+        (Reading { local: true, choice: manual.clone(), ..plain.clone() }, app::lang::Key::ProxyNowLocal, app::lang::Key::ProxyGoesLocal),
+        (Reading { system_unread: true, ..plain.clone() }, app::lang::Key::ProxyNowUnread, app::lang::Key::ProxyGoesUnread),
+        (Reading { script: Script::Pending, ..plain.clone() }, app::lang::Key::ProxyNowScriptPending, app::lang::Key::ProxyGoesPending),
+        (plain.clone(), app::lang::Key::ProxyNowDirect, app::lang::Key::ProxyGoesDirect),
+    ] {
+        assert!(texts(now).contains(&app::machine::proxy_said(&r)), "{now:?}");
+        assert!(texts(goes).contains(&app::machine::proxy_goes(&r)), "{goes:?}");
+    }
+    let troubled = app::machine::proxy_said(&Reading { script: Script::Trouble(PacTrouble::Timeout), ..plain.clone() });
+    let direct = texts(app::lang::Key::ProxyNowDirect);
+    assert!(texts(app::lang::Key::ProxyScriptTrouble).iter().any(|t| direct.iter().any(|d| troubled == t.replace("{0}", d).replace("{1}", "PAC_TIMEOUT"))), "{troubled}");
 }
 
 /// A JSON-RPC node on a local port answering each request with `answer(method)` (`None`: close the
@@ -5092,5 +5108,7 @@ mod recovery_seals;
 mod window_habits;
 #[path = "checks_more/cli_writes.rs"]
 mod cli_writes;
+#[path = "checks_more/proxy_locked.rs"]
+mod proxy_locked;
 #[path = "checks_more/door_serial.rs"]
 mod door_serial;

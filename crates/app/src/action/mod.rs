@@ -2312,7 +2312,9 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             None => shell.trouble(crate::fault::Fault::known(crate::fault::Known::CliPathUnsupported, String::new())),
         },
         Action::SetCliDesktop { on } => {
-            if shell.machine.cli_alone.is_some() {
+            // While writing alone is on, the desktop switch is greyed (the higher outranks the lower): asked of
+            // the one judgement of the four states.
+            if shell.machine.cli_path() == crate::machine::CliPath::Alone {
                 return shell.trouble(crate::fault::Fault::known(crate::fault::Known::CliAloneOn, String::new()));
             }
             match crate::machine::update(|m| m.cli_desktop = on) {

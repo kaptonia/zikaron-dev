@@ -95,8 +95,8 @@ pub struct Row {
     /// When this row was created (the `keystore::utc` form). No decision reads it.
     pub created: String,
     /// The network this identity chose when it was made ([`Chosen`]: a row of `deploy::KNOWN`, or custom with
-    /// what one seat filled in). `None` for rows made before identities chose one, until a writer opens a home
-    /// and records this machine's row ([`backfill_network`]). Both seats' homes take it
+    /// what one seat filled in). `None` when it never chose one; nothing fills one in on its behalf (a choice
+    /// is recorded only by [`choose_network`] or [`set_network`]). Both seats' homes take it
     /// (`action::open_home_at`).
     pub network: Option<Chosen>,
     /// The network cell as read, when this version could not read it whole (a later version's form). Written

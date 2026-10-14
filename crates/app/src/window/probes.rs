@@ -709,6 +709,27 @@ pub fn probe_typed_under(ctx: &egui::Context, shell: Shell, width: f32, height: 
     (win.shell, reading)
 }
 
+/// Settings, network: the proxy section drawn with `tried` typed on its "try a node address" line (the saved
+/// proxy fills its own line as the page fills it); every text drawn once the page has settled.
+pub fn probe_proxy_section(ctx: &egui::Context, shell: Shell, tried: &str, width: f32, height: f32) -> (Shell, Vec<String>) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Settings(crate::nav::Section::Network), role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed { proxy_try: tried.to_string(), ..Typed::default() }, ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut out = egui::FullOutput::default();
+    for _ in 0..12 {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), ..Default::default() };
+        out = ctx.run(input, |c| win.draw(c));
+    }
+    let texts = texts_of(&out).into_iter().map(|d| d.text).collect();
+    (win.shell, texts)
+}
+
 /// The window over `place`, then the shell's page set from outside the window (`Action::Show`, as a link or the
 /// command-line door sets it) and a few frames drawn: the route drawn before and after, and the shell's page
 /// after (the window's following never moves it back).

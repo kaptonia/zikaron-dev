@@ -28,11 +28,13 @@ use std::time::{Duration, Instant};
 mod answer;
 mod dial;
 mod keep;
+pub mod pac;
 mod route;
 
 pub use dial::{CONNECT_CAP, STAGGER};
 pub use keep::{close_down, cuts, open_up, IDLE_KEEP, PER_PLACE};
-pub use route::{excepted, is_loopback, proxy_of, read_choice, read_system_with, set_choice, way_for, way_shown, way_under, Choice, Kind, NotAProxy, Proxy, Reading, SystemProxies, Way, SYSTEM_FRESH, SYSTEM_READ_CAP};
+pub use pac::{Auto, PacTrouble};
+pub use route::{excepted, is_local, is_loopback, proxy_of, proxy_text_shown, read_choice, read_system_with, set_choice, way_for, way_shown, way_shown_under, way_under, Auth, Choice, Kind, NotAProxy, Proxy, Reading, Script, Secret, SystemProxies, Way, SYSTEM_FRESH, SYSTEM_READ_CAP};
 
 // ───────────────────────── The request head ─────────────────────────
 
@@ -125,10 +127,12 @@ impl Clock {
         Fail::Late(self.limit)
     }
 
-    /// How long this exchange may wait for the system proxy settings: [`route::SYSTEM_READ_CAP`], never past
-    /// the deadline.
+    /// How long this exchange may spend choosing its route: reading the system proxy settings
+    /// ([`route::SYSTEM_READ_CAP`]), then fetching and asking their script ([`pac::FETCH_LIMIT`],
+    /// [`pac::RUN_LIMIT`]); never past the deadline.
     fn system_wait(&self) -> Result<Duration, Fail> {
-        Ok(self.left()?.map(|l| l.min(route::SYSTEM_READ_CAP)).unwrap_or(route::SYSTEM_READ_CAP))
+        let cap = route::SYSTEM_READ_CAP + pac::FETCH_LIMIT + pac::RUN_LIMIT;
+        Ok(self.left()?.map(|l| l.min(cap)).unwrap_or(cap))
     }
 
     /// Limit the socket's writes to the time left and each read to one [`SLICE`] within it, so every read loop
@@ -380,13 +384,57 @@ fn tls_fail(e: &std::io::Error) -> Fail {
     }
 }
 
+/// The byte stream under a connection: TCP, or TLS to an HTTPS proxy over TCP (a node's own TLS then runs
+/// inside it, so each leg verifies its own certificate).
+pub(crate) enum Sock {
+    Tcp(std::net::TcpStream),
+    Tls(Box<Tls>),
+}
+
+impl Sock {
+    /// The TCP socket at the bottom.
+    pub(crate) fn tcp(&self) -> &std::net::TcpStream {
+        match self {
+            Sock::Tcp(s) => s,
+            Sock::Tls(t) => t.sock.tcp(),
+        }
+    }
+}
+
+impl Read for Sock {
+    /// Over TLS, one [`Tls::read`]: what it decrypted, or `WouldBlock` when a socket step completed no record.
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Sock::Tcp(s) => s.read(buf),
+            Sock::Tls(t) => t.read(buf),
+        }
+    }
+}
+
+impl Write for Sock {
+    /// Over TLS, the whole buffer encrypted and written ([`Tls::send`]).
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Sock::Tcp(s) => s.write(buf),
+            Sock::Tls(t) => t.send(buf).map(|_| buf.len()),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Sock::Tcp(s) => s.flush(),
+            Sock::Tls(t) => t.sock.flush(),
+        }
+    }
+}
+
 /// One TLS connection over its socket, driven one socket operation at a time. Each step writes once or reads
 /// once and returns, so whoever drives it looks at shutdown and the deadline between any two socket operations:
 /// a peer that trickles a record (or a handshake) a byte at a time is cut at the deadline like a silent one,
 /// never waited on until it stops.
 pub(crate) struct Tls {
     conn: rustls::ClientConnection,
-    sock: std::net::TcpStream,
+    sock: Sock,
 }
 
 impl Tls {
@@ -442,16 +490,16 @@ impl Tls {
 /// Perform the TLS handshake over a connected TCP stream, completing it before the stream is used so a bad
 /// certificate is reported at once. One socket operation per turn ([`Tls::step`]); each turn looks at shutdown
 /// and gets only the time left, and running out is a deadline failure, not a handshake failure.
-fn tls_connect(host: &str, tcp: std::net::TcpStream, clock: &Clock) -> Result<Tls, Fail> {
+fn tls_connect(host: &str, sock: Sock, clock: &Clock) -> Result<Tls, Fail> {
     let name = rustls::pki_types::ServerName::try_from(host.to_string()).map_err(|e| Fail::Name(format!("{host}: {e}")))?;
     let conn = rustls::ClientConnection::new(tls_config()?, name).map_err(|e| Fail::Handshake(e.to_string()))?;
-    let mut tls = Tls { conn, sock: tcp };
+    let mut tls = Tls { conn, sock };
     // Until the handshake is done and its last flight is written.
     while tls.conn.is_handshaking() || tls.conn.wants_write() {
         if keep::closing() {
             return Err(keep::cut());
         }
-        clock.bound(&tls.sock)?;
+        clock.bound(tls.sock.tcp())?;
         let step = tls.step();
         // Cut by shutdown during the handshake: reported as closed, not as a handshake failure.
         if keep::closing() {
@@ -471,9 +519,9 @@ fn tls_connect(host: &str, tcp: std::net::TcpStream, clock: &Clock) -> Result<Tl
 
 // ───────────────────────── The exchange ─────────────────────────
 
-/// One stream: plain TCP or TLS over it.
+/// One stream: the plain byte stream, or TLS with the node over it.
 pub(crate) enum Stream {
-    Plain(std::net::TcpStream),
+    Plain(Sock),
     Tls(Box<Tls>),
 }
 
@@ -495,17 +543,17 @@ impl Stream {
     /// The TCP socket under the stream.
     pub(crate) fn tcp(&self) -> &std::net::TcpStream {
         match self {
-            Stream::Plain(s) => s,
-            Stream::Tls(s) => &s.sock,
+            Stream::Plain(s) => s.tcp(),
+            Stream::Tls(s) => s.sock.tcp(),
         }
     }
 
-    /// A stream failure: on TLS, the peer's certificate alert may arrive on the first read after the
-    /// handshake, and is reported as a certificate failure.
+    /// A stream failure: on TLS (with the node or an HTTPS proxy), the peer's certificate alert may arrive on
+    /// the first read after the handshake, and is reported as a certificate failure.
     fn fail(&self, e: std::io::Error) -> Fail {
-        match self {
-            Stream::Tls(_) if e.get_ref().and_then(|x| x.downcast_ref::<rustls::Error>()).is_some() => tls_fail(&e),
-            _ => Fail::Stream(e.to_string()),
+        match e.get_ref().and_then(|x| x.downcast_ref::<rustls::Error>()) {
+            Some(_) => tls_fail(&e),
+            None => Fail::Stream(e.to_string()),
         }
     }
 }
@@ -521,27 +569,61 @@ pub enum Ask {
     Once,
 }
 
-/// Open a new connection the given way: direct (resolve, try every address) or through a proxy tunnel; then,
-/// for `https`, the TLS handshake with the target (certificate and host name always verified end to end), all
-/// within the time left.
-fn open(t: &Target, way: &Way, clock: &Clock) -> Result<keep::Live, Fail> {
-    if keep::closing() {
-        return Err(Fail::Closed);
-    }
-    // Tracked before the handshake, so shutdown cuts a handshake in flight like any exchange.
-    let (tcp, ticket) = match way {
+/// The leg to the target one way: direct (resolve, try every address) or through a proxy tunnel. Tracked
+/// before anything else is said on it, so shutdown cuts it in flight like any exchange.
+fn leg(t: &Target, way: &Way, clock: &Clock) -> Result<(Sock, keep::Ticket), Fail> {
+    match way {
         Way::Direct => {
             let tcp = dial::connect(t, clock)?;
             let ticket = keep::ticket(&tcp)?;
-            (tcp, ticket)
+            Ok((Sock::Tcp(tcp), ticket))
         }
-        Way::Through(p) => route::tunnel(t, p, clock)?,
+        Way::Through(p) => route::tunnel(t, p, clock),
+    }
+}
+
+/// Open a new connection: the ways in order until one's leg opens (a failure on a leg passes to the next; the
+/// deadline and shutdown end it; when every leg fails, each one's failure is named); then, for `https`, the TLS
+/// handshake with the target (certificate and host name always verified end to end), all within the time
+/// left.
+fn open(t: &Target, ways: &[Way], clock: &Clock) -> Result<keep::Live, Fail> {
+    if keep::closing() {
+        return Err(Fail::Closed);
+    }
+    let mut failed: Vec<Fail> = Vec::new();
+    let mut opened = None;
+    for way in ways {
+        match leg(t, way, clock) {
+            Ok(l) => {
+                opened = Some((way, l));
+                break;
+            }
+            Err(f @ (Fail::Late(_) | Fail::Closed)) => return Err(f),
+            Err(f) => failed.push(f),
+        }
+    }
+    let Some((way, (sock, ticket))) = opened else {
+        return Err(match failed.len() {
+            0 => Fail::Connect("no way to the node".into()),
+            1 => failed.remove(0),
+            _ => Fail::Connect(failed.iter().map(fail_said).collect::<Vec<_>>().join("; then ")),
+        });
     };
     let stream = match t.scheme {
-        Scheme::Http => Stream::Plain(tcp),
-        Scheme::Https => Stream::Tls(Box::new(tls_connect(t.dial_host(), tcp, clock)?)),
+        Scheme::Http => Stream::Plain(sock),
+        Scheme::Https => Stream::Tls(Box::new(tls_connect(t.dial_host(), sock, clock)?)),
     };
     Ok(keep::live(keep::Conn { stream, place: t.place(way) }, ticket))
+}
+
+/// A leg's failure as one clause, for the sentence naming every way tried.
+fn fail_said(f: &Fail) -> String {
+    match f {
+        Fail::Name(x) | Fail::Connect(x) | Fail::Handshake(x) | Fail::Certificate(x) | Fail::Stream(x) => x.clone(),
+        Fail::Late(d) => format!("the deadline passed ({d:?})"),
+        Fail::Overlong(n) => format!("an answer passed {n} bytes"),
+        Fail::Closed => "closed".into(),
+    }
 }
 
 /// How one round on one connection ended without a response.
@@ -625,17 +707,17 @@ fn carry(t: &Target, request: &[u8], limits: &Limits, how: Ask) -> Result<answer
     let clock = Clock::start(limits.deadline);
     // The route is chosen once per exchange, from the current setting and the system settings read now
     // (within the deadline).
-    let way = route::way_for(t, clock.system_wait()?).way;
+    let ways = route::way_for(t, clock.system_wait()?).ways();
     let mut again = false;
     loop {
         let mut live = match how {
             // A retry always uses a new connection, never another kept one.
-            Ask::Read if again => open(t, &way, &clock)?,
-            Ask::Read => match keep::take(&t.place(&way)) {
+            Ask::Read if again => open(t, &ways, &clock)?,
+            Ask::Read => match ways.iter().find_map(|w| keep::take(&t.place(w))) {
                 Some(l) => l,
-                None => open(t, &way, &clock)?,
+                None => open(t, &ways, &clock)?,
             },
-            Ask::Once => open(t, &way, &clock)?,
+            Ask::Once => open(t, &ways, &clock)?,
         };
         match round(&mut live.conn.stream, request, limits, &clock) {
             Ok(reader) => {
@@ -657,8 +739,8 @@ fn carry(t: &Target, request: &[u8], limits: &Limits, how: Ask) -> Result<answer
 /// within `limits`; the connection is not kept and nothing is retried.
 pub fn exchange(t: &Target, request: &[u8], limits: &Limits) -> Result<Vec<u8>, Fail> {
     let clock = Clock::start(limits.deadline);
-    let way = route::way_for(t, clock.system_wait()?).way;
-    let mut live = open(t, &way, &clock)?;
+    let ways = route::way_for(t, clock.system_wait()?).ways();
+    let mut live = open(t, &ways, &clock)?;
     match round(&mut live.conn.stream, request, limits, &clock) {
         Ok(reader) => Ok(reader.raw().to_vec()),
         Err(Round::Broke(why)) => Err(Fail::Stream(why)),
@@ -703,6 +785,20 @@ pub fn post_json(t: &Target, body: &[u8], limits: &Limits, how: Ask) -> Result<A
 pub fn get(t: &Target, limits: &Limits) -> Result<Answer, Fail> {
     let head = request_head("GET", &t.path, &t.authority(), &format!("Accept: */*\r\n{}", closing_line(Ask::Read)));
     answer_of(carry(t, head.as_bytes(), limits, Ask::Read)?)
+}
+
+/// GET the target directly, whatever the proxy setting, on a new connection closed afterwards: the proxy
+/// configuration script is fetched this way (a script fetched through the proxy it chooses could never be
+/// fetched when that proxy is down).
+pub(crate) fn get_direct(t: &Target, limits: &Limits) -> Result<Answer, Fail> {
+    let clock = Clock::start(limits.deadline);
+    let head = request_head("GET", &t.path, &t.authority(), &format!("Accept: */*\r\n{}", closing_line(Ask::Once)));
+    let mut live = open(t, &[Way::Direct], &clock)?;
+    match round(&mut live.conn.stream, head.as_bytes(), limits, &clock) {
+        Ok(reader) => answer_of(reader),
+        Err(Round::Broke(why)) => Err(Fail::Stream(why)),
+        Err(Round::Failed(f)) => Err(f),
+    }
 }
 
 #[cfg(test)]
@@ -796,11 +892,11 @@ mod tests {
         }
         let (port, heard) = silent_peer(b"");
         let t = parse(&format!("https://127.0.0.1:{port}/")).expect("address");
-        let (said, took) = cut_by_the_flag_alone(&heard, move || open(&t, &Way::Direct, &Clock::start(limits.deadline)).err());
+        let (said, took) = cut_by_the_flag_alone(&heard, move || open(&t, &[Way::Direct], &Clock::start(limits.deadline)).err());
         assert_eq!(said, Some(Fail::Closed), "a handshake in flight");
         assert!(took < SLICE * 4, "a handshake in flight: {took:?}");
         let (port, heard) = silent_peer(b"");
-        let p = Proxy { kind: Kind::Http, host: "127.0.0.1".into(), port };
+        let p = Proxy { kind: Kind::Http, host: "127.0.0.1".into(), port, auth: None };
         let t = parse("http://node.invalid:8545/").expect("address");
         let (said, took) = cut_by_the_flag_alone(&heard, move || route::tunnel(&t, &p, &Clock::start(limits.deadline)).err());
         assert_eq!(said, Some(Fail::Closed), "a tunnel in flight");

@@ -341,7 +341,7 @@ fn the_proxy_section_draws_no_now_line_and_still_saves() {
         let place = Place::Settings(Section::Network);
         let proxy = "http://127.0.0.1:8080";
         let head = t(Key::ProxyNowVia).split("{0}").next().unwrap().to_string();
-        let now_keys = [Key::ProxyNowDirect, Key::ProxyNowLoopback, Key::ProxyNowUnread, Key::ProxyNowAutoConfig];
+        let now_keys = [Key::ProxyNowDirect, Key::ProxyNowLoopback, Key::ProxyNowUnread, Key::ProxyNowLocal, Key::ProxyNowScriptPending];
         let walk = |steps: Vec<(f64, Vec<Event>)>| {
             let (ctx, frames) = tapped(None);
             let mut shell = probe_shell(&ctx);

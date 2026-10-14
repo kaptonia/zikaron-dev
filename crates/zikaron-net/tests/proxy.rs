@@ -169,7 +169,7 @@ fn socks_proxy(to: u16, refuse: Option<u8>) -> (u16, Arc<Mutex<Vec<String>>>) {
 }
 
 fn manual(kind: Kind, port: u16) -> Choice {
-    Choice::Manual(Proxy { kind, host: "127.0.0.1".into(), port })
+    Choice::Manual(Proxy { kind, host: "127.0.0.1".into(), port, auth: None })
 }
 
 fn nothing() -> Option<SystemProxies> {
@@ -179,7 +179,7 @@ fn nothing() -> Option<SystemProxies> {
 static SYSTEM_SOCKS: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
 
 fn system_with_socks() -> Option<SystemProxies> {
-    Some(SystemProxies { socks: Some(("127.0.0.1".into(), SYSTEM_SOCKS.load(std::sync::atomic::Ordering::SeqCst))), ..Default::default() })
+    Some(SystemProxies { socks: Some(Proxy { kind: Kind::Socks5, host: "127.0.0.1".into(), port: SYSTEM_SOCKS.load(std::sync::atomic::Ordering::SeqCst), auth: None }), ..Default::default() })
 }
 
 #[test]
@@ -384,20 +384,20 @@ fn each_failure_on_the_proxys_side_is_named() {
         });
         assert!(connect_said(through(Kind::Socks5, p, 3000)).contains("reply does not read"), "{form}");
     }
-    // Requires credentials: unsupported, and reported as such.
+    // Asks for credentials, and none are written with the proxy: reported as such.
     let p = scripted(|mut s| {
         if read_head(&mut s) {
             let _ = s.write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\nContent-Length: 0\r\n\r\n");
         }
     });
     let said = connect_said(through(Kind::Http, p, 3000));
-    assert!(said.contains("407") && said.contains("needs credentials"), "{said}");
+    assert!(said.contains("407") && said.contains("asks for credentials"), "{said}");
     let p = scripted(|mut s| {
         if read_greeting(&mut s) {
             let _ = s.write_all(&[5, 0xFF]);
         }
     });
-    assert!(connect_said(through(Kind::Socks5, p, 3000)).contains("needs authentication"));
+    assert!(connect_said(through(Kind::Socks5, p, 3000)).contains("asks for authentication"));
 }
 
 /// A node that keeps connections open (HTTP/1.1, a length, no close), counting accepted connections.

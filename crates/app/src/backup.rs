@@ -609,6 +609,24 @@ pub fn peek(path: &Path, password: &str) -> Result<Summary, Fault> {
     Ok(summary_of(&p, created))
 }
 
+/// One file a backup carries: whose it is, its kind, its path in the backup, and the SHA-256 of its plain bytes
+/// (the bytes themselves stay in the package).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Carried {
+    pub whose: crate::local::Whose,
+    pub doc: Doc,
+    pub rel: String,
+    pub sha256: [u8; 32],
+}
+
+/// What a backup carries, file by file, opened with its password (nothing on this machine changes; works while
+/// locked).
+pub fn carries(path: &Path, password: &str) -> Result<Vec<Carried>, Fault> {
+    let (_, plain) = open(&read_file(path)?, password)?;
+    let p = package_of(&plain)?;
+    Ok(p.files.iter().map(|f| Carried { whose: f.whose.clone(), doc: f.doc, rel: f.rel.clone(), sha256: zikaron::cryptox::sha256(&f.bytes) }).collect())
+}
+
 /// This identity's ledger entries for one seat, from a backup (the source for fetching a restored identity's
 /// ledger). The identity must be in the backup.
 pub fn ledger_of(path: &Path, password: &str, id: &str, seat: Role) -> Result<Vec<Vec<u8>>, Fault> {

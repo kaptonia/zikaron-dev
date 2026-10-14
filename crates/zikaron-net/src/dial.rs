@@ -100,6 +100,16 @@ fn resolve_with(t: &Target, clock: &Clock, resolver: Resolver) -> Result<Vec<Soc
     }
 }
 
+/// A name's addresses through the system resolver within `limit` (an address literal is itself; none when the
+/// name does not resolve in time). For the proxy script's lookups.
+pub(crate) fn lookup(host: &str, limit: Duration) -> Vec<IpAddr> {
+    if limit.is_zero() {
+        return Vec::new();
+    }
+    let t = Target { scheme: crate::Scheme::Http, host: host.trim().to_ascii_lowercase(), port: 0, path: "/".into() };
+    resolve(&t, &Clock::start(limit)).map(|v| v.into_iter().map(|a| a.ip()).collect()).unwrap_or_default()
+}
+
 /// One connection attempt to one address with a timeout. Production uses `TcpStream::connect_timeout`; it is a
 /// parameter so tests can stage an address that silently drops the attempt.
 pub(crate) type Attempt = fn(&SocketAddr, Duration) -> std::io::Result<TcpStream>;

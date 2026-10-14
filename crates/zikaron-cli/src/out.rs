@@ -405,7 +405,7 @@ impl Said {
             Said::Sealed => ("已锁定:这是 ZIKARON Desk 封存的本机数据,命令行不读", "Locked: this is local data ZIKARON Desk keeps sealed; the command line does not read it"),
             Said::EndpointShape => ("--endpoint 的形是 <链号>=<url>", "--endpoint is <chain id>=<url>"),
             Said::EndpointScheme => ("端点只认 http:// 或 https:// 地址", "an endpoint is an http:// or https:// address"),
-            Said::ProxyShape => ("--proxy 只认 system、none、http://主机:端口 或 socks5://主机:端口(不带用户名与口令)", "--proxy takes system, none, http://host:port or socks5://host:port (without a user name or password)"),
+            Said::ProxyShape => ("--proxy 只认 system、none，或 http://、https://、socks5://、socks4:// 加 主机:端口(可带 用户名:口令@，socks4 只带用户名)", "--proxy takes system, none, or http://, https://, socks5://, socks4:// and host:port (user:password@ may go before the host; socks4 takes a user name only)"),
             Said::NeedEndpoint => ("至少要一个 --endpoint <链号>=<url>", "at least one --endpoint <chain id>=<url> is wanted"),
             Said::OneEndpoint => ("anchor 只往一条链上发,只收一个 --endpoint", "anchor sends to one chain and takes one --endpoint"),
             Said::ChainIdNotInt => ("链号不是十进制整数", "the chain id is not a decimal integer"),

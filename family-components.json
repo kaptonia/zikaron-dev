@@ -16,6 +16,7 @@
     "crates/zikaron-net/src/dial.rs",
     "crates/zikaron-net/src/keep.rs",
     "crates/zikaron-net/src/lib.rs",
+    "crates/zikaron-net/src/pac.rs",
     "crates/zikaron-net/src/route.rs"
    ],
    "tests": [
@@ -157,7 +158,7 @@
     },
     {
      "path": "crates/zikaron-net/src/route.rs",
-     "name": "a_system_proxy_on_an_ipv6_address_is_bracketed"
+     "name": "a_system_proxy_takes_its_kind_and_credentials_and_brackets"
     },
     {
      "path": "crates/zikaron-net/tests/edges.rs",
@@ -290,6 +291,86 @@
     {
      "path": "crates/zikaron-net/tests/a8_handshake.rs",
      "name": "a_peer_that_does_not_speak_tls_is_the_handshake"
+    },
+    {
+     "path": "crates/zikaron-net/src/route.rs",
+     "name": "a_scripts_ways_come_first_and_its_trouble_leaves_the_explicit_proxies"
+    },
+    {
+     "path": "crates/zikaron-net/src/route.rs",
+     "name": "a_local_network_goes_straight_under_a_manual_proxy"
+    },
+    {
+     "path": "crates/zikaron-net/src/pac.rs",
+     "name": "an_answer_reads_into_ways_in_order"
+    },
+    {
+     "path": "crates/zikaron-net/src/pac.rs",
+     "name": "the_standard_functions_answer"
+    },
+    {
+     "path": "crates/zikaron-net/src/pac.rs",
+     "name": "the_sandbox_holds_the_closed_sets_and_nothing_else"
+    },
+    {
+     "path": "crates/zikaron-net/src/pac.rs",
+     "name": "a_script_that_cannot_be_used_is_named_within_the_limit"
+    },
+    {
+     "path": "crates/zikaron-net/src/pac.rs",
+     "name": "lookups_share_the_runs_limit"
+    },
+    {
+     "path": "crates/zikaron-net/src/pac.rs",
+     "name": "the_ex_function_comes_first_and_the_path_is_never_asked"
+    },
+    {
+     "path": "crates/zikaron-net/src/pac.rs",
+     "name": "in_net_ex_reads_prefixes"
+    },
+    {
+     "path": "crates/zikaron-net/src/pac.rs",
+     "name": "a_file_script_is_not_read_and_each_trouble_has_its_name"
+    },
+    {
+     "path": "crates/zikaron-net/tests/auto_proxy.rs",
+     "name": "a_script_names_the_ways_and_the_next_is_tried_when_one_fails"
+    },
+    {
+     "path": "crates/zikaron-net/tests/auto_proxy.rs",
+     "name": "a_script_that_cannot_be_used_is_named_and_the_route_is_the_one_without_it"
+    },
+    {
+     "path": "crates/zikaron-net/tests/auto_proxy.rs",
+     "name": "discovery_finds_a_script_or_passes_on_quietly"
+    },
+    {
+     "path": "crates/zikaron-net/tests/auto_proxy.rs",
+     "name": "credentials_go_to_the_proxy_that_asks_and_nowhere_else"
+    },
+    {
+     "path": "crates/zikaron-net/tests/auto_proxy.rs",
+     "name": "an_https_proxy_is_its_own_tls_leg_and_the_node_keeps_its_own"
+    },
+    {
+     "path": "crates/zikaron-net/tests/auto_proxy.rs",
+     "name": "socks_tries_five_then_four_a_with_the_name_at_the_proxy"
+    },
+    {
+     "path": "crates/zikaron-net/tests/auto_proxy.rs",
+     "name": "a_manual_proxy_leaves_local_networks_straight"
+    },
+    {
+     "path": "crates/zikaron-net/src/pac.rs",
+     "name": "a_fetch_or_run_is_judged_in_its_own_time_and_kept_once_it_lands"
+    },
+    {
+     "path": "crates/zikaron-net/tests/auto_proxy.rs",
+     "name": "a_script_address_that_redirects_is_followed"
+    },
+    {
+     "path": "crates/zikaron-net/tests/auto_proxy.rs",
+     "name": "credentials_longer_than_socks5_carries_are_refused_by_name"
     }
    ],
    "nameZh": "传输件"
@@ -1048,11 +1129,23 @@
     },
     {
      "path": "crates/zikaron-os/src/proxy.rs",
-     "name": "the_windows_settings_are_read"
+     "name": "the_windows_forms_are_read"
     },
     {
      "path": "crates/zikaron-os/src/proxy.rs",
      "name": "the_macos_configuration_is_read"
+    },
+    {
+     "path": "crates/zikaron-os/src/proxy.rs",
+     "name": "kde_settings_are_read"
+    },
+    {
+     "path": "crates/zikaron-os/src/proxy.rs",
+     "name": "gnome_settings_are_read_from_the_dconf_database_and_the_keyfile"
+    },
+    {
+     "path": "crates/zikaron-os/src/proxy.rs",
+     "name": "the_desktop_files_are_read_by_desktop"
     },
     {
      "path": "crates/zikaron-os/src/proxy.rs",

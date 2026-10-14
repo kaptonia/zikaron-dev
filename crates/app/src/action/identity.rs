@@ -376,20 +376,32 @@ pub(super) fn set_appearance(shell: &mut Shell, appearance: &str) -> Result<Stri
 }
 
 /// Writes this machine's proxy choice: `system`, `none`, or a proxy address parsed by the transport's own
-/// parser (`zikaron_net::proxy_of`); an address it rejects is refused by name before anything is written.
+/// parser (`zikaron_net::proxy_of`), kept with its credentials in the sealed machine settings; an address it
+/// rejects is refused by name before anything is written. A user name typed again without its password keeps
+/// the password already saved for that proxy (the settings page never shows a saved password back). Returns the
+/// choice as it may be shown: never the password.
 pub(super) fn set_proxy(shell: &mut Shell, choice: &str) -> Result<String, crate::fault::Fault> {
     use crate::fault::{Fault, Known};
     let c = choice.trim();
+    let shown_typed = zikaron_net::proxy_text_shown(c).0;
     let written = match c {
         crate::machine::proxy::SYSTEM | crate::machine::proxy::NONE => c.to_string(),
         typed => match zikaron_net::proxy_of(typed) {
-            Ok(p) => p.spelled(),
-            Err(zikaron_net::NotAProxy::Credentials) => return Err(Fault::known(Known::SettingsShape, crate::lang::filln(crate::lang::Key::TailProxyCredentials, &[typed]))),
-            Err(zikaron_net::NotAProxy::Shape) => return Err(Fault::known(Known::SettingsShape, crate::lang::filln(crate::lang::Key::TailProxyShape, &[typed]))),
+            Ok(mut p) => {
+                let before = shell.machine.proxy.as_deref().and_then(|w| zikaron_net::proxy_of(w).ok()).filter(|b| (b.kind, &b.host, b.port) == (p.kind, &p.host, p.port));
+                if let (Some(a), Some(b)) = (p.auth.as_mut().filter(|a| a.pass.is_none()), before.and_then(|b| b.auth)) {
+                    if b.user == a.user {
+                        a.pass = b.pass;
+                    }
+                }
+                p.written()
+            }
+            Err(zikaron_net::NotAProxy::Credentials) => return Err(Fault::known(Known::SettingsShape, crate::lang::filln(crate::lang::Key::TailProxyCredentials, &[&shown_typed]))),
+            Err(zikaron_net::NotAProxy::Shape) => return Err(Fault::known(Known::SettingsShape, crate::lang::filln(crate::lang::Key::TailProxyShape, &[&shown_typed]))),
         },
     };
     shell.machine = crate::machine::update(|m| m.proxy = Some(written))?;
-    Ok(shell.machine.proxy.clone().unwrap_or_default())
+    Ok(shell.machine.proxy.as_deref().map(|w| zikaron_net::proxy_text_shown(w).0).unwrap_or_default())
 }
 
 pub(super) fn reveal_words(shell: &mut Shell) -> Result<(), crate::fault::Fault> {

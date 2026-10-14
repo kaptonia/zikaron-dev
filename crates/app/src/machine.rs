@@ -270,6 +270,7 @@ fn read_sealed() -> Result<Machine, Fault> {
     m.lang = None;
     m.appearance = None;
     m.held = true;
+    remember_route(&m);
     Ok(m)
 }
 
@@ -460,6 +461,7 @@ fn write_now(m: &Machine) -> Result<(), Fault> {
     let dir = crate::home::machine_dir()?;
     if m.held {
         crate::local::put(&dir, &crate::places::machine_file(), crate::local::Doc::MachineSealed, &sealed)?;
+        remember_route(m);
     }
     crate::home::put_at(&dir, FILE, &plain)
 }
@@ -581,24 +583,100 @@ pub fn proxy_choice(m: &Machine) -> zikaron_net::Choice {
     }
 }
 
-/// The current proxy choice (read when opening a new connection; unreadable settings follow the system, as
-/// the default does, and so does a locked vault, whose sealed part is not in hand).
-pub fn proxy_now() -> zikaron_net::Choice {
-    read_face().map(|m| proxy_choice(&m)).unwrap_or(zikaron_net::Choice::System)
+/// The route last read from or written to the sealed settings in this process, kept without the password: what
+/// a connection opened while the vault is locked goes by.
+static LAST_ROUTE: std::sync::Mutex<Option<zikaron_net::Choice>> = std::sync::Mutex::new(None);
+
+/// Keep the route of settings read or written with the key in hand (every sealed read and every change goes
+/// through here, so a choice saved just before locking is the one a locked connection goes by).
+fn remember_route(m: &Machine) {
+    *LAST_ROUTE.lock().unwrap_or_else(|e| e.into_inner()) = Some(without_password(proxy_choice(m)));
 }
 
-/// A user-facing line for the settings page describing how new connections go: through which proxy, or
-/// direct, with the reason when it is not the user's choice (node on this machine, system uses a PAC script,
-/// system settings not read yet).
-pub fn proxy_said(r: &zikaron_net::Reading) -> String {
-    use crate::lang::{filln, t, Key};
-    match &r.way {
-        zikaron_net::Way::Through(p) => filln(Key::ProxyNowVia, &[&p.spelled()]),
-        zikaron_net::Way::Direct if r.loopback => t(Key::ProxyNowLoopback).to_string(),
-        zikaron_net::Way::Direct if r.system_unread => t(Key::ProxyNowUnread).to_string(),
-        zikaron_net::Way::Direct if r.auto_config_ignored => t(Key::ProxyNowAutoConfig).to_string(),
-        zikaron_net::Way::Direct => t(Key::ProxyNowDirect).to_string(),
+/// A choice as it may be kept while locked: a typed proxy without its password.
+fn without_password(c: zikaron_net::Choice) -> zikaron_net::Choice {
+    match c {
+        zikaron_net::Choice::Manual(mut p) => {
+            if let Some(a) = p.auth.as_mut() {
+                a.pass = None;
+            }
+            zikaron_net::Choice::Manual(p)
+        }
+        other => other,
     }
+}
+
+/// The current proxy choice, read when a new connection opens. Unlocked: the sealed settings as they are now
+/// (an unreadable value, or settings that do not read, follow the system, as the default does). Locked, the sealed part is not in hand: the
+/// route last read in this process, without its password (a proxy that asks for one is then refused by name
+/// until unlocking); following the system only when none was read yet (nothing connects before the first
+/// unlock).
+pub fn proxy_now() -> zikaron_net::Choice {
+    match read_face() {
+        Ok(m) if m.held => proxy_choice(&m),
+        Ok(_) => LAST_ROUTE.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or(zikaron_net::Choice::System),
+        Err(_) => zikaron_net::Choice::System,
+    }
+}
+
+/// The sentences one route reading is said with: as "new connections now …" or as "this address …".
+struct Words {
+    via: crate::lang::Key,
+    direct: crate::lang::Key,
+    loopback: crate::lang::Key,
+    local: crate::lang::Key,
+    unread: crate::lang::Key,
+    pending: crate::lang::Key,
+}
+
+const NOW: Words = Words {
+    via: crate::lang::Key::ProxyNowVia,
+    direct: crate::lang::Key::ProxyNowDirect,
+    loopback: crate::lang::Key::ProxyNowLoopback,
+    local: crate::lang::Key::ProxyNowLocal,
+    unread: crate::lang::Key::ProxyNowUnread,
+    pending: crate::lang::Key::ProxyNowScriptPending,
+};
+
+const GOES: Words = Words {
+    via: crate::lang::Key::ProxyGoesVia,
+    direct: crate::lang::Key::ProxyGoesDirect,
+    loopback: crate::lang::Key::ProxyGoesLoopback,
+    local: crate::lang::Key::ProxyGoesLocal,
+    unread: crate::lang::Key::ProxyGoesUnread,
+    pending: crate::lang::Key::ProxyGoesPending,
+};
+
+/// One route reading said: through which proxy (its user name if any, never its password), or direct with the
+/// reason when it is not the setting itself (node on this machine, on a local network under a custom proxy,
+/// system settings not read yet); the system's script deciding when its answer is not known yet; and, when the
+/// system's script could not be used, its trouble by name.
+fn said(r: &zikaron_net::Reading, w: &Words) -> String {
+    use crate::lang::{filln, t, Key};
+    use zikaron_net::{Script, Way};
+    let base = match &r.way {
+        _ if r.script == Script::Pending => t(w.pending).to_string(),
+        Way::Through(p) => filln(w.via, &[&p.shown()]),
+        Way::Direct if r.loopback => t(w.loopback).to_string(),
+        Way::Direct if r.local => t(w.local).to_string(),
+        Way::Direct if r.system_unread => t(w.unread).to_string(),
+        Way::Direct => t(w.direct).to_string(),
+    };
+    match r.script {
+        Script::Trouble(x) => filln(Key::ProxyScriptTrouble, &[&base, x.code()]),
+        _ => base,
+    }
+}
+
+/// How new connections go now, as one line.
+pub fn proxy_said(r: &zikaron_net::Reading) -> String {
+    said(r, &NOW)
+}
+
+/// How a node address typed on the settings page would go under the setting in hand (read only: nothing
+/// connects).
+pub fn proxy_goes(r: &zikaron_net::Reading) -> String {
+    said(r, &GOES)
 }
 
 /// Values the `network` member accepts: a table row, or "custom".

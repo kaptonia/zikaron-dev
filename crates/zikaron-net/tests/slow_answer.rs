@@ -174,7 +174,7 @@ fn an_answer_slower_than_a_slice_is_read_whole() {
         let form = if split { "head, then the body several slices later" } else { "the whole answer several slices later" };
         assert_eq!(ask(&format!("http://127.0.0.1:{}/", slow_node(split))), body(), "plain HTTP, {form}");
         assert_eq!(ask(&format!("https://localhost:{}/", slow_tls_node(split))), body(), "TLS, {form}");
-        set_choice(Choice::Manual(Proxy { kind: Kind::Http, host: "127.0.0.1".into(), port: connect_proxy(slow_node(split)) }));
+        set_choice(Choice::Manual(Proxy { kind: Kind::Http, host: "127.0.0.1".into(), port: connect_proxy(slow_node(split)), auth: None }));
         // A name that is not this machine, so the proxy is taken (this machine is always reached straight).
         assert_eq!(ask("http://node.invalid:8545/"), body(), "through a proxy tunnel, {form}");
         set_choice(Choice::Off);
@@ -341,7 +341,7 @@ fn a_proxy_trickling_its_answer_is_cut_at_the_deadline() {
         }
     });
     for (form, kind, port) in [("CONNECT answer trickled", Kind::Http, connect), ("SOCKS5 reply trickled", Kind::Socks5, reply)] {
-        set_choice(Choice::Manual(Proxy { kind, host: "127.0.0.1".into(), port }));
+        set_choice(Choice::Manual(Proxy { kind, host: "127.0.0.1".into(), port, auth: None }));
         // A name that is not this machine, so the proxy is taken.
         late_at_the_deadline(form, ask_short("http://node.invalid:8545/"));
     }
@@ -388,7 +388,7 @@ fn a_socks_tunnel_cut_mid_answer_is_a_stream_failure() {
         let _ = s.shutdown(std::net::Shutdown::Both);
         let _ = up.shutdown(std::net::Shutdown::Both);
     });
-    set_choice(Choice::Manual(Proxy { kind: Kind::Socks5, host: "127.0.0.1".into(), port: proxy }));
+    set_choice(Choice::Manual(Proxy { kind: Kind::Socks5, host: "127.0.0.1".into(), port: proxy, auth: None }));
     let t = parse("http://node.invalid:8545/").expect("address");
     let began = Instant::now();
     let got = post_json(&t, b"{}", &limits(), Ask::Once).map(|a| a.status);

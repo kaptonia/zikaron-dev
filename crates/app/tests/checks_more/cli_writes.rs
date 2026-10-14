@@ -1,4 +1,4 @@
-//! The command line's two switches and its credential (r22 batch 6, C1/C2): turning writing alone on issues an
+//! The command line's two switches and its credential: turning writing alone on issues an
 //! owner-only credential holding this vault's master key, the desktop switch does not flip while it is on, off
 //! removes the credential, and a credential that expired or holds another master key is removed with writing
 //! alone turned off, said by name. Each runs alone (its own machine directory).

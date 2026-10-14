@@ -201,7 +201,7 @@ mod tests {
     fn conn(l: &TcpListener, place: &Place) -> (Conn, u16) {
         let tcp = TcpStream::connect(l.local_addr().expect("addr")).expect("connect");
         let port = tcp.local_addr().expect("addr").port();
-        (Conn { stream: Stream::Plain(tcp), place: place.clone() }, port)
+        (Conn { stream: Stream::Plain(crate::Sock::Tcp(tcp)), place: place.clone() }, port)
     }
 
     fn port_of(c: &Conn) -> u16 {

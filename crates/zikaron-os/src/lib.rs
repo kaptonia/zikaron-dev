@@ -11,8 +11,8 @@
 //! - [`land_new`]: give a written file its name without ever replacing an existing one: a hard link, else a
 //!   non-replacing rename ([`rename_new`]), else an exclusive create to claim the name and a rename over that
 //!   claim; whichever the volume supports first.
-//! - [`system_proxies`]: read-only system proxy settings (`proxy.rs`: macOS network configuration, Windows
-//!   user Internet settings, other unix from the environment).
+//! - [`system_proxies`]: read-only system proxy settings ([`proxy`]: macOS network configuration, Windows as the
+//!   system answers them, Linux desktop settings files, else the environment).
 //! - [`spawn`] / [`LockFile`]: a kernel lock opened as a [`LockFile`] is listed while open, and every child
 //!   closes the listed ones before it runs (a lock released while a child held a copy would stay held by it).
 //! - [`user_home`] / [`app_data_dir`] / [`machine`]: the user's home, where the app keeps machine data by
@@ -50,8 +50,8 @@ use windows as imp;
 pub mod cli_path;
 pub mod door;
 pub mod machine;
-mod proxy;
-pub use proxy::{from_env as proxies_from_env, from_windows as proxies_from_windows, place_of as proxy_place_of, Proxies};
+pub mod proxy;
+pub use proxy::{from_env as proxies_from_env, from_windows as proxies_from_windows, place_of as proxy_place_of, Place as ProxyPlace, Proxies};
 
 #[cfg(not(any(unix, windows)))]
 compile_error!("zikaron-os has an implementation for unix and one for Windows; this system has neither");

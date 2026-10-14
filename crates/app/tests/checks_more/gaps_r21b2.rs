@@ -335,16 +335,21 @@ fn every_keyed_kind_is_renamed_by_the_one_naming() {
     }
 }
 
-/// The naming function reads `Doc::keyed`; it keeps no list of kinds of its own.
+/// Which kinds are keyed is judged once (`Doc::keyed`), and both sides that act on it agree with it by what they
+/// do: for every kind, the naming leaves a logical name as it is exactly when the kind is not keyed, and the
+/// reading takes a file at its logical, unkeyed name exactly when the kind is not keyed. A side that kept a list
+/// of its own would disagree on the kind it missed.
 #[test]
 fn which_kinds_are_renamed_is_judged_once() {
-    // How each kind is named on disk is the sealed layer's (`zikaron_seal::envelope`).
-    let code = super::code_only(&super::read_crate_file("zikaron-seal", "envelope.rs").expect("envelope.rs"));
-    let body = |head: &str| {
-        let at = code.find(head).unwrap_or_else(|| panic!("{head}"));
-        code[at..at + code[at..].find("\n}\n").expect("end")].to_string()
-    };
-    let naming = body("pub fn disk_rel(");
-    assert!(naming.contains("doc.keyed()") && !naming.contains("_ => logical.to_string()"), "naming asks the table first and lets no keyed kind through unnamed");
-    assert_eq!(code.matches("Doc::Entry | Doc::Held | Doc::Verdict | Doc::KeptGrant | Doc::TermsDoc | Doc::TermsRecord").count(), 1, "the list is spelled once, in `keyed`");
+    use zikaron_seal::envelope::{disk_rel, envelope, unseal, Doc, Expect, Ident, Owner, NONCE};
+    let key = [7u8; 32];
+    let nk = zikaron_seal::names::NameKey::new([9u8; 32]);
+    let logical = "settings/probe.json".to_string();
+    for d in Doc::ALL {
+        let kept_by_naming = disk_rel(d, &logical, &nk).ok().as_deref() == Some(logical.as_str());
+        let sealed = envelope(&key, &Ident { owner: Owner::Machine, doc: d, logical: logical.clone() }, &[1u8; NONCE], b"{}").expect("sealed");
+        let taken_by_reading = unseal(&key, &Expect { owner: Some(Owner::Machine), doc: d, rel: Some(logical.clone()) }, &sealed, "probe", Some(&nk)).is_ok();
+        assert_eq!((kept_by_naming, taken_by_reading), (!d.keyed(), !d.keyed()), "{}: naming keeps / reading takes the unkeyed name", d.tag());
+    }
+    assert_eq!(Doc::ALL.iter().filter(|d| d.keyed()).count(), 6, "entry, held grant, verdict, kept grant, terms document, terms record");
 }

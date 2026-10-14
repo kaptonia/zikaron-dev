@@ -107,9 +107,10 @@ impl Win {
     /// turned on, on its sheet). The higher outranks the lower: while writing alone is on, the desktop switch is
     /// greyed and the door stays closed (`machine::Machine::cli_path`).
     fn set_cli_writes(&mut self, ui: &mut egui::Ui, now: f64) {
-        let m = &self.shell.machine;
-        let alone = m.cli_alone.is_some();
-        let desktop = m.cli_desktop;
+        // The four states are judged in one place (`cli_path`); the page only draws them.
+        let path = self.shell.machine.cli_path();
+        let alone = path == crate::machine::CliPath::Alone;
+        let desktop = path == crate::machine::CliPath::Desktop;
         let unlocked = self.shell.unlocked();
         let alone_say = match (alone, self.shell.credential) {
             (true, Some(c)) => cli_expiry_said(c.expires),
@@ -120,7 +121,7 @@ impl Win {
         stagger(ui, 3, |ui| {
             card::section(ui, t(Key::SetCliGroup), "", |ui| {
                 card::form(ui, |ui, f| {
-                    f.row_with(ui, None, t(Key::SetCliDesktop), desktop_say, card::Value::None, |ui| flip_desktop = toggle::switch(ui, desktop && !alone, unlocked && !alone).clicked());
+                    f.row_with(ui, None, t(Key::SetCliDesktop), desktop_say, card::Value::None, |ui| flip_desktop = toggle::switch(ui, desktop, unlocked && !alone).clicked());
                     f.row_with(ui, None, t(Key::SetCliAlone), &alone_say, card::Value::None, |ui| flip_alone = toggle::switch(ui, alone, unlocked).clicked());
                 });
             });
@@ -652,8 +653,10 @@ impl Win {
             Some(NONE) => 1,
             Some(_) => 2,
         };
+        // The saved address is shown without its password; that one is set is said instead.
+        let (written_shown, written_pass) = written.as_deref().map(zikaron_net::proxy_text_shown).unwrap_or_default();
         if cur == 2 && !self.ux.proxy_seeded {
-            self.typed.proxy = written.clone().unwrap_or_default();
+            self.typed.proxy = written_shown.clone();
             self.ux.proxy_seeded = true;
         }
         let shown = if self.ux.proxy_manual { 2 } else { cur };
@@ -672,11 +675,13 @@ impl Win {
         }
         if self.ux.proxy_manual || cur == 2 {
             let typed = self.typed.proxy.trim().to_string();
-            let differs = cur != 2 || Some(typed.as_str()) != written.as_deref();
+            let differs = cur != 2 || typed != written_shown;
             let (resp, hit) = width::line_then(ui, &mut self.typed.proxy, t(Key::ProxyHint), true, |ui| key::key(ui, t(Key::ReadNetSave), Role::Secondary, differs).clicked());
+            let typed_shown = zikaron_net::proxy_text_shown(&typed).0;
             match (!typed.is_empty()).then(|| zikaron_net::proxy_of(&typed).err()).flatten() {
-                Some(zikaron_net::NotAProxy::Credentials) => states::okline(ui, Mark::Bad, &fill1(Key::TailProxyCredentials, &typed)),
-                Some(zikaron_net::NotAProxy::Shape) => states::okline(ui, Mark::Bad, &fill1(Key::TailProxyShape, &typed)),
+                Some(zikaron_net::NotAProxy::Credentials) => states::okline(ui, Mark::Bad, &fill1(Key::TailProxyCredentials, &typed_shown)),
+                Some(zikaron_net::NotAProxy::Shape) => states::okline(ui, Mark::Bad, &fill1(Key::TailProxyShape, &typed_shown)),
+                None if cur == 2 && written_pass && !differs => states::okline(ui, Mark::Ok, t(Key::ProxyPasswordSet)),
                 None => {}
             }
             // Saving goes to the action layer even when the address does not parse: it refuses by name there and
@@ -685,9 +690,36 @@ impl Win {
                 self.act(Action::SetProxy { choice: typed }, now);
                 if self.shell.machine.proxy.as_deref().map(|p| p != SYSTEM && p != NONE).unwrap_or(false) {
                     self.ux.proxy_manual = false;
+                    self.typed.proxy = self.shell.machine.proxy.as_deref().map(|w| zikaron_net::proxy_text_shown(w).0).unwrap_or_default();
                 }
             }
         }
+        // How a typed node address would go under the saved setting: read only, nothing connects.
+        let _ = width::line_then(ui, &mut self.typed.proxy_try, t(Key::ProxyTryHint), true, |_| ());
+        let tried = self.typed.proxy_try.trim().to_string();
+        if !tried.is_empty() {
+            let said = self.proxy_tried(&tried, now);
+            states::okline(ui, Mark::Todo, &said);
+        }
+    }
+
+    /// The way a node address would go under the saved setting, said; judged again when the address or the
+    /// setting changes, and at most every half second otherwise (the system's settings and its script's answers
+    /// may change meanwhile). Display only: the system's last reading and the answers already known are used,
+    /// nothing is fetched or connected.
+    fn proxy_tried(&mut self, tried: &str, now: f64) -> String {
+        let setting = self.shell.machine.proxy.clone();
+        if let Some((a, s, at, said)) = &self.ux.proxy_tried {
+            if a == tried && *s == setting && now - at < 0.5 {
+                return said.clone();
+            }
+        }
+        let said = match zikaron_net::parse(tried) {
+            Some(t) => crate::machine::proxy_goes(&zikaron_net::way_shown_under(&t, &crate::machine::proxy_choice(&self.shell.machine))),
+            None => t(Key::ProxyGoesNotAddress).to_string(),
+        };
+        self.ux.proxy_tried = Some((tried.to_string(), setting, now, said.clone()));
+        said
     }
 
     /// The read-only networks (machine-wide): one row each with its name and reading; a row opens to its four

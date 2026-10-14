@@ -450,18 +450,20 @@ impl rpc::Endpoint for Https {
 
 /// The refusal when no endpoint gave a reading: the first failure that actually reached a node is classified by
 /// [`said_fault`] (refusals, TLS and timeouts each named). When no node failed, every node reached answered:
-/// if any answered something that is not `null` and does not read (`shapeless`), the refusal is the chain's
-/// shape (`CHAIN_SHAPE`); answers that are all `null` are the nodes' own word that they have none, and the
-/// reading could not be had (`UNREACHABLE`). Addresses that do not read at all are refused before this
+/// if any answered something that does not read as an answer to that question (`shapeless`), the refusal is
+/// the chain's shape (`CHAIN_SHAPE`); answers that are all `null` to a question about the chain's state are the
+/// nodes' own word that they have none, and the reading could not be had (`UNREACHABLE`). Addresses that do not read at all are refused before this
 /// ([`no_address_reads`]). The evidence tail is every endpoint's original message joined by ` · `, unchanged.
 fn none_answered(first: Option<Fault>, shapeless: bool, refused: &[String]) -> Fault {
     let k = first.and_then(|f| f.which()).unwrap_or(if shapeless { Known::ChainShape } else { Known::Unreachable });
     Fault::known(k, refused.join(" · "))
 }
 
-/// A node passed over for an answer that is not `null` and that the judging table could not read.
-fn shapeless(m: &zikaron_anchor::judge::Missing) -> bool {
-    matches!(m, zikaron_anchor::judge::Missing::Unreadable(text) if text != "null")
+/// A node passed over for an answer the judging table could not read, that is no word of the node's own: any
+/// such answer to a call (`call`: the node runs it, and a call has an outcome or a refusal, never "none"), and
+/// one that is not `null` to a question about the chain's state (where `null` is the node saying it has none).
+fn shapeless(m: &zikaron_anchor::judge::Missing, call: bool) -> bool {
+    matches!(m, zikaron_anchor::judge::Missing::Unreadable(text) if call || text != "null")
 }
 
 /// Default backoff when sending is rate-limited: retry the same endpoint after each of these delays, then move
@@ -469,15 +471,16 @@ fn shapeless(m: &zikaron_anchor::judge::Missing) -> bool {
 pub const SEND_BACKOFF: [std::time::Duration; 2] = zikaron_anchor::said::RATE_BACKOFF;
 
 pub fn ask(eps: &[Endpoint], method: &str, params: &Value) -> Result<Reading, Fault> {
-    ask_with(eps, method, params).map_err(|(f, _)| f)
+    ask_with(eps, method, params, false).map_err(|(f, _)| f)
 }
 
 /// [`ask`] for a request whose refusal may concern the call itself (gas estimation): the refusal comes with
 /// whether the shared table reads it that way (`zikaron_anchor::said::refuses_the_call`), judged on the same
 /// failure the refusal was built from. A refusal not caused by a node (no endpoint, disagreeing endpoints,
-/// unparseable addresses) is not about the call.
+/// unparseable addresses) is not about the call. Every node answering `null` is the chain's shape here, as an
+/// answer of one node that is not a quantity is (`zikaron_anchor::send::estimate_gas`): a call has no "none".
 pub fn ask_call(eps: &[Endpoint], method: &str, params: &Value) -> Result<Reading, (Fault, bool)> {
-    ask_with(eps, method, params)
+    ask_with(eps, method, params, true)
 }
 
 /// The transaction facts a decision reads (`zikaron_anchor::judge::TX_FACTS`).
@@ -523,7 +526,7 @@ fn missing_said(url: &str, m: &zikaron_anchor::judge::Missing) -> String {
 /// transaction some endpoints have and others not yet is asked again after the table's pauses and, if still
 /// split, refused naming the endpoints that lack it. A refusal comes with whether it is about the call
 /// ([`ask_call`]).
-fn ask_with(eps: &[Endpoint], method: &str, params: &Value) -> Result<Reading, (Fault, bool)> {
+fn ask_with(eps: &[Endpoint], method: &str, params: &Value, call_asked: bool) -> Result<Reading, (Fault, bool)> {
     use zikaron_anchor::judge::{self, NoReading};
     if eps.is_empty() {
         return Err((Fault::known(Known::NoEndpoint, method.to_string()), false));
@@ -565,7 +568,7 @@ fn ask_with(eps: &[Endpoint], method: &str, params: &Value) -> Result<Reading, (
                 if unread.len() == asked {
                     return Err((no_address_reads(&refused), false));
                 }
-                return Err((none_answered(first.map(|(u, t)| said_fault(u, t)), missing.iter().any(|(_, m)| shapeless(m)), &refused), call));
+                return Err((none_answered(first.map(|(u, t)| said_fault(u, t)), missing.iter().any(|(_, m)| shapeless(m, call_asked)), &refused), call));
             }
         }
     }
@@ -629,7 +632,7 @@ pub fn head_block(eps: &[Endpoint], chain: u64) -> Result<(u64, usize), Fault> {
                     _ => None,
                 });
                 let refused: Vec<String> = unread.iter().cloned().chain(wide.iter().cloned()).chain(j.missing.iter().map(|(u, m)| said_height(u, m))).collect();
-                return Err(none_answered(first, !wide.is_empty() || j.missing.iter().any(|(_, m)| shapeless(m)), &refused));
+                return Err(none_answered(first, !wide.is_empty() || j.missing.iter().any(|(_, m)| shapeless(m, false)), &refused));
             };
             if let Some((_, high)) = heights.iter().max_by_key(|(_, h)| *h) {
                 if high - low > MAX_HEAD_LAG {
@@ -647,7 +650,7 @@ pub fn head_block(eps: &[Endpoint], chain: u64) -> Result<(u64, usize), Fault> {
             if unread.len() == asked {
                 return Err(no_address_reads(&refused));
             }
-            Err(none_answered(first, missing.iter().any(|(_, m)| shapeless(m)), &refused))
+            Err(none_answered(first, missing.iter().any(|(_, m)| shapeless(m, false)), &refused))
         }
         Err(_) => Err(Fault::known(Known::Unreachable, String::new())),
     }

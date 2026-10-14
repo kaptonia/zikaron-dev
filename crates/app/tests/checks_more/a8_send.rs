@@ -211,6 +211,30 @@ fn signed_once(form: &str, nodes: &[&Node]) -> String {
 
 // ───────────────────────── The tests ─────────────────────────
 
+/// The shape a test run by [`super::alone_in`] is given, pinned on its own: a child of this binary carrying its
+/// own full name as the marker, a machine directory of its own (named by the child's process, not the
+/// parent's), and the step this module's sends begin with, opening a home (`OpenHome`), answered `Homed`. One
+/// CI run once saw that step answer otherwise inside a child; any other answer here prints in full what it was.
+#[test]
+fn a_test_run_alone_gets_its_own_process_machine_and_home() {
+    if super::alone_in(module_path!(), "a_test_run_alone_gets_its_own_process_machine_and_home") {
+        return;
+    }
+    let marker = std::env::var("ZK_CHECKS_ALONE").unwrap_or_default();
+    assert!(marker.ends_with("::a_test_run_alone_gets_its_own_process_machine_and_home") && !marker.starts_with("::"), "{marker}");
+    vault_open();
+    let machine = app::home::machine_dir().expect("the machine directory");
+    assert!(machine.display().to_string().ends_with(&format!("zk-checks-machine-{}", std::process::id())), "{}", machine.display());
+    let dir = homes().join("alone");
+    let _ = std::fs::remove_dir_all(&dir);
+    let ctx = zikaron_ui::egui::Context::default();
+    let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
+    super::seated(&mut shell, &dir.join("home"));
+    answers!(apply(&mut shell, Action::OpenHome { root: dir.join("home").display().to_string() }), Applied::Homed { .. }, "open a home in a child alone: {:?}", shell.faults);
+    drop(shell);
+    tidy();
+}
+
 /// The pre-send balance gate refuses too little as `INSUFFICIENT_FUNDS` (with need and balance) and refuses
 /// an unreadable or disputed balance by its own name; in every refused case nothing is signed or broadcast.
 #[test]

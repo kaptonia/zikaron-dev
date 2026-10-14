@@ -6,11 +6,15 @@ license = "MIT"
 
 # The one transport: one HTTP/1.1 exchange over TCP, or over TLS for https. Of this workspace it depends on
 # the platform crate alone (the system's proxy settings, followed when nothing else is chosen); its
-# third-party crates are the TLS stack alone (rustls with the ring provider, and the
-# webpki-roots table). The anchoring crate, the command line through it, and the app all reach nodes and
-# remote files through here, so the TLS configuration is built in one place. The root table is compiled in
+# third-party crates are the TLS stack (rustls with the ring provider, and the webpki-roots table) and the
+# JavaScript engine that runs a proxy auto-configuration script (QuickJS, through rquickjs). The anchoring
+# crate, the command line through it, and the app all reach nodes and remote files through here, so the TLS
+# configuration is built in one place. The root table is compiled in
 # (`webpki-roots`) and the system trust store is not read, so one binary trusts the same roots on every machine.
 [dependencies]
 zikaron-os = { path = "../zikaron-os" }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-roots = "1"
+# The engine that runs a proxy auto-configuration script (`pac`): QuickJS through its Rust bindings, pinned
+# exactly. Only the core engine: no module loader, no standard library of files, sockets or timers.
+rquickjs = { version = "=0.14.0", default-features = false }

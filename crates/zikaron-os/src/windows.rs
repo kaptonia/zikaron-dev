@@ -699,13 +699,13 @@ pub fn spawn(cmd: &mut std::process::Command) -> std::io::Result<std::process::C
 
 // ───────────────────────── "Enable command line": the user's `Path` ─────────────────────────
 
-// The registry calls, declared once for this crate (the proxy reading uses the same three).
+// The registry calls, declared once for this crate (the proxy reading reads through `reg_dword` / `reg_text`).
 #[link(name = "advapi32")]
 unsafe extern "system" {
-    pub(crate) fn RegOpenKeyExW(key: Handle, sub: *const u16, options: u32, access: u32, out: *mut Handle) -> i32;
-    pub(crate) fn RegQueryValueExW(key: Handle, name: *const u16, reserved: *mut u32, kind: *mut u32, data: *mut u8, len: *mut u32) -> i32;
+    fn RegOpenKeyExW(key: Handle, sub: *const u16, options: u32, access: u32, out: *mut Handle) -> i32;
+    fn RegQueryValueExW(key: Handle, name: *const u16, reserved: *mut u32, kind: *mut u32, data: *mut u8, len: *mut u32) -> i32;
     fn RegSetValueExW(key: Handle, name: *const u16, reserved: u32, kind: u32, data: *const u8, len: u32) -> i32;
-    pub(crate) fn RegCloseKey(key: Handle) -> i32;
+    fn RegCloseKey(key: Handle) -> i32;
 }
 
 #[link(name = "user32")]
@@ -714,8 +714,8 @@ unsafe extern "system" {
 }
 
 pub(crate) const HKEY_CURRENT_USER: Handle = 0x8000_0001usize as Handle;
-const HKEY_LOCAL_MACHINE: Handle = 0x8000_0002usize as Handle;
-pub(crate) const KEY_READ: u32 = 0x2_0019;
+pub(crate) const HKEY_LOCAL_MACHINE: Handle = 0x8000_0002usize as Handle;
+const KEY_READ: u32 = 0x2_0019;
 const KEY_WRITE: u32 = 0x2_0006;
 const REG_EXPAND_SZ: u32 = 2;
 const ERROR_FILE_NOT_FOUND_REG: i32 = 2;
@@ -793,6 +793,95 @@ fn reg_path(root: Handle, sub: &str) -> std::io::Result<String> {
     }
     let n = buf.iter().position(|c| *c == 0).unwrap_or(buf.len());
     Ok(String::from_utf16_lossy(&buf[..n]))
+}
+
+// ───────────────────────── System proxy settings (read by `proxy.rs`) ─────────────────────────
+
+/// One registry value's bytes under `root\sub` (`None` when the key or the value is absent or unreadable).
+fn reg_raw(root: Handle, sub: &str, name: &str) -> Option<Vec<u8>> {
+    let mut key: Handle = std::ptr::null_mut();
+    // SAFETY: opened for reading only and closed below; the first query asks the size, the second reads into a
+    // buffer of that size.
+    unsafe {
+        if RegOpenKeyExW(root, w(sub).as_ptr(), 0, KEY_READ, &mut key) != 0 {
+            return None;
+        }
+        let n = w(name);
+        let mut len = 0u32;
+        let mut out = None;
+        if RegQueryValueExW(key, n.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), &mut len) == 0 {
+            let mut buf = vec![0u8; len as usize];
+            if RegQueryValueExW(key, n.as_ptr(), std::ptr::null_mut(), std::ptr::null_mut(), buf.as_mut_ptr(), &mut len) == 0 {
+                buf.truncate(len as usize);
+                out = Some(buf);
+            }
+        }
+        RegCloseKey(key);
+        out
+    }
+}
+
+/// A registry number value (`REG_DWORD`).
+pub(crate) fn reg_dword(root: Handle, sub: &str, name: &str) -> Option<u32> {
+    reg_raw(root, sub, name).and_then(|b| Some(u32::from_le_bytes(b.get(..4)?.try_into().ok()?)))
+}
+
+/// A registry text value (`REG_SZ`), up to its first zero.
+pub(crate) fn reg_text(root: Handle, sub: &str, name: &str) -> Option<String> {
+    let b = reg_raw(root, sub, name)?;
+    let units: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|u| *u != 0).collect();
+    Some(String::from_utf16_lossy(&units))
+}
+
+#[repr(C)]
+struct IeProxyConfigRaw {
+    auto_detect: i32,
+    auto_config_url: *mut u16,
+    proxy: *mut u16,
+    proxy_bypass: *mut u16,
+}
+
+#[link(name = "winhttp")]
+unsafe extern "system" {
+    fn WinHttpGetIEProxyConfigForCurrentUser(config: *mut IeProxyConfigRaw) -> i32;
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GlobalFree(p: *mut c_void) -> *mut c_void;
+}
+
+/// The current user's proxy settings as the system answers them.
+pub(crate) struct IeProxy {
+    pub auto_detect: bool,
+    pub auto_config_url: Option<String>,
+    pub proxy: Option<String>,
+    pub bypass: Option<String>,
+}
+
+/// `WinHttpGetIEProxyConfigForCurrentUser` (`None` when the call fails). The strings it returns are copied and
+/// freed with `GlobalFree`, as the call requires.
+pub(crate) fn ie_proxy_config() -> Option<IeProxy> {
+    let mut raw = IeProxyConfigRaw { auto_detect: 0, auto_config_url: std::ptr::null_mut(), proxy: std::ptr::null_mut(), proxy_bypass: std::ptr::null_mut() };
+    // SAFETY: the call fills the structure; each non-null string is zero-terminated, read once and freed once.
+    unsafe {
+        if WinHttpGetIEProxyConfigForCurrentUser(&mut raw) == 0 {
+            return None;
+        }
+        let take = |p: *mut u16| -> Option<String> {
+            if p.is_null() {
+                return None;
+            }
+            let mut n = 0;
+            while *p.add(n) != 0 {
+                n += 1;
+            }
+            let s = String::from_utf16_lossy(std::slice::from_raw_parts(p, n));
+            GlobalFree(p.cast());
+            Some(s).filter(|s| !s.trim().is_empty())
+        };
+        Some(IeProxy { auto_detect: raw.auto_detect != 0, auto_config_url: take(raw.auto_config_url), proxy: take(raw.proxy), bypass: take(raw.proxy_bypass) })
+    }
 }
 
 /// Write the user's `Path` and broadcast the environment change (newly opened terminals pick it up).
