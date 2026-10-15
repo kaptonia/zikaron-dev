@@ -106,6 +106,22 @@ pub fn of_address(text: &str, kind: Kind) -> Option<Cells> {
     Some(Cells { kind: p.kind, host, port: p.port.to_string(), user, pass })
 }
 
+/// The cells once text has reached the host cell, or `None` when nothing is to be split: `pasted` is what pastes
+/// brought this frame, `focused` whether the host cell still holds the focus. A whole address is split into the
+/// cells when one paste brought all the cell holds, or once the cell is left (or holds it without the focus);
+/// never mid-way while it is typed or put in a piece at a time, however the pieces arrive. The kind, host and port
+/// come from the address, and its user name and password when it carries them; else the cells keep their own.
+pub fn split_in(c: &Cells, pasted: Option<&str>, focused: bool) -> Option<Cells> {
+    let whole_paste = pasted.is_some_and(|p| p.trim() == c.host.trim());
+    if focused && !whole_paste {
+        return None;
+    }
+    let split = of_address(&c.host, c.kind)?;
+    let user = if split.user.is_empty() { c.user.clone() } else { split.user.clone() };
+    let pass = if split.pass.is_empty() { c.pass.clone() } else { split.pass.clone() };
+    Some(Cells { user, pass, ..split })
+}
+
 /// Whether the password saved with `saved` goes with `typed`, an address given without a password: only to the
 /// very proxy it was given to (the same kind, host and port) under the same user name; SOCKS4 carries none. Saving
 /// keeps it by this, and the settings page says a password is set by this, so the two never differ.
@@ -193,6 +209,25 @@ mod tests {
         assert_eq!(of_address("ftp://h:1", Kind::Http), None);
         let (c, saved) = of_saved("http://me:secret@h:8080").expect("saved");
         assert_eq!((c.user.as_str(), c.pass.expose(), saved), ("me", "", true));
+    }
+
+    /// Typed or put in a piece at a time, the host cell is never split mid-way; one paste of the whole address splits
+    /// it there and then, and leaving the cell splits what it holds. A user name or password the address does not
+    /// carry stays in its cell.
+    #[test]
+    fn the_host_cell_is_split_on_a_whole_paste_or_on_leaving() {
+        let me = |host: &str| cells(Kind::Http, host, "", "me", "pw");
+        let mut so_far = String::new();
+        for ch in "127.0.0.1:7890".chars() {
+            so_far.push(ch);
+            assert_eq!(split_in(&me(&so_far), None, true), None, "{so_far}");
+            assert_eq!(split_in(&me(&so_far), Some(&ch.to_string()), true), None, "{so_far}");
+        }
+        let left = split_in(&me("127.0.0.1:7890"), None, false).expect("split on leaving");
+        assert_eq!((left.host.as_str(), left.port.as_str(), left.user.as_str(), left.pass.expose()), ("127.0.0.1", "7890", "me", "pw"));
+        let pasted = split_in(&me("socks5://you:p%40ss@h:1080"), Some("socks5://you:p%40ss@h:1080"), true).expect("split on the paste");
+        assert_eq!((pasted.kind, pasted.host.as_str(), pasted.user.as_str(), pasted.pass.expose()), (Kind::Socks5, "h", "you", "p@ss"));
+        assert_eq!(split_in(&me("proxy.corp"), None, false), None);
     }
 
     /// A saved password goes only with the proxy it was given to: the same kind, host, port and user name, the

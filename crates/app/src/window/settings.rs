@@ -668,7 +668,7 @@ impl Win {
 
     /// The proxy (machine-wide): follow the system, none, or a custom proxy in cells (kind, host, port, user name,
     /// password: `proxycells`, judged there). A wrong cell is framed red with its reason under the cells, and saving
-    /// waits for every cell to read. A whole address pasted into the host cell is split into the cells. A saved
+    /// waits for every cell to read. A whole address pasted into the host cell, or left there, is split into the cells. A saved
     /// password is never shown again: its cell stays empty, and the page says one is set only while saving the cells
     /// as they are would keep it (`proxycells::password_stays`: the same proxy and user name).
     fn set_proxy(&mut self, ui: &mut egui::Ui, now: f64) {
@@ -718,14 +718,14 @@ impl Win {
             let w = ui.available_width();
             input::field(ui, &mut c.host, t(Key::ProxyHint), w, input::Look { mono: true, bad: host_bad, ..Default::default() })
         });
-        // A whole address in the host cell, pasted or left there, is split into the cells (a password it carries
-        // fills the password cell; none leaves that cell as it is).
-        let pasted = host.has_focus() && ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Paste(_))));
-        if pasted || !host.has_focus() {
-            if let Some(split) = pc::of_address(&c.host, c.kind) {
-                let pass = if split.pass.is_empty() { std::mem::take(&mut c.pass) } else { split.pass.clone() };
-                *c = pc::Cells { pass, ..split };
-            }
+        // A whole address pasted at once, or left in the host cell, is split into the cells (`proxycells::split_in`):
+        // never mid-way while it is typed.
+        let pasted: Option<String> = ui.input(|i| {
+            let p: String = i.events.iter().filter_map(|e| if let egui::Event::Paste(p) = e { Some(p.as_str()) } else { None }).collect();
+            (!p.is_empty()).then_some(p)
+        });
+        if let Some(split) = pc::split_in(c, pasted.as_deref(), host.has_focus()) {
+            *c = split;
         }
         let port_bad = is_bad(Bad::Port) && !c.port.trim().is_empty();
         field(ui, t(Key::ProxyCellPort), None, |ui| input::field(ui, &mut c.port, "", CLI_CELL_W * 2.0, input::Look { mono: true, bad: port_bad, ..Default::default() }));

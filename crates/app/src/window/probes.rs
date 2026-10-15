@@ -838,6 +838,78 @@ pub fn probe_proxy_cells(ctx: &egui::Context, shell: Shell, cells: crate::proxyc
     (win.shell, after, texts)
 }
 
+/// How text reaches the proxy's host cell in [`probe_proxy_typed`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostInput {
+    /// One character a frame, as a person types.
+    Typed,
+    /// The whole text in one paste.
+    Pasted,
+    /// One character a frame, each as a paste (as some input tools put text in).
+    PastedByChar,
+}
+
+/// The proxy section with "custom" open and `cells` filled; the host cell clicked, then `text` given to it as
+/// `how` says (a frame drawn after each character, or after the one paste), then Tab pressed to leave it. Read:
+/// the cells after each frame of input, and the cells once the host cell is left and the page has settled.
+pub fn probe_proxy_typed(ctx: &egui::Context, shell: Shell, cells: crate::proxycells::Cells, text: &str, how: HostInput, width: f32, height: f32) -> (Shell, Vec<crate::proxycells::Cells>, crate::proxycells::Cells) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Settings(crate::nav::Section::Network), role));
+    ux.wizard_asked = true;
+    ux.proxy_manual = true;
+    ux.proxy_seeded = true;
+    let typed = Typed { proxy: cells, ..Typed::default() };
+    let mut win = fresh_win(shell, typed, ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run(input, |c| win.draw(c))
+    };
+    let mut out = run(&mut win, Vec::new());
+    for _ in 0..6 {
+        out = run(&mut win, Vec::new());
+    }
+    // The host cell is where its hint is drawn (the hint may end in "…" when the cell is narrow).
+    let hint: String = t(Key::ProxyHint).chars().take(4).collect();
+    let Some(at) = texts_of(&out).iter().find(|d| d.text.starts_with(&hint)).map(|d| d.rect.center()) else {
+        let now = win.typed.proxy.clone();
+        return (win.shell, Vec::new(), now);
+    };
+    let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let _ = run(&mut win, vec![egui::Event::PointerMoved(at), press(true), press(false)]);
+    let _ = run(&mut win, Vec::new());
+    let mut steps = Vec::new();
+    match how {
+        HostInput::Typed => {
+            for ch in text.chars() {
+                let _ = run(&mut win, vec![egui::Event::Text(ch.to_string())]);
+                steps.push(win.typed.proxy.clone());
+            }
+        }
+        HostInput::PastedByChar => {
+            for ch in text.chars() {
+                let _ = run(&mut win, vec![egui::Event::Paste(ch.to_string())]);
+                steps.push(win.typed.proxy.clone());
+            }
+        }
+        HostInput::Pasted => {
+            let _ = run(&mut win, vec![egui::Event::Paste(text.to_string())]);
+            steps.push(win.typed.proxy.clone());
+        }
+    }
+    let tab = egui::Event::Key { key: egui::Key::Tab, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+    let _ = run(&mut win, vec![tab]);
+    for _ in 0..4 {
+        let _ = run(&mut win, Vec::new());
+    }
+    let after = win.typed.proxy.clone();
+    (win.shell, steps, after)
+}
+
 /// The window over `place`, then the shell's page set from outside the window (`Action::Show`, as a link or the
 /// command-line door sets it) and a few frames drawn: the route drawn before and after, and the shell's page
 /// after (the window's following never moves it back).
