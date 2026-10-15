@@ -754,7 +754,6 @@ pub enum Key {
     U4NoUpstream,
     U4NotAKit,
     U4NotChecked,
-    U4OpenWizard,
     U4Rejected,
     U4RejectedNext,
     U4RelicenseConfirmNote,
@@ -2039,7 +2038,7 @@ pub enum Key {
 
 impl Key {
     /// All keys, in [`TABLE`] order.
-    pub const ALL: [Key; 1973] = [
+    pub const ALL: [Key; 1972] = [
         Key::PageRevoke,
         Key::PageAdopt,
         Key::PageSucceed,
@@ -2732,7 +2731,6 @@ impl Key {
         Key::U4NoUpstream,
         Key::U4NotAKit,
         Key::U4NotChecked,
-        Key::U4OpenWizard,
         Key::U4Rejected,
         Key::U4RejectedNext,
         Key::U4RelicenseConfirmNote,
@@ -4017,7 +4015,7 @@ impl Key {
 }
 
 /// Every UI string: `(key, Chinese, English)`. One row per key, both languages in each row.
-pub const TABLE: [(Key, &str, &str); 1973] = [
+pub const TABLE: [(Key, &str, &str); 1972] = [
     (Key::PageRevoke, "撤销授权", "Revoke grant"),
     (Key::PageAdopt, "导入上链存证", "Import anchor proofs"),
     (Key::PageSucceed, "移交账本", "Hand over ledger"),
@@ -4726,7 +4724,6 @@ pub const TABLE: [(Key, &str, &str); 1973] = [
     (Key::U4NoUpstream, "无(签发者即作者)", "None (issuer is the author)"),
     (Key::U4NotAKit, "按单个文件核验", "Verified as a single file"),
     (Key::U4NotChecked, "未核验", "Not verified"),
-    (Key::U4OpenWizard, "开账…", "Set up ledger…"),
     (Key::U4Rejected, "未通过的条目", "Rejected entries"),
     (Key::U4RejectedNext, "未添加。可联系对方重新发送。", "Not added. Ask the sender to send it again."),
     (Key::U4RelicenseConfirmNote, "上游授权撤销或到期后,转授权随之失效。", "The sublicense ends when the upstream grant is revoked or expires."),

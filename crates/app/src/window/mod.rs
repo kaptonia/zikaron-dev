@@ -1119,9 +1119,6 @@ struct WorkLine {
 struct Ux {
     /// Where the wizard was opened from (seat, stack, place); its way out returns there.
     wiz_from: Option<(crate::roles::Role, Stack, Option<Place>, Option<History>)>,
-    /// The wizard was opened on a true first run (no passcode and no identity then): it offers no way out for
-    /// the whole run, whatever its steps set meanwhile.
-    wiz_fresh: bool,
     /// The wizard's "exit?" card is up (new words not yet checked).
     wiz_exit_ask: bool,
     /// The backup sheet open now, its step, and what was typed on it.

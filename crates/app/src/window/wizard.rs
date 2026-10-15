@@ -54,14 +54,17 @@ impl Win {
             if let Some(i) = full::steps(&mut left, &rows, at) {
                 move_to = Some(i);
             }
-            // The language, switchable from the first step on (kept on this machine).
-            left.add_space(24.0);
-            lang_to = lang_pick(&mut left, "wiz-lang");
-            // The way out, under the steps (not on a true first run).
-            if exit_shown {
-                left.add_space(24.0);
-                exit = key::key(&mut left, t(Key::WizExit), Role::Plain, true).clicked();
-            }
+            // The column's foot, from the bottom edge up: the way out (once a passcode and an identity are here), drawn
+            // the way the main rail's foot draws "Lock", then the language (switchable from the first step on, kept on
+            // this machine). With no way out the language keeps to the foot.
+            left.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                ui.add_space(22.0);
+                if exit_shown {
+                    exit = rail::foot_item(ui, Glyph::Back, t(Key::WizExit), false, "esc").clicked();
+                    ui.add_space(10.0);
+                }
+                lang_to = lang_pick(ui, "wiz-lang");
+            });
             // The right column: this step's card.
             let main = egui::Rect::from_min_max(egui::pos2(side.right(), screen.top()), screen.max).shrink(40.0);
             // The gas step's card holds the key's address and a code side by side, so its column is as wide as they

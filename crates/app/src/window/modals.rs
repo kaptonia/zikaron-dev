@@ -97,18 +97,16 @@ impl Win {
         // Remember where the wizard was opened from: its way out returns to that seat and page.
         if self.ux.wizard.is_none() {
             self.ux.wiz_from = Some((self.shell.settings.role, self.ux.nav.stack, self.ux.nav.place, self.ux.nav.hist.get(&self.ux.nav.stack).cloned()));
-            // Whether this is a true first run (`firstrun::fresh_machine`) is recorded once as the wizard opens and
-            // holds for the whole run (setting the passcode in step 1 must not make a way out appear halfway
-            // through).
-            self.ux.wiz_fresh = crate::firstrun::fresh_machine(&self.shell);
         }
         self.ux.wizard = Some(step);
     }
 
-    /// Whether the wizard offers a way out: always, except when it was opened on a true first run (no passcode
-    /// and no identity), where there is nothing to go back to.
+    /// Whether the wizard offers a way out: once a passcode and an identity are both on this machine, judged now
+    /// (on the first run as soon as both are set, and the same after a restart); before that there is nothing to
+    /// go back to.
     pub(super) fn wizard_exit_shown(&self) -> bool {
-        !self.ux.wiz_fresh
+        let identity = self.shell.identities.as_ref().map(|r| !r.rows.is_empty()).unwrap_or(false);
+        !self.shell.vault.absent() && identity
     }
 
     /// Leave the wizard, back to the seat and page it was opened from. Finished steps stay finished, and the
@@ -122,7 +120,10 @@ impl Win {
         self.ux.wizard = None;
         self.ux.confirm_genesis = false;
         if let Some((role, stack, place, hist)) = self.ux.wiz_from.take() {
-            if self.shell.settings.role != role && !self.shell.seat_unseated() {
+            // Back to the seat it was opened on only when that seat has a key now (a first run records the default
+            // seat before any identity exists): never onto an empty seat.
+            let seated = self.shell.identities.as_ref().and_then(|r| r.now()).map(|(row, _)| row.address(role).is_some()).unwrap_or(false);
+            if self.shell.settings.role != role && seated {
                 self.act(Action::SwitchRole, now);
             }
             self.ux.nav.stack = stack;

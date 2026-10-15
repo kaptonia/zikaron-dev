@@ -219,9 +219,10 @@ fn at_the_least_width_the_gas_codes_caption_is_whole_within_the_plate() {
 // ───────────────────── 4 · Esc over the wizard ─────────────────────
 
 /// Esc over the wizard goes through the one Esc owner (`zikaron_ui::layer::esc`): with a sheet opened over the
-/// wizard (the identity step's "Import an existing key…"), one Esc closes the sheet only and the wizard stays;
-/// the next Esc leaves the wizard (its way out, offered off the true first run) back to the page it was opened
-/// from. Driven through the window's own input: the wizard opened with "Run wizard again" on Settings, About.
+/// wizard (the identity step's "Import an existing key…"), one Esc closes the sheet only and the wizard stays.
+/// This machine has a passcode and no identity yet, so the wizard offers no way out (it is offered once both are
+/// here): the next Esc leaves it standing. Driven through the window's own input: the wizard opened with "Run
+/// wizard again" on Settings, About.
 #[test]
 fn one_esc_over_the_wizard_closes_only_the_top_layer() {
     if super::alone_in(module_path!(), "one_esc_over_the_wizard_closes_only_the_top_layer") {
@@ -257,19 +258,16 @@ fn one_esc_over_the_wizard_closes_only_the_top_layer() {
         steps.extend(esc());
         steps.extend(idle(6));
         let two_esc = steps.len() - 1;
-        let (f, said) = walk(steps);
+        let (f, _) = walk(steps);
         let frame = |i: usize| &f[SETTLE + i];
         let shows = |i: usize, k: Key| at(frame(i), t(k)).is_some();
         // The wizard's own count line ("Step 2 of 6") says the wizard is up on the identity step.
         let count = app::lang::fill2(Key::WizCount, "2", &Step::ALL.len().to_string());
         let wizard_up = |i: usize| at(frame(i), &count).is_some();
-        let before = said[0].0.clone();
         assert!(shows(sheet_up, Key::IdImportTitle) && wizard_up(sheet_up), "the import sheet is up over the wizard");
         assert!(!shows(one_esc, Key::IdImportTitle), "one Esc closes the sheet");
         assert!(wizard_up(one_esc), "the same Esc leaves the wizard under it standing");
-        assert!(!wizard_up(two_esc), "the next Esc leaves the wizard");
-        // Back on the very page it was opened from (the settings section, not only its stack).
-        assert_eq!(said[two_esc].0, before, "back on the page the wizard was opened from");
+        assert!(wizard_up(two_esc), "with no identity yet there is no way out: the next Esc leaves the wizard standing");
     })
 }
 

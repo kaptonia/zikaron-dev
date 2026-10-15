@@ -5137,3 +5137,5 @@ mod proxy_locked;
 mod door_serial;
 #[path = "checks_more/mirror_adopt.rs"]
 mod mirror_adopt;
+#[path = "checks_more/wizard_way_out.rs"]
+mod wizard_way_out;

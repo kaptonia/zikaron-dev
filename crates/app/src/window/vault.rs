@@ -418,7 +418,7 @@ impl Win {
             }
             g @ crate::relicx::Guide::NeedGenesis => {
                 states::err_box(ui, "relic-genesis", t(Key::U4NeedLedgerWhat), t(Key::U4NeedLedgerNext), t(Key::U3RawError), g.as_str());
-                if key::key(ui, t(Key::U4OpenWizard), Role::Secondary, true).clicked() {
+                if page::Page::new().primary(ui, t(Key::WizGenesisTitle)).1.clicked() {
                     self.wizard_open(crate::nav::Step::Genesis);
                 }
             }

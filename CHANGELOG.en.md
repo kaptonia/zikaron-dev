@@ -71,6 +71,8 @@ This version lets the command line write the data the desktop keeps sealed even 
 ### Interface
 
 - **"Back" in the first-run wizard**: "Back" on the page checking the recovery words returns to the same twelve words (the three check cells emptied), and only from a step's first page to the step before; before, it went back to the passcode step, and "Next" then returned to the check, so the words could only be dropped and started over.
+- **A way out of the first-run wizard**: once this machine has a passcode and an identity, "Exit setup" is at the bottom left of the wizard's sidebar (Esc does the same; the language switch is just above it); on the first start it appears as soon as both are set, and the same after a restart; before, the first start had none and could only go on through the wizard. Leaving at "Create the ledger" keeps the identity and creates no ledger, and the wizard stops at that step again at the next start.
+- **Set up a ledger from the Ledger page**: when a Recorder has no ledger here yet, a blue "Create the ledger" is under the Ledger page's table (the same key as on the sublicense page); it opens the wizard at that step; before, the page showed an empty table only.
 - The payment QR code on the first-run wizard's "Add gas" step carries the chosen network's chain ID (EIP-681), so a wallet set to another network asks to switch instead of paying there; with no chain ID known, no code is shown.
 - Dropdowns, menus and the date picker open within their page and no longer lie over the sidebar.
 - A passcode field covered by another page or card no longer takes keys or the focus: with "Restore from backup" open over the passcode gate, say, what you type no longer goes into the hidden passcode field beneath.

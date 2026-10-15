@@ -108,6 +108,15 @@ impl Win {
                 open = shown.get(i).map(|r| r.id.clone());
             }
         });
+        // The recorder's seat with no ledger here yet: "Create the ledger", named as the wizard's step it opens, the
+        // same key as on the grants page.
+        let mut set_up = false;
+        if read && !self.shell.rooted && self.shell.settings.role == crate::roles::Role::Author {
+            stagger(ui, 3, |ui| set_up = page::Page::new().primary(ui, t(Key::WizGenesisTitle)).1.clicked());
+        }
+        if set_up {
+            self.wizard_open(crate::nav::Step::Genesis);
+        }
         self.ux.search.insert("ledger", query);
         self.ux.range.insert("ledger", range);
         if let Some(id) = open {

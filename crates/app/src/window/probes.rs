@@ -590,6 +590,145 @@ pub fn probe_wizard_exit(ctx: &egui::Context, shell: Shell, place: Place, step: 
     (win.shell, reading)
 }
 
+/// Frames of the window over `place`, the wizard open at `wizard` when given, for drawing to an image: every
+/// frame's output in order (textures arrive as deltas across them), the last one settled.
+pub fn probe_frames(ctx: &egui::Context, shell: Shell, place: Place, wizard: Option<crate::nav::Step>, width: f32, height: f32, frames: usize) -> (Shell, Vec<egui::FullOutput>) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(place, role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    if let Some(step) = wizard {
+        win.wizard_open(step);
+    }
+    let mut outs = Vec::new();
+    for i in 0..frames.max(1) {
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(0.1 * (i + 1) as f64), ..Default::default() };
+        outs.push(ctx.run(input, |c| win.draw(c)));
+    }
+    (win.shell, outs)
+}
+
+/// What the wizard's way out did through one first run ([`probe_wizard_way_out`]).
+#[derive(Clone, Debug, Default)]
+pub struct WayOut {
+    /// At each phase (as it opened by itself, with the passcode set, with an identity too): whether a way out was
+    /// offered, whether "Exit setup" was drawn in the sidebar, and the wizard's step.
+    pub offered: Vec<bool>,
+    pub exit_drawn: Vec<bool>,
+    pub steps: Vec<String>,
+    /// Whether "Exit setup" was clicked where it is drawn (the way out taken).
+    pub left_by_click: bool,
+    /// After leaving: whether the wizard is still open, the seat, stack and place, and whether that seat has a key.
+    pub still_open: bool,
+    pub place_after: String,
+    pub seat_has_key_after: bool,
+    /// A second window over the same machine, as after a restart: whether the wizard opened by itself, at which
+    /// step, and whether it offers a way out.
+    pub reopened: bool,
+    pub reopened_step: String,
+    pub reopened_offered: bool,
+}
+
+/// One window through a first run: the wizard opens by itself over the home page; `between(shell, 1)` then
+/// `between(shell, 2)` change the machine the way the wizard's steps do (the caller drives the product's
+/// actions), a few frames drawn after each; then "Exit setup" is clicked where it is drawn. Then a second window
+/// over the same shell, as after a restart, opens the wizard by itself again.
+pub fn probe_wizard_way_out(ctx: &egui::Context, shell: Shell, mut between: impl FnMut(&mut Shell, usize), width: f32, height: f32) -> (Shell, WayOut) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Home, role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run(input, |c| win.draw(c))
+    };
+    let exit_word = t(Key::WizExit);
+    let mut reading = WayOut::default();
+    win.wizard_by_itself();
+    let mut exit_at = None;
+    for phase in 0..3 {
+        if phase > 0 {
+            between(&mut win.shell, phase);
+        }
+        let mut out = run(&mut win, Vec::new());
+        for _ in 0..4 {
+            out = run(&mut win, Vec::new());
+        }
+        reading.offered.push(win.wizard_exit_shown());
+        exit_at = texts_of(&out).iter().find(|d| d.text == exit_word).map(|d| d.rect.center());
+        reading.exit_drawn.push(exit_at.is_some());
+        reading.steps.push(win.ux.wizard.map(|s| format!("{s:?}")).unwrap_or_default());
+    }
+    if let Some(at) = exit_at {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(at), press(true), press(false)]);
+        reading.left_by_click = true;
+    }
+    for _ in 0..4 {
+        let _ = run(&mut win, Vec::new());
+    }
+    reading.still_open = win.ux.wizard.is_some();
+    reading.place_after = format!("{}:{:?}:{:?}", win.shell.settings.role.as_str(), win.ux.nav.stack, win.ux.nav.place);
+    reading.seat_has_key_after = !win.shell.seat_unseated() && win.shell.identities.as_ref().and_then(|r| r.now()).is_some();
+    let shell = win.shell;
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Home, role));
+    ux.wizard_asked = true;
+    let mut again = fresh_win(shell, Typed::default(), ux);
+    again.faults_told = usize::MAX;
+    again.wizard_by_itself();
+    for _ in 0..4 {
+        let _ = run(&mut again, Vec::new());
+    }
+    reading.reopened = again.ux.wizard.is_some();
+    reading.reopened_step = again.ux.wizard.map(|s| format!("{s:?}")).unwrap_or_default();
+    reading.reopened_offered = again.wizard_exit_shown();
+    (again.shell, reading)
+}
+
+/// The ledger page ([`Place::View`] `Log`) settled: whether the "Create the ledger" key is drawn (outside the
+/// table's rows); when it is, it is clicked where it is drawn, and the wizard's step after is read.
+pub fn probe_ledger_set_up(ctx: &egui::Context, shell: Shell, width: f32, height: f32) -> (Shell, bool, String) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::View(crate::nav::View::Log, 0), role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run(input, |c| win.draw(c))
+    };
+    let mut out = run(&mut win, Vec::new());
+    for _ in 0..10 {
+        out = run(&mut win, Vec::new());
+    }
+    // The key, not the genesis entry's own tag in a table row (which reads the same).
+    let word = t(Key::WizGenesisTitle);
+    let rows = zikaron_ui::probe::rows(ctx);
+    let at = texts_of(&out).iter().find(|d| d.text == word && !rows.iter().any(|r| r.contains(d.rect.center()))).map(|d| d.rect.center());
+    let Some(at) = at else { return (win.shell, false, String::new()) };
+    let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let _ = run(&mut win, vec![egui::Event::PointerMoved(at), press(true), press(false)]);
+    for _ in 0..4 {
+        let _ = run(&mut win, Vec::new());
+    }
+    let step = win.ux.wizard.map(|s| format!("{s:?}")).unwrap_or_default();
+    (win.shell, true, step)
+}
+
 /// The wizard on the identity step with new words in hand and their check showing (as after "I have copied
 /// them"); then "back" pressed the way a click presses it (at the drawn key), twice: from the check, then
 /// from the words. The shell needs new words in hand (`Action::NewIdentity`).

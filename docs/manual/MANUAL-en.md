@@ -143,7 +143,7 @@ Without a passcode, the wizard stays on step 1. With a passcode but no identity,
 - Under the steps on the left, "中文" | "English" switches the interface language from the first step on. The choice is kept on this machine and used on the passcode gate too (the gate does not switch it).
 - On the right: the step's own action key until the step is done (step 1 has none; filling the boxes submits), then a blue "Next". The last step has "Finish", which shows "First run complete; remaining items are in Settings > About".
 
-**Leaving the wizard.** "Exit setup" at the bottom of the step list, or Esc, returns you to where you were before the wizard opened. Finished steps stay finished. At the next start the wizard opens again only if the passcode or identity is still missing, or a Recorder's ledger has not been created; for the other unfinished steps, use "Run wizard again" in Settings > About.
+**Leaving the wizard.** "Exit setup" at the bottom left of the sidebar (the language switch just above it), or Esc, returns you to where you were before the wizard opened. It is there once this machine has a passcode and an identity: on the first start it appears as soon as both are set, and the same after a restart; before that there is nowhere to go back to. Leaving at "Create the ledger" keeps the identity and creates no ledger. Finished steps stay finished. At the next start the wizard opens again only if the passcode or identity is still missing, or a Recorder's ledger has not been created; for the other unfinished steps, use "Run wizard again" in Settings > About.
 
 - If fresh recovery words have not been checked yet, it asks "Exit setup?" first: "These words haven't been checked; exiting discards them." "Exit" discards the words and leaves; "Keep checking" or Esc stays in the wizard.
 - A true first run (no passcode and no identity) has no way out.
@@ -155,7 +155,7 @@ Without a passcode, the wizard stays on step 1. With a passcode but no identity,
 | "Run wizard again" in Settings > About | The first unfinished step; step 1 if all are done. Disabled while the current role has no identity |
 | "Go set one" in Settings > Identity key | Step 1 |
 | "Create key…" on the "Sublicense" page (when there is no signing key yet) | Step 2 |
-| "Set up ledger…" on the "Sublicense" page (when there is no ledger yet) | Step 4 |
+| "Create the ledger" on the "Sublicense" page (when there is no ledger yet) | Step 4 |
 
 Whenever there is no passcode yet, it opens at step 1.
 
@@ -639,6 +639,8 @@ The switch applies to every kind of write: records, grants, revocations and so o
 - The "More" menu: "Import existing records…", "Change key or hand over…", "Add note…" and "Sign a claim for someone…".
 - The segmented control "All", "Unconfirmed" and "Grant". "Unconfirmed" lists every entry the chain has not yet confirmed: those in the queue (queued, sent and awaiting the receipt, reverted, refused), those included but not yet counted by a ledger check, and those recorded without being queued. It is a wider set than "Pending" on Records, which counts the queue.
 
+When a Recorder has no ledger here yet, a blue "Create the ledger" is under the table; it opens the wizard at that step. It is not there once there is a ledger.
+
 **The ledger status line** at the top of the page: "Ledger status · OK/Problems · N total". Before the first check it reads "Never checked", or "Never checked: no network set yet" when nodes, chain ID or registry contract are missing.
 
 - If the root entry is not yet confirmed on chain, red "Root not confirmed on chain" is added.
@@ -901,7 +903,7 @@ The command line's `depth` verb uses the same calculation.
 **As a User** (choose "User" at the top of the sidebar):
 
 1. The first time the app opens, the wizard runs as a Recorder: set a passcode, create an identity, choose a network and create the ledger (free, local only). The rest can wait.
-2. Switch to "User" at the top of the sidebar. A User ledger is needed only to sublicense; when you get there, press "Set up ledger…" on the sublicense page.
+2. Switch to "User" at the top of the sidebar. A User ledger is needed only to sublicense; when you get there, press "Create the ledger" on the sublicense page.
 3. Paste the grant code you received into the "Verify a grant" card on Home, press "Start check" and read the result.
 4. Open "My grants", press "Add grant", paste the grant code or drop in the grant file, and press "Verify and add" to keep it.
 5. When you receive the work itself, open Verify > Verify grant, put in the grant, the file and the terms file, and press "Verify" once to check all three together.
@@ -1007,7 +1009,7 @@ The sublicense is written to your own (User) ledger and goes into your own pendi
 **What it needs.** Sublicensing needs a User signing key and ledger:
 
 - No key: the page says "No key has been created." Press "Create key…".
-- No ledger: the page says "No ledger yet." and "Open your ledger before sublicensing." Press "Set up ledger…".
+- No ledger: the page says "No ledger yet." and "Open your ledger before sublicensing." Press "Create the ledger".
 
 ### Revocation watch
 
