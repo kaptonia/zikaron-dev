@@ -105,3 +105,60 @@ fn a_mirror_with_one_entry_changed_is_refused_whole_and_nothing_is_written() {
     let _ = std::fs::remove_dir_all(&at);
     let _ = std::fs::remove_dir_all(&from);
 }
+
+/// A home that already has its own ledger is not given another: a mirror with another root is refused whole, by
+/// name and with the way out, and nothing is written; the home's own ledger still checks whole.
+#[test]
+fn a_mirror_of_another_ledger_is_refused_by_a_home_that_has_its_own() {
+    if super::alone_in(module_path!(), "a_mirror_of_another_ledger_is_refused_by_a_home_that_has_its_own") {
+        return;
+    }
+    let (mut shell, at) = fresh_home("rooted");
+    assert!(matches!(apply(&mut shell, Action::Genesis { statement: "my own".into() }), Applied::Genesised { .. }));
+    let before = entries_in_home(&shell);
+    match apply(&mut shell, Action::Adopt { dir: fixture().display().to_string() }) {
+        Applied::Trouble(f) => {
+            assert!(f.said().starts_with(app::fault::Known::AlreadyRooted.as_str()), "{}", f.said());
+            assert_eq!(f.what_key(), Some(app::lang::Key::AdoptOtherRoot), "said as another ledger");
+            assert_eq!(f.then_key(), Some(app::lang::Key::AdoptOtherRootNext), "with the way out");
+        }
+        other => panic!("refused: {other:?}"),
+    }
+    assert_eq!(entries_in_home(&shell), before, "not one entry written");
+    let home = shell.home.as_ref().expect("a home");
+    assert!(app::auditx::offline(home).expect("the check").complete, "the home's own ledger still checks whole");
+    let _ = std::fs::remove_dir_all(&at);
+}
+
+/// The same ledger again is taken as before: what the home has already is skipped, nothing is refused.
+#[test]
+fn the_same_ledger_adopted_again_is_taken_as_before() {
+    if super::alone_in(module_path!(), "the_same_ledger_adopted_again_is_taken_as_before") {
+        return;
+    }
+    let (mut shell, at) = fresh_home("again");
+    for _ in 0..2 {
+        match apply(&mut shell, Action::Adopt { dir: fixture().display().to_string() }) {
+            Applied::AdoptedInPlace { linked, label, .. } => assert_eq!((linked, label.as_str()), (4, app::auditx::complete())),
+            other => panic!("adopted: {other:?}"),
+        }
+    }
+    assert_eq!(entries_in_home(&shell).len(), 4, "each entry once");
+    let _ = std::fs::remove_dir_all(&at);
+}
+
+/// After adopting, starting a ledger of its own is refused as before.
+#[test]
+fn a_home_that_adopted_a_ledger_starts_no_other() {
+    if super::alone_in(module_path!(), "a_home_that_adopted_a_ledger_starts_no_other") {
+        return;
+    }
+    let (mut shell, at) = fresh_home("adopted-first");
+    assert!(matches!(apply(&mut shell, Action::Adopt { dir: fixture().display().to_string() }), Applied::AdoptedInPlace { .. }));
+    match apply(&mut shell, Action::Genesis { statement: "another".into() }) {
+        Applied::Trouble(f) => assert!(f.said().starts_with(app::fault::Known::AlreadyRooted.as_str()), "{}", f.said()),
+        other => panic!("refused: {other:?}"),
+    }
+    assert_eq!(entries_in_home(&shell).len(), 4);
+    let _ = std::fs::remove_dir_all(&at);
+}

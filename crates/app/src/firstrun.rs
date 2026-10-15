@@ -101,7 +101,7 @@ pub struct Adopted {
 }
 
 /// Adopts a directory: after inspection, appends every entry, sealed, to this home's ledger, leaving the
-/// original directory unchanged; then runs self-audit once and passes the label through unchanged. A home with
+/// original directory unchanged (a home that already has a root takes only its own ledger's entries); then runs self-audit once and passes the label through unchanged. A home with
 /// the not-fetched mark (an imported key) opens for writing afterwards like any other: once its tail is
 /// checked against the chain (`action::check_tail`, started by the action layer after adopting).
 pub fn adopt(dir: &std::path::Path, into: &Home) -> Result<Adopted, Fault> {
@@ -119,6 +119,16 @@ pub fn adopt(dir: &std::path::Path, into: &Home) -> Result<Adopted, Fault> {
             ledger.survey().map_err(|t| Fault::known(Known::Ledger, format!("{t:?}")))?.items
         }
     };
+    // One home, one ledger: a home that already has a root takes only entries of that same ledger (the same again,
+    // or what it lacks); a ledger with another root, or with none, is refused whole before anything is written.
+    let ours = into.ledger()?.pile()?.items.iter().filter_map(|b| k1::check(b).ok()).find(|e| e.seq == 0).map(|e| e.id_hex());
+    let theirs = items.iter().filter_map(|b| k1::check(b).ok()).find(|e| e.seq == 0).map(|e| e.id_hex());
+    if let Some(ours) = ours {
+        if theirs.as_deref() != Some(ours.as_str()) {
+            return Err(Fault::known(Known::AlreadyRooted, format!("{ours} · {}", theirs.unwrap_or_default()))
+                .worded(Some(crate::lang::Key::AdoptOtherRoot), Some(crate::lang::Key::AdoptOtherRootNext)));
+        }
+    }
     // A ledger handed off to another place is not written here, adopted entries included (`zikaron_seal::pens`).
     let root = items.iter().filter_map(|b| zikaron::entry::check(b).ok()).find(|e| e.seq == 0).map(|e| e.id);
     if let Some(root) = root {

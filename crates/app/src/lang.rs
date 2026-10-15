@@ -1702,6 +1702,8 @@ pub enum Key {
     PacNextRemoteHttp,
     PacNextUnfetched,
     PacNextFailed,
+    AdoptOtherRoot,
+    AdoptOtherRootNext,
     ProxyPasswordSet,
     ProxyCellHost,
     ProxyCellPort,
@@ -2037,7 +2039,7 @@ pub enum Key {
 
 impl Key {
     /// All keys, in [`TABLE`] order.
-    pub const ALL: [Key; 1971] = [
+    pub const ALL: [Key; 1973] = [
         Key::PageRevoke,
         Key::PageAdopt,
         Key::PageSucceed,
@@ -3678,6 +3680,8 @@ impl Key {
         Key::PacNextRemoteHttp,
         Key::PacNextUnfetched,
         Key::PacNextFailed,
+        Key::AdoptOtherRoot,
+        Key::AdoptOtherRootNext,
         Key::ProxyPasswordSet,
         Key::ProxyCellHost,
         Key::ProxyCellPort,
@@ -4013,7 +4017,7 @@ impl Key {
 }
 
 /// Every UI string: `(key, Chinese, English)`. One row per key, both languages in each row.
-pub const TABLE: [(Key, &str, &str); 1971] = [
+pub const TABLE: [(Key, &str, &str); 1973] = [
     (Key::PageRevoke, "撤销授权", "Revoke grant"),
     (Key::PageAdopt, "导入上链存证", "Import anchor proofs"),
     (Key::PageSucceed, "移交账本", "Hand over ledger"),
@@ -5671,6 +5675,8 @@ pub const TABLE: [(Key, &str, &str); 1971] = [
     (Key::PacNextRemoteHttp, "代理脚本在远程 http 上,未用。请填自定义代理。", "Proxy script is on remote http; not used. Set a custom proxy."),
     (Key::PacNextUnfetched, "取不到代理脚本。请开启代理软件,或填自定义代理。", "Can't fetch the proxy script. Start your proxy app, or set a custom proxy."),
     (Key::PacNextFailed, "代理脚本出错({0})。请填自定义代理。", "Proxy script failed ({0}). Set a custom proxy."),
+    (Key::AdoptOtherRoot, "这处家已有自己的账本,要收编的是另一本账,未收。", "This home already has its own ledger, and the one to adopt is another; nothing was adopted."),
+    (Key::AdoptOtherRootNext, "照手册「从早先版本升级」重来:挪开机器目录,重新导入身份,向导走到「创建账本」时点左栏「退出向导」,再到设置里收编。", "Start over as \"Upgrading from an earlier version\" in the manual says: move the machine folder aside, import the identity again, click \"Exit setup\" in the sidebar at \"Create the ledger\", then adopt in Settings."),
     (Key::ProxyPasswordSet, "已设密码", "Password set"),
     (Key::ProxyCellHost, "主机", "Host"),
     (Key::ProxyCellPort, "端口", "Port"),

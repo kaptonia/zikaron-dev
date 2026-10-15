@@ -58,7 +58,7 @@ Version 0.1.3 comes as packages for macOS with Apple silicon and for x86_64 Linu
 
 1. In 0.1.2, "Export ledger mirror…" (see "Ledger mirror") to a folder outside the machine folder, then quit.
 2. Move the earlier version's machine folder aside, together with its pointer file (Appendix B says where both are), so that this version finds neither. Data folders kept inside the machine folder move with it; the mirror is what comes across.
-3. Start this version: it begins with an empty machine folder. Set a passcode, then import the identity with the same recovery phrase.
+3. Start this version: it begins with an empty machine folder. Set a passcode, then import the identity with the same recovery phrase. When the wizard reaches "Create the ledger", click "Exit setup" in the sidebar instead of creating a new ledger, and adopt in Settings as the next step says; a home that already has its own ledger does not take another.
 4. "Adopt existing ledger folder", then "Adopt in place" on the mirror's `author` folder: every entry is checked again, and the ledger is checked against this key's records on chain.
 5. Run the ledger check on the Ledger page and see it come back "OK".
 
