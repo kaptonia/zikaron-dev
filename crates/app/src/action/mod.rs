@@ -182,7 +182,8 @@ pub enum Action {
     // ── First run and adoption ──
     /// Write genesis. A legal action (verb `init`).
     Genesis { statement: String },
-    /// Adopt an existing ledger directory in place.
+    /// Adopt an existing ledger directory, or a ledger mirror, in place (a home that already has a root takes only
+    /// that same ledger).
     Adopt { dir: String },
     // Ledger view.
     /// Read the ledger table once (background): walk the ledger directory and read bytes into rows.

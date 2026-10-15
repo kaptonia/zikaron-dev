@@ -109,7 +109,7 @@ impl Win {
             }
         });
         // The recorder's seat with no ledger here yet: "Create the ledger", named as the wizard's step it opens, the
-        // same key as on the grants page.
+        // same key as on the sublicense page.
         let mut set_up = false;
         if read && !self.shell.rooted && self.shell.settings.role == crate::roles::Role::Author {
             stagger(ui, 3, |ui| set_up = page::Page::new().primary(ui, t(Key::WizGenesisTitle)).1.clicked());

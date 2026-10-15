@@ -1,8 +1,9 @@
 //! The first-run wizard: a full-window cover with six steps on the left (done ones checked, optional ones
 //! dashed) and one card per step on the right that slides in by direction. A finished step shows a check
-//! and "done" (its value under details); the genesis confirmation sheet floats above. A way out (and Esc)
-//! sits under the steps except on a true first run: it returns to the seat and page the wizard was opened
-//! from; finished steps stay finished and the three required ones stay required.
+//! and "done" (its value under details); the genesis confirmation sheet floats above. The left column's foot
+//! holds the language and, once this machine has a passcode and an identity, the way out ("Exit setup", or
+//! Esc): it returns to the seat and page the wizard was opened from; finished steps stay finished and the three
+//! required ones stay required.
 
 use super::*;
 

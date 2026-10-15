@@ -1,7 +1,7 @@
 //! The first-run wizard's way out is judged now: offered once a passcode and an identity are both on this
 //! machine, the same on the first run as after a restart, never before; leaving lands on the seat with a key and
 //! writes no ledger, and the wizard opens again at "Create the ledger". The ledger page with no ledger yet offers
-//! "Create the ledger" (the grants page's key, named as the wizard's step), which opens the wizard at that step;
+//! "Create the ledger" (the sublicense page's key, named as the wizard's step), which opens the wizard at that step;
 //! with a ledger it does not. Each test runs alone (its own machine directory).
 
 use app::action::{apply, apply_settled, Action, Applied};

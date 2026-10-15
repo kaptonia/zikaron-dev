@@ -13,6 +13,9 @@
 //! A ledger mirror (a folder with the mirror manifest, as "Export ledger mirror…" writes it, this version's or
 //! an earlier one's) is adopted too: its entries are read through the mirror's own check ([`mirrored`]), and
 //! one entry that fails it refuses the whole mirror.
+//!
+//! One home keeps one ledger: a home that already has a root adopts only that same ledger again (what it holds
+//! already is skipped); another ledger, or entries with no root, is refused whole before anything is written.
 
 use crate::auditx;
 use crate::fault::{Fault, Known};
@@ -251,14 +254,6 @@ impl Shade {
             Shade::Red => "red",
         }
     }
-}
-
-/// A true first run: this machine has no passcode and no identity yet (nothing to go back to). The wizard
-/// asks this once, as it opens, to decide whether it offers a way out for the whole run.
-pub fn fresh_machine(shell: &crate::shell::Shell) -> bool {
-    let pin = !shell.vault.absent();
-    let identity = shell.identities.as_ref().map(|r| !r.rows.is_empty()).unwrap_or(false);
-    !pin && !identity
 }
 
 /// Colour of the whole-machine backup point (the setup check's last point, the wizard's sixth step). Pure:

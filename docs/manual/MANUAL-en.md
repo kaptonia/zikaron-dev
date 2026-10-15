@@ -140,13 +140,13 @@ Without a passcode, the wizard stays on step 1. With a passcode but no identity,
 
 - On the left: "Back", and "Later" on steps that may be skipped. On the last step this key reads "Do it later" and closes the wizard with the same message as "Finish".
 - "Back" goes to the page before: from the check of the copied words to the same twelve words (the check boxes emptied), and from a step's first page to the step before.
-- Under the steps on the left, "中文" | "English" switches the interface language from the first step on. The choice is kept on this machine and used on the passcode gate too (the gate does not switch it).
+- At the bottom left of the sidebar, just above "Exit setup", "中文" | "English" switches the interface language from the first step on. The choice is kept on this machine and used on the passcode gate too (the gate does not switch it).
 - On the right: the step's own action key until the step is done (step 1 has none; filling the boxes submits), then a blue "Next". The last step has "Finish", which shows "First run complete; remaining items are in Settings > About".
 
 **Leaving the wizard.** "Exit setup" at the bottom left of the sidebar (the language switch just above it), or Esc, returns you to where you were before the wizard opened. It is there once this machine has a passcode and an identity: on the first start it appears as soon as both are set, and the same after a restart; before that there is nowhere to go back to. Leaving at "Create the ledger" keeps the identity and creates no ledger. Finished steps stay finished. At the next start the wizard opens again only if the passcode or identity is still missing, or a Recorder's ledger has not been created; for the other unfinished steps, use "Run wizard again" in Settings > About.
 
 - If fresh recovery words have not been checked yet, it asks "Exit setup?" first: "These words haven't been checked; exiting discards them." "Exit" discards the words and leaves; "Keep checking" or Esc stays in the wizard.
-- A true first run (no passcode and no identity) has no way out.
+- While the passcode or the identity is still missing (on a true first run, both are), there is no way out and Esc does not leave.
 
 **Other ways to open it**
 
@@ -1497,7 +1497,7 @@ Each role of each identity has its own data folder.
   - If the chosen folder is not empty, the data goes into a new `ZIKARON` subfolder inside it.
   - The new place cannot be the current data folder itself or lie inside it (judged by the real path, symbolic links resolved): such a choice is refused with "The new location is inside the current data folder; nothing was copied."
   - The old location is left untouched; delete it yourself afterwards.
-- "Adopt existing ledger folder", then "Adopt in place": takes over an existing ledger folder, re-checking every entry before connecting it. For an imported identity, the ledger is then checked against this key's records on chain, and writing opens if it matches (see "Fetching the ledger").
+- "Adopt existing ledger folder", then "Adopt in place": takes over an existing ledger folder, re-checking every entry before connecting it. It also takes a bundle "Export ledger mirror…" wrote (this version's or 0.1.2's), each entry checked against the mirror's own manifest; one that fails refuses the whole bundle. When this home already has its own ledger, another ledger is refused whole and nothing is written ("This home already has its own ledger, and the one to adopt is another; nothing was adopted."); the same ledger adopted again is taken, what is already there skipped. For an imported identity, the ledger is then checked against this key's records on chain, and writing opens if it matches (see "Fetching the ledger").
 - "Writing": "Writable", or "Paused: reconcile after restore".
 - "Last reconciled" and "Reconcile now": checks the local ledger offline and, if it passes, allows writing again.
 - "Check everything again": clears this machine's record of checked facts (see "How the chain is read" in 4.1); the next sync asks about every anchor again.
