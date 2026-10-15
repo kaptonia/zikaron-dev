@@ -13,8 +13,8 @@ fn a_process_that_sets_nothing_follows_the_system() {
     let platform = zikaron_os::system_proxies().map(|p| SystemProxies::from_platform(&p));
     match platform.as_ref() {
         Some(s) if s.automatic() => {
-            // Automatic settings are answered on this machine's network (discovery, a script to fetch and run),
-            // which may take longer than one read waits: a read that ran out first goes on without it this once,
+            // A configuration script is answered on this machine's network (a script to fetch and run), which
+            // may take longer than one read waits: a read that ran out first goes on without it this once,
             // while the display says it is pending. Asked again until the answer is known, the route is the one
             // shown.
             let until = std::time::Instant::now() + std::time::Duration::from_secs(60);

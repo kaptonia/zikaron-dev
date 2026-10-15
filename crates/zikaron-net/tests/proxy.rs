@@ -306,8 +306,17 @@ fn connect_said(r: Result<u16, Fail>) -> String {
     }
 }
 
+/// A proxy asking for credentials when none were given: that failure, its words.
+fn asked_said(r: Result<u16, Fail>) -> String {
+    match r {
+        Err(Fail::ProxyCredentials { given: false, said }) => said,
+        other => panic!("not the proxy asking for credentials: {other:?}"),
+    }
+}
+
 /// Every way the proxy side of the tunnel can fail is reported distinctly: silence (the deadline), a partial
-/// response, an unreadable response, a credentials demand; connection failures name the proxy.
+/// response, an unreadable response, a credentials demand (its own failure, `Fail::ProxyCredentials`); connection
+/// failures name the proxy.
 #[test]
 fn each_failure_on_the_proxys_side_is_named() {
     let _turn = turn();
@@ -390,14 +399,14 @@ fn each_failure_on_the_proxys_side_is_named() {
             let _ = s.write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\nContent-Length: 0\r\n\r\n");
         }
     });
-    let said = connect_said(through(Kind::Http, p, 3000));
+    let said = asked_said(through(Kind::Http, p, 3000));
     assert!(said.contains("407") && said.contains("asks for credentials"), "{said}");
     let p = scripted(|mut s| {
         if read_greeting(&mut s) {
             let _ = s.write_all(&[5, 0xFF]);
         }
     });
-    assert!(connect_said(through(Kind::Socks5, p, 3000)).contains("asks for authentication"));
+    assert!(asked_said(through(Kind::Socks5, p, 3000)).contains("asks for authentication"));
 }
 
 /// A node that keeps connections open (HTTP/1.1, a length, no close), counting accepted connections.

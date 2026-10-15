@@ -74,6 +74,7 @@ pub mod payloadx;
 pub mod pinned;
 pub mod places;
 pub mod probe;
+pub mod proxycells;
 pub mod qr;
 pub mod queue;
 pub mod readerx;

@@ -666,10 +666,14 @@ impl Win {
         stagger(ui, 5, |ui| card::section(ui, t(Key::SetProxy), "", |ui| self.set_proxy(ui, now)));
     }
 
-    /// The proxy (machine-wide): follow the system, none, or a typed address, parsed the way the transport
-    /// parses it and refused by name before saving.
+    /// The proxy (machine-wide): follow the system, none, or a custom proxy in cells (kind, host, port, user name,
+    /// password: `proxycells`, judged there). A wrong cell is framed red with its reason under the cells, and saving
+    /// waits for every cell to read. A whole address pasted into the host cell is split into the cells. A saved
+    /// password is never shown again: its cell stays empty, and the page says one is set only while saving the cells
+    /// as they are would keep it (`proxycells::password_stays`: the same proxy and user name).
     fn set_proxy(&mut self, ui: &mut egui::Ui, now: f64) {
         use crate::machine::proxy::{NONE, SYSTEM};
+        use crate::proxycells::{self as pc, Bad};
         ui.spacing_mut().item_spacing.y = tk::S3;
         let written = self.shell.machine.proxy.clone();
         let cur = match written.as_deref().map(str::trim) {
@@ -677,10 +681,11 @@ impl Win {
             Some(NONE) => 1,
             Some(_) => 2,
         };
-        // The saved address is shown without its password; that one is set is said instead.
-        let (written_shown, written_pass) = written.as_deref().map(zikaron_net::proxy_text_shown).unwrap_or_default();
+        let saved = written.as_deref().filter(|_| cur == 2).and_then(pc::of_saved);
         if cur == 2 && !self.ux.proxy_seeded {
-            self.typed.proxy = written_shown.clone();
+            if let Some((cells, _)) = &saved {
+                self.typed.proxy = cells.clone();
+            }
             self.ux.proxy_seeded = true;
         }
         let shown = if self.ux.proxy_manual { 2 } else { cur };
@@ -697,24 +702,88 @@ impl Win {
             }
             _ => {}
         }
-        if self.ux.proxy_manual || cur == 2 {
-            let typed = self.typed.proxy.trim().to_string();
-            let differs = cur != 2 || typed != written_shown;
-            let (resp, hit) = width::line_then(ui, &mut self.typed.proxy, t(Key::ProxyHint), true, |ui| key::key(ui, t(Key::ReadNetSave), Role::Secondary, differs).clicked());
-            let typed_shown = zikaron_net::proxy_text_shown(&typed).0;
-            match (!typed.is_empty()).then(|| zikaron_net::proxy_of(&typed).err()).flatten() {
-                Some(zikaron_net::NotAProxy::Credentials) => states::okline(ui, Mark::Bad, &fill1(Key::TailProxyCredentials, &typed_shown)),
-                Some(zikaron_net::NotAProxy::Shape) => states::okline(ui, Mark::Bad, &fill1(Key::TailProxyShape, &typed_shown)),
-                None if cur == 2 && written_pass && !differs => states::okline(ui, Mark::Ok, t(Key::ProxyPasswordSet)),
-                None => {}
+        if !(self.ux.proxy_manual || cur == 2) {
+            return;
+        }
+        let c = &mut self.typed.proxy;
+        let kinds: Vec<seg::Cell> = pc::KINDS.iter().map(|(_, w)| seg::Cell::from(*w)).collect();
+        let at = pc::KINDS.iter().position(|(k, _)| *k == c.kind).unwrap_or(0);
+        if let Some(i) = field(ui, t(Key::U3RawType), None, |ui| seg::seg(ui, "proxy-kind", &kinds, at)) {
+            c.kind = pc::KINDS[i].0;
+        }
+        let checked = pc::check(c);
+        let is_bad = |b: Bad| matches!(&checked, Err(v) if v.contains(&b));
+        let host_bad = is_bad(Bad::Host) && !c.host.trim().is_empty();
+        let host = field(ui, t(Key::ProxyCellHost), None, |ui| {
+            let w = ui.available_width();
+            input::field(ui, &mut c.host, t(Key::ProxyHint), w, input::Look { mono: true, bad: host_bad, ..Default::default() })
+        });
+        // A whole address in the host cell, pasted or left there, is split into the cells (a password it carries
+        // fills the password cell; none leaves that cell as it is).
+        let pasted = host.has_focus() && ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Paste(_))));
+        if pasted || !host.has_focus() {
+            if let Some(split) = pc::of_address(&c.host, c.kind) {
+                let pass = if split.pass.is_empty() { std::mem::take(&mut c.pass) } else { split.pass.clone() };
+                *c = pc::Cells { pass, ..split };
             }
-            // Saving goes to the action layer even when the address does not parse: it refuses by name there and
-            // nothing is written.
-            if (resp.lost_focus() && differs && !typed.is_empty()) || hit {
-                self.act(Action::SetProxy { choice: typed }, now);
-                if self.shell.machine.proxy.as_deref().map(|p| p != SYSTEM && p != NONE).unwrap_or(false) {
+        }
+        let port_bad = is_bad(Bad::Port) && !c.port.trim().is_empty();
+        field(ui, t(Key::ProxyCellPort), None, |ui| input::field(ui, &mut c.port, "", CLI_CELL_W * 2.0, input::Look { mono: true, bad: port_bad, ..Default::default() }));
+        let user_bad = (is_bad(Bad::UserMissing) || is_bad(Bad::UserLong)) && !(c.user.is_empty() && c.pass.is_empty());
+        let user_label = if pc::takes_password(c.kind) { Key::ProxyCellUser } else { Key::ProxyCellUserId };
+        field(ui, t(user_label), Some(t(Key::ProxyCellOptional)), |ui| {
+            let w = ui.available_width();
+            input::field(ui, &mut c.user, "", w, input::Look { bad: user_bad, ..Default::default() })
+        });
+        if pc::takes_password(c.kind) {
+            let pass_bad = is_bad(Bad::PassLong);
+            field(ui, t(Key::IdPassword), Some(t(Key::ProxyCellOptional)), |ui| {
+                let w = ui.available_width();
+                input::secret_line_w_marked(ui, &mut c.pass, "", w, pass_bad)
+            });
+        }
+        // Why a cell is red, one line each; else whether a password is kept.
+        let shown_bad: Vec<Key> = match &checked {
+            Err(v) => v
+                .iter()
+                .filter(|b| match b {
+                    Bad::Host => host_bad,
+                    Bad::Port => port_bad,
+                    Bad::UserMissing | Bad::UserLong => user_bad,
+                    Bad::PassLong => true,
+                })
+                .map(|b| match b {
+                    Bad::Host => Key::ProxyBadHost,
+                    Bad::Port => Key::ProxyBadPort,
+                    Bad::UserMissing => Key::ProxyBadUserMissing,
+                    Bad::UserLong => Key::ProxyBadUserLong,
+                    Bad::PassLong => Key::ProxyBadPassLong,
+                })
+                .collect(),
+            Ok(_) => Vec::new(),
+        };
+        for k in &shown_bad {
+            states::okline(ui, Mark::Bad, t(*k));
+        }
+        let typed_pass = !c.pass.is_empty() && pc::takes_password(c.kind);
+        // "Password set" only when saving these cells now would keep the saved password: one judge with saving.
+        let saved_proxy = written.as_deref().and_then(|w| zikaron_net::proxy_of(w).ok());
+        let typed_proxy = pc::check(c).ok().and_then(|a| zikaron_net::proxy_of(&a).ok());
+        if let (Some(s), Some(t_)) = (&saved_proxy, &typed_proxy) {
+            if pc::password_stays(s, t_) {
+                states::okline(ui, Mark::Ok, t(Key::ProxyPasswordSet));
+            }
+        }
+        // Saving: every cell reads, and the cells differ from what is saved (a password typed counts).
+        let shown_written = written.as_deref().map(|w| zikaron_net::proxy_text_shown(w).0).unwrap_or_default();
+        let to_save = checked.ok().filter(|a| cur != 2 || typed_pass || zikaron_net::proxy_text_shown(a).0 != shown_written);
+        if key::key(ui, t(Key::ReadNetSave), Role::Secondary, to_save.is_some()).clicked() {
+            if let Some(address) = to_save {
+                self.act(Action::SetProxy { choice: address }, now);
+                if self.shell.machine.proxy.as_deref().is_some_and(|p| p != SYSTEM && p != NONE) {
                     self.ux.proxy_manual = false;
-                    self.typed.proxy = self.shell.machine.proxy.as_deref().map(|w| zikaron_net::proxy_text_shown(w).0).unwrap_or_default();
+                    self.ux.proxy_seeded = false;
+                    self.typed.proxy.pass.clear();
                 }
             }
         }

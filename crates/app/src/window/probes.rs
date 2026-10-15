@@ -812,6 +812,32 @@ pub fn probe_proxy_section(ctx: &egui::Context, shell: Shell, width: f32, height
     (win.shell, texts)
 }
 
+/// The proxy section with "custom" open and its cells filled as given (as if typed or pasted, no cell holding the
+/// focus), a few frames drawn: the cells after (a whole address in the host cell split into them) and the words
+/// drawn (each wrong cell's reason, whether a password is kept). The password cell is handed back as it is.
+pub fn probe_proxy_cells(ctx: &egui::Context, shell: Shell, cells: crate::proxycells::Cells, width: f32, height: f32) -> (Shell, crate::proxycells::Cells, Vec<String>) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Settings(crate::nav::Section::Network), role));
+    ux.wizard_asked = true;
+    ux.proxy_manual = true;
+    ux.proxy_seeded = true;
+    let typed = Typed { proxy: cells, ..Typed::default() };
+    let mut win = fresh_win(shell, typed, ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut out = egui::FullOutput::default();
+    for _ in 0..8 {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), ..Default::default() };
+        out = ctx.run(input, |c| win.draw(c));
+    }
+    let texts = texts_of(&out).into_iter().map(|d| d.text).collect();
+    let after = win.typed.proxy.clone();
+    (win.shell, after, texts)
+}
+
 /// The window over `place`, then the shell's page set from outside the window (`Action::Show`, as a link or the
 /// command-line door sets it) and a few frames drawn: the route drawn before and after, and the shell's page
 /// after (the window's following never moves it back).

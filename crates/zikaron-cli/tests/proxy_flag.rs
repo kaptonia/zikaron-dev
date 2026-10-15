@@ -185,9 +185,8 @@ fn none_goes_straight() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// `system` and no flag follow the system settings: where those are environment variables, the proxy set there
-/// is used; elsewhere the machine's own settings apply (no stub is named, so the scan is unanswered or a system
-/// proxy refuses it).
+/// `system` and no flag follow the terminal's proxy variables when one is set, on every system (as programs in a
+/// terminal do; the system's own settings are read only when none is).
 #[test]
 fn system_and_no_flag_follow_the_system() {
     let dir = scratch("system");
@@ -196,13 +195,9 @@ fn system_and_no_flag_follow_the_system() {
     let env = [("http_proxy", format!("http://127.0.0.1:{connect}"))];
     for proxy in [Some("system"), None] {
         let r = scan(&dir, n, proxy, &env);
-        if cfg!(all(unix, not(target_os = "macos"))) {
-            assert_eq!(r.code, 0, "{proxy:?}: {}", r.err);
-        } else {
-            assert_eq!(r.code, 4, "{proxy:?}: {}", r.err);
-        }
+        assert_eq!(r.code, 0, "{proxy:?}: {}", r.err);
     }
-    assert_eq!(seen.lock().expect("seen").is_empty(), !cfg!(all(unix, not(target_os = "macos"))));
+    assert!(!seen.lock().expect("seen").is_empty(), "the terminal's proxy was gone through");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

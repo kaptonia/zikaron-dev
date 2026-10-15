@@ -185,6 +185,9 @@ pub enum Wire {
     Shape,
     /// The leg to a proxy failed: the node was never reached (`rpc::is_proxy`).
     Proxy,
+    /// The proxy asked for credentials: none given (`given` false) or the ones given refused
+    /// (`rpc::proxy_credentials_of`).
+    ProxyCredentials { given: bool },
     Other(String),
 }
 
@@ -203,6 +206,7 @@ pub fn said(t: &rpc::Trouble) -> Said {
             None if rpc::is_overlong(e) => Wire::Oversize,
             None if rpc::is_not_json(e) => Wire::NotJson,
             None if rpc::is_shapeless(e) => Wire::Shape,
+            None if rpc::proxy_credentials_of(e).is_some() => Wire::ProxyCredentials { given: rpc::proxy_credentials_of(e) == Some(true) },
             None if rpc::is_proxy(e) => Wire::Proxy,
             None => Wire::Other(e.clone()),
         }),
@@ -304,6 +308,8 @@ pub fn said_fault(url: &str, t: &rpc::Trouble) -> Fault {
             Wire::NotJson => Known::AnswerNotJson,
             Wire::Shape => Known::ChainShape,
             Wire::Proxy => Known::ProxyUnreachable,
+            Wire::ProxyCredentials { given: false } => Known::ProxyCredentialsMissing,
+            Wire::ProxyCredentials { given: true } => Known::ProxyCredentialsRefused,
             Wire::Other(_) => Known::Unreachable,
         },
     };

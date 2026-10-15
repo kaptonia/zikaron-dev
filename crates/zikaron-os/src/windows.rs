@@ -833,9 +833,11 @@ pub(crate) fn reg_text(root: Handle, sub: &str, name: &str) -> Option<String> {
     Some(String::from_utf16_lossy(&units))
 }
 
+/// The system's structure as the call fills it; automatic detection is laid out as the system requires and not
+/// handed on (discovery is not followed).
 #[repr(C)]
 struct IeProxyConfigRaw {
-    auto_detect: i32,
+    _auto_detect: i32,
     auto_config_url: *mut u16,
     proxy: *mut u16,
     proxy_bypass: *mut u16,
@@ -853,7 +855,6 @@ unsafe extern "system" {
 
 /// The current user's proxy settings as the system answers them.
 pub(crate) struct IeProxy {
-    pub auto_detect: bool,
     pub auto_config_url: Option<String>,
     pub proxy: Option<String>,
     pub bypass: Option<String>,
@@ -862,7 +863,7 @@ pub(crate) struct IeProxy {
 /// `WinHttpGetIEProxyConfigForCurrentUser` (`None` when the call fails). The strings it returns are copied and
 /// freed with `GlobalFree`, as the call requires.
 pub(crate) fn ie_proxy_config() -> Option<IeProxy> {
-    let mut raw = IeProxyConfigRaw { auto_detect: 0, auto_config_url: std::ptr::null_mut(), proxy: std::ptr::null_mut(), proxy_bypass: std::ptr::null_mut() };
+    let mut raw = IeProxyConfigRaw { _auto_detect: 0, auto_config_url: std::ptr::null_mut(), proxy: std::ptr::null_mut(), proxy_bypass: std::ptr::null_mut() };
     // SAFETY: the call fills the structure; each non-null string is zero-terminated, read once and freed once.
     unsafe {
         if WinHttpGetIEProxyConfigForCurrentUser(&mut raw) == 0 {
@@ -880,7 +881,7 @@ pub(crate) fn ie_proxy_config() -> Option<IeProxy> {
             GlobalFree(p.cast());
             Some(s).filter(|s| !s.trim().is_empty())
         };
-        Some(IeProxy { auto_detect: raw.auto_detect != 0, auto_config_url: take(raw.auto_config_url), proxy: take(raw.proxy), bypass: take(raw.proxy_bypass) })
+        Some(IeProxy { auto_config_url: take(raw.auto_config_url), proxy: take(raw.proxy), bypass: take(raw.proxy_bypass) })
     }
 }
 

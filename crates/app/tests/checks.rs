@@ -3610,9 +3610,9 @@ fn what_the_node_said_reads_by_one_table_for_the_app_and_the_command_line() {
         assert_eq!(Layer::of(&format!("{} · words", l.code())), Some(l));
     }
     assert_eq!(Layer::of(&format!("{url} 答 HTTP 403")), None);
-    // Every member here is one of the network family's fifteen (the proxy's leg among them), or a refusal about
-    // the call.
-    assert_eq!(Known::NETWORK.len(), 15);
+    // Every member here is one of the network family's seventeen (the proxy's leg, and a proxy asking for
+    // credentials none given or those given refused, among them), or a refusal about the call.
+    assert_eq!(Known::NETWORK.len(), 17);
 }
 
 /// Passcodes allow letters and digits, case-sensitive; all-identical is refused for any passcode, and

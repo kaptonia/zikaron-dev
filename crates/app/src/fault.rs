@@ -105,9 +105,14 @@ pub enum Known {
     NodeRefused,
     /// One of the four TLS layers failed (the layer is in the evidence tail).
     NodeTls,
-    /// The leg to the proxy failed (not reached, refused the tunnel or its credentials): the node was never
-    /// reached (the proxy and its failure are in the evidence tail).
+    /// The leg to the proxy failed (not reached, refused the tunnel): the node was never reached (the proxy and
+    /// its failure are in the evidence tail).
     ProxyUnreachable,
+    /// The proxy asks for a user name and password and none were given (HTTP 407, SOCKS5 asking for them, a
+    /// SOCKS4 user id not confirmed): the node was never reached.
+    ProxyCredentialsMissing,
+    /// The proxy refused the user name and password (or SOCKS4 user id) given: the node was never reached.
+    ProxyCredentialsRefused,
     /// This call's total deadline passed.
     NodeTimeout,
     /// The node's answer passed its end.
@@ -379,7 +384,7 @@ impl Known {
     /// line, not notices. It covers the transport families `chainx::said_fault` dispatches and the node
     /// refusals a read can meet; a member added to that dispatch but not here would be missed by the status
     /// line.
-    pub const NETWORK: [Known; 15] = [
+    pub const NETWORK: [Known; 17] = [
         Known::Unreachable,
         Known::NoEndpoint,
         Known::Disagree,
@@ -387,6 +392,8 @@ impl Known {
         Known::ChainShape,
         Known::NodeTls,
         Known::ProxyUnreachable,
+        Known::ProxyCredentialsMissing,
+        Known::ProxyCredentialsRefused,
         Known::NodeTimeout,
         Known::AnswerTooLong,
         Known::AnswerNotJson,
@@ -397,7 +404,7 @@ impl Known {
         Known::NodeRefused,
     ];
 
-    pub const ALL: [Known; 174] = [
+    pub const ALL: [Known; 176] = [
         Known::FontMissing,
         Known::FileMissing,
         Known::Denied,
@@ -445,6 +452,8 @@ impl Known {
         Known::NodeRefused,
         Known::NodeTls,
         Known::ProxyUnreachable,
+        Known::ProxyCredentialsMissing,
+        Known::ProxyCredentialsRefused,
         Known::NodeTimeout,
         Known::AnswerTooLong,
         Known::AnswerNotJson,
@@ -623,6 +632,8 @@ impl Known {
             Known::NodeRefused => "NODE_REFUSED",
             Known::NodeTls => "NODE_TLS",
             Known::ProxyUnreachable => "PROXY_UNREACHABLE",
+            Known::ProxyCredentialsMissing => "PROXY_CREDENTIALS_MISSING",
+            Known::ProxyCredentialsRefused => "PROXY_CREDENTIALS_REFUSED",
             Known::NodeTimeout => "NODE_TIMEOUT",
             Known::AnswerTooLong => "ANSWER_TOO_LONG",
             Known::AnswerNotJson => "ANSWER_NOT_JSON",
@@ -809,6 +820,8 @@ impl Known {
             Known::NodeRefused => L::FaultWhatNodeRefused,
             Known::NodeTls => L::FaultWhatNodeTls,
             Known::ProxyUnreachable => L::FaultWhatProxyUnreachable,
+            Known::ProxyCredentialsMissing => L::FaultWhatProxyCredentialsMissing,
+            Known::ProxyCredentialsRefused => L::FaultWhatProxyCredentialsRefused,
             Known::NodeTimeout => L::FaultWhatNodeTimeout,
             Known::AnswerTooLong => L::FaultWhatAnswerTooLong,
             Known::AnswerNotJson => L::FaultWhatAnswerNotJson,
@@ -990,6 +1003,8 @@ impl Known {
             Known::NodeRefused => Some(L::FaultNextNodeRefused),
             Known::NodeTls => Some(L::FaultNextNodeTls),
             Known::ProxyUnreachable => Some(L::FaultNextProxyUnreachable),
+            Known::ProxyCredentialsMissing => Some(L::FaultNextProxyCredentialsMissing),
+            Known::ProxyCredentialsRefused => Some(L::FaultNextProxyCredentialsRefused),
             Known::NodeTimeout => Some(L::FaultNextNodeTimeout),
             Known::AnswerTooLong => Some(L::FaultNextAnswerTooLong),
             Known::AnswerNotJson => Some(L::FaultNextAnswerNotJson),
@@ -1171,6 +1186,8 @@ pub fn translate(k: Known) -> &'static str {
         Known::NodeRefused => "节点拒了,原话在证据尾里",
         Known::NodeTls => "与节点的安全连接没建成(哪一层在证据尾里)",
         Known::ProxyUnreachable => "经代理没连上(代理与它的原因在证据尾里)",
+        Known::ProxyCredentialsMissing => "代理要用户名与密码,没有给(代理与它的原话在证据尾里)",
+        Known::ProxyCredentialsRefused => "代理不收所给的用户名与密码(代理与它的原话在证据尾里)",
         Known::NodeTimeout => "节点在时限里没把话说完",
         Known::AnswerTooLong => "节点的答越过了字节上限",
         Known::AnswerNotJson => "节点的答不是 JSON",

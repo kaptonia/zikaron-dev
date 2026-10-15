@@ -68,6 +68,29 @@ pub fn is_proxy(said: &str) -> bool {
     said.contains(PROXY_LEG)
 }
 
+/// The words between the address and the proxy's own words in [`proxy_credentials`]: it asked for credentials
+/// and none were given, or it refused the ones given.
+const PROXY_ASKS: &str = " 经代理没连上(代理要凭据,没有给):";
+const PROXY_REFUSES: &str = " 经代理没连上(代理不收所给的凭据):";
+
+/// The proxy asked who is calling (`zikaron_net::Fail::ProxyCredentials`): no credentials were given with it
+/// (`given` false), or the ones given were refused (`given` true); the node was never reached.
+pub fn proxy_credentials(url: &str, given: bool, said: &str) -> Trouble {
+    Trouble::Transport(format!("{}{}{said}", zikaron_net::sayable(url), if given { PROXY_REFUSES } else { PROXY_ASKS }))
+}
+
+/// Whether a sentence says the proxy asked for credentials ([`proxy_credentials`]): `Some(given)`, `None` for any
+/// other sentence.
+pub fn proxy_credentials_of(said: &str) -> Option<bool> {
+    if said.contains(PROXY_REFUSES) {
+        Some(true)
+    } else if said.contains(PROXY_ASKS) {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 /// Whether a sentence says the total deadline passed.
 pub fn is_late(said: &str) -> bool {
     said.ends_with("秒里没把话说完")
@@ -312,7 +335,7 @@ pub use zikaron_net::{env, Limits};
 
 /// The way out (straight, or through a proxy) is the transport's; the command line chooses it through here,
 /// so the callers of this crate keep one path.
-pub use zikaron_net::{proxy_of, read_address, set_choice, Choice, NotAProxy, NotAnAddress, SystemProxies};
+pub use zikaron_net::{follow_the_terminal, proxy_of, read_address, set_choice, Choice, NotAProxy, NotAnAddress, SystemProxies};
 
 /// Why an endpoint spelling does not read. Closed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -386,6 +409,7 @@ pub fn transport_said(url: &str, f: &zikaron_net::Fail) -> Trouble {
         | zikaron_net::Fail::Certificate(x)
         | zikaron_net::Fail::Stream(x) => Trouble::Transport(format!("{url}: {x}")),
         zikaron_net::Fail::Proxy(x) => proxy_leg(url, x),
+        zikaron_net::Fail::ProxyCredentials { given, said } => proxy_credentials(url, *given, said),
         zikaron_net::Fail::Closed => Trouble::Transport(format!("{url}: 这一问随收场停下")),
     }
 }

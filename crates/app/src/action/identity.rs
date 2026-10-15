@@ -377,9 +377,10 @@ pub(super) fn set_appearance(shell: &mut Shell, appearance: &str) -> Result<Stri
 
 /// Writes this machine's proxy choice: `system`, `none`, or a proxy address parsed by the transport's own
 /// parser (`zikaron_net::proxy_of`), kept with its credentials in the sealed machine settings; an address it
-/// rejects is refused by name before anything is written. A user name typed again without its password keeps
-/// the password already saved for that proxy (the settings page never shows a saved password back). Returns the
-/// choice as it may be shown: never the password.
+/// rejects is refused by name before anything is written. An address given without a password keeps the one saved
+/// only for the very proxy it was given to under the same user name (`proxycells::password_stays`; the settings
+/// page never shows a saved password back, and says one is set by the same judge); another kind, host, port or user
+/// name, and the password does not go with it. Returns the choice as it may be shown: never the password.
 pub(super) fn set_proxy(shell: &mut Shell, choice: &str) -> Result<String, crate::fault::Fault> {
     use crate::fault::{Fault, Known};
     let c = choice.trim();
@@ -388,11 +389,9 @@ pub(super) fn set_proxy(shell: &mut Shell, choice: &str) -> Result<String, crate
         crate::machine::proxy::SYSTEM | crate::machine::proxy::NONE => c.to_string(),
         typed => match zikaron_net::proxy_of(typed) {
             Ok(mut p) => {
-                let before = shell.machine.proxy.as_deref().and_then(|w| zikaron_net::proxy_of(w).ok()).filter(|b| (b.kind, &b.host, b.port) == (p.kind, &p.host, p.port));
-                if let (Some(a), Some(b)) = (p.auth.as_mut().filter(|a| a.pass.is_none()), before.and_then(|b| b.auth)) {
-                    if b.user == a.user {
-                        a.pass = b.pass;
-                    }
+                let before = shell.machine.proxy.as_deref().and_then(|w| zikaron_net::proxy_of(w).ok()).filter(|b| crate::proxycells::password_stays(b, &p));
+                if let (Some(a), Some(b)) = (p.auth.as_mut(), before.and_then(|b| b.auth)) {
+                    a.pass = b.pass;
                 }
                 p.written()
             }

@@ -1,14 +1,18 @@
 //! System proxy settings, read only, where each system keeps the settings in force:
 //!
 //! - macOS: the network configuration's proxies for the primary service, as `scutil --proxy` prints them
-//!   (explicit proxies, the automatic configuration script, automatic discovery).
+//!   (explicit proxies and the automatic configuration script).
 //! - Windows: the current user's settings as the system answers them (`WinHttpGetIEProxyConfigForCurrentUser`:
-//!   automatic detection, the configuration script, the proxy list and its bypass list); under the machine-wide
+//!   the configuration script, the proxy list and its bypass list); under the machine-wide
 //!   policy `ProxySettingsPerUser = 0`, the machine's settings instead; the user's registry values when the call
 //!   answers nothing.
 //! - Linux and other unix: the desktop's settings where they are stored on disk (KDE's `kioslaverc`; GNOME,
 //!   Cinnamon and MATE's GSettings, from the dconf database file or the keyfile backend; no program is run),
 //!   else the environment (`https_proxy`, `http_proxy`, `all_proxy`, `no_proxy`, lower or upper case).
+//!
+//! Automatic discovery (WPAD: a script looked for by the name `wpad` on whatever network the machine is on) is
+//! not read on any system: only a script at an address the person set is followed, so discovery switched on with
+//! nothing else set reads as nothing set.
 //!
 //! Credentials written into a proxy address (`user:pass@`) are kept for the proxy that asks for them. The
 //! parsers are plain functions, tested on every system.
@@ -38,8 +42,8 @@ impl Drop for Place {
     }
 }
 
-/// System proxy settings: the https, http and SOCKS proxies, the exception list, the automatic configuration
-/// script's address, and whether automatic discovery (WPAD) is on.
+/// System proxy settings: the https, http and SOCKS proxies, the exception list and the automatic configuration
+/// script's address.
 #[derive(Clone, Default, PartialEq, Eq, Debug)]
 pub struct Proxies {
     pub https: Option<Place>,
@@ -47,7 +51,6 @@ pub struct Proxies {
     pub socks: Option<Place>,
     pub exceptions: Vec<String>,
     pub pac_url: Option<String>,
-    pub auto_detect: bool,
 }
 
 /// `%XX` decoded (credentials in a proxy address may be percent-encoded); a malformed escape stays as written.
@@ -173,11 +176,10 @@ pub fn from_windows_server(server: &str) -> (Option<Place>, Option<Place>, Optio
 }
 
 /// Settings from Windows: whether a proxy list is in force and the list (`server`), the bypass list
-/// (`;`-separated, possibly including `<local>`), the configuration script's address (empty when none) and
-/// automatic detection.
-pub fn from_windows(enabled: bool, server: &str, overrides: &str, auto_config_url: &str, auto_detect: bool) -> Proxies {
+/// (`;`-separated, possibly including `<local>`) and the configuration script's address (empty when none).
+pub fn from_windows(enabled: bool, server: &str, overrides: &str, auto_config_url: &str) -> Proxies {
     let pac = auto_config_url.trim();
-    let mut p = Proxies { pac_url: (!pac.is_empty()).then(|| pac.to_string()), auto_detect, ..Default::default() };
+    let mut p = Proxies { pac_url: (!pac.is_empty()).then(|| pac.to_string()), ..Default::default() };
     if !enabled {
         return p;
     }
@@ -188,8 +190,8 @@ pub fn from_windows(enabled: bool, server: &str, overrides: &str, auto_config_ur
 
 /// Parse macOS `scutil --proxy` output (`Key : value` lines, `Key : <array> {` blocks of `N : value`): the
 /// https, http and SOCKS proxies when their `…Enable` is 1 with a host and port, `ExceptionsList`,
-/// `ExcludeSimpleHostnames` (as `<local>`), the configuration script (`ProxyAutoConfigEnable` with
-/// `ProxyAutoConfigURLString`) and automatic discovery (`ProxyAutoDiscoveryEnable`).
+/// `ExcludeSimpleHostnames` (as `<local>`) and the configuration script (`ProxyAutoConfigEnable` with
+/// `ProxyAutoConfigURLString`).
 pub fn from_scutil(text: &str) -> Proxies {
     let mut values: Vec<(String, String)> = Vec::new();
     let mut exceptions: Vec<String> = Vec::new();
@@ -231,7 +233,6 @@ pub fn from_scutil(text: &str) -> Proxies {
         socks: place("SOCKSEnable", "SOCKSProxy", "SOCKSPort", "socks5"),
         exceptions,
         pac_url: on("ProxyAutoConfigEnable").then(|| get("ProxyAutoConfigURLString").unwrap_or("").trim().to_string()).filter(|u| !u.is_empty()),
-        auto_detect: on("ProxyAutoDiscoveryEnable"),
     }
 }
 
@@ -248,7 +249,7 @@ fn kde_place(v: &str) -> Option<Place> {
 
 /// Settings from KDE's `kioslaverc` (group `[Proxy Settings]`): `ProxyType` 0 none, 1 manual (`httpProxy`,
 /// `httpsProxy`, `socksProxy`, `NoProxyFor`), 2 the configuration script (`Proxy Config Script`), 3 automatic
-/// discovery. The SOCKS value is a SOCKS5 proxy whatever scheme it is written with (KDE writes `http://IP:PORT`
+/// discovery (not followed: read as nothing set). The SOCKS value is a SOCKS5 proxy whatever scheme it is written with (KDE writes `http://IP:PORT`
 /// there). `None` when the file names no type, type 4 (the environment), or another.
 pub fn from_kioslaverc(text: &str) -> Option<Proxies> {
     let mut group = String::new();
@@ -266,7 +267,7 @@ pub fn from_kioslaverc(text: &str) -> Option<Proxies> {
     let get = |k: &str| vals.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
     let mut p = Proxies::default();
     match get("ProxyType").and_then(|t| t.parse::<u8>().ok())? {
-        0 => {}
+        0 | 3 => {}
         1 => {
             p.http = get("httpProxy").as_deref().and_then(kde_place);
             p.https = get("httpsProxy").as_deref().and_then(kde_place);
@@ -277,7 +278,6 @@ pub fn from_kioslaverc(text: &str) -> Option<Proxies> {
             p.exceptions = get("NoProxyFor").map(|v| v.split(',').map(|e| e.trim().to_string()).filter(|e| !e.is_empty()).collect()).unwrap_or_default();
         }
         2 => p.pac_url = get("Proxy Config Script").filter(|u| !u.trim().is_empty()),
-        3 => p.auto_detect = true,
         _ => return None,
     }
     Some(p)
@@ -295,7 +295,7 @@ pub enum GValue {
 /// Settings from GSettings (`org.gnome.system.proxy`, also read by Cinnamon and MATE), keyed by dconf path
 /// (`/system/proxy/mode`, `/system/proxy/http/host` …): mode `none`; `manual` (each kind's host and port, the
 /// http proxy's credentials when `use-authentication` is on, `use-same-proxy`, `ignore-hosts`); `auto` (the
-/// script's address; none means automatic discovery). `None` when no mode is stored (never set: the
+/// script's address; none means automatic discovery, not followed: read as nothing set). `None` when no mode is stored (never set: the
 /// environment is read instead).
 pub fn from_gsettings(get: impl Fn(&str) -> Option<GValue>) -> Option<Proxies> {
     let s = |k: &str| match get(k) {
@@ -331,10 +331,7 @@ pub fn from_gsettings(get: impl Fn(&str) -> Option<GValue>) -> Option<Proxies> {
                 p.exceptions = v;
             }
         }
-        "auto" => match s("/system/proxy/autoconfig-url").filter(|u| !u.trim().is_empty()) {
-            Some(u) => p.pac_url = Some(u),
-            None => p.auto_detect = true,
-        },
+        "auto" => p.pac_url = s("/system/proxy/autoconfig-url").filter(|u| !u.trim().is_empty()),
         _ => {}
     }
     Some(p)
@@ -496,6 +493,26 @@ pub fn system() -> Option<Proxies> {
     imp::read()
 }
 
+/// The proxy variables a terminal sets (`https_proxy`, `http_proxy`, `all_proxy`, lower or upper case; `no_proxy`
+/// alone sets no proxy).
+const TERMINAL_VARS: [&str; 3] = ["https_proxy", "http_proxy", "all_proxy"];
+
+/// The settings a command line follows, as programs in a terminal take them on every system: the terminal's
+/// proxy variables when any is set ([`from_env`]); else the system's settings ([`system`]).
+pub fn for_the_terminal() -> Option<Proxies> {
+    terminal_or(|k| std::env::var(k).ok(), system)
+}
+
+/// [`for_the_terminal`] over a given environment and system reading.
+pub fn terminal_or(var: impl Fn(&str) -> Option<String>, otherwise: impl FnOnce() -> Option<Proxies>) -> Option<Proxies> {
+    let set = TERMINAL_VARS.iter().any(|k| var(k).or_else(|| var(&k.to_ascii_uppercase())).is_some_and(|v| !v.trim().is_empty()));
+    if set {
+        Some(from_env(var))
+    } else {
+        otherwise()
+    }
+}
+
 /// Maximum run time for the child process that reads system settings (macOS); after it the child is killed
 /// and the settings count as unread.
 pub const CHILD_CAP: std::time::Duration = std::time::Duration::from_secs(5);
@@ -546,7 +563,7 @@ mod imp {
     /// The registry's form under one root.
     fn registry(root: Handle) -> Proxies {
         let text = |name: &str| reg_text(root, PATH, name).unwrap_or_default();
-        super::from_windows(reg_dword(root, PATH, "ProxyEnable").unwrap_or(0) != 0, &text("ProxyServer"), &text("ProxyOverride"), &text("AutoConfigURL"), false)
+        super::from_windows(reg_dword(root, PATH, "ProxyEnable").unwrap_or(0) != 0, &text("ProxyServer"), &text("ProxyOverride"), &text("AutoConfigURL"))
     }
 
     pub fn read() -> Option<Proxies> {
@@ -554,7 +571,7 @@ mod imp {
             return Some(registry(HKEY_LOCAL_MACHINE));
         }
         Some(match ie_proxy_config() {
-            Some(c) => super::from_windows(c.proxy.is_some(), c.proxy.as_deref().unwrap_or(""), c.bypass.as_deref().unwrap_or(""), c.auto_config_url.as_deref().unwrap_or(""), c.auto_detect),
+            Some(c) => super::from_windows(c.proxy.is_some(), c.proxy.as_deref().unwrap_or(""), c.bypass.as_deref().unwrap_or(""), c.auto_config_url.as_deref().unwrap_or("")),
             None => registry(HKEY_CURRENT_USER),
         })
     }
@@ -623,42 +640,59 @@ mod tests {
         assert_eq!(from_env(env(&[])), Proxies::default());
     }
 
-    /// Windows: the list's forms (one place with or without `http://`, per-kind entries, `socks=` alone as
-    /// SOCKS5), the bypass list, the script address and automatic detection; disabled keeps only those two.
+    /// The command line's reading: any of the terminal's three proxy variables, in either case, set and not blank,
+    /// is followed as the environment says; `no_proxy` alone, or blank values, leave the system's settings.
     #[test]
-    fn the_windows_forms_are_read() {
-        let p = from_windows(true, "127.0.0.1:7890", "*.local;<local>;10.*", "", false);
-        assert_eq!((hp(&p.https), hp(&p.http), hp(&p.socks)), (sp("", "127.0.0.1", 7890), sp("", "127.0.0.1", 7890), None));
-        assert_eq!(p.exceptions, vec!["*.local".to_string(), "<local>".to_string(), "10.*".to_string()]);
-        assert_eq!(hp(&from_windows(true, "http://127.0.0.1:2080", "", "", false).https), sp("http", "127.0.0.1", 2080));
-        let p = from_windows(true, "http=h:1;https=s:2;socks=k:3;ftp=f:4", "", "", false);
-        assert_eq!((hp(&p.https), hp(&p.http), hp(&p.socks)), (sp("", "s", 2), sp("", "h", 1), sp("socks5", "k", 3)));
-        let p = from_windows(true, "socks=127.0.0.1:10808", "", "", false);
-        assert_eq!((hp(&p.https), hp(&p.http), hp(&p.socks)), (None, None, sp("socks5", "127.0.0.1", 10808)));
-        assert_eq!(from_windows(false, "h:1", "", "", false), Proxies::default());
-        let p = from_windows(false, "", "", " http://127.0.0.1:10811/pac ", true);
-        assert_eq!((p.pac_url.as_deref(), p.auto_detect), (Some("http://127.0.0.1:10811/pac"), true));
+    fn the_terminal_comes_before_the_system_for_the_command_line() {
+        let system = || Some(Proxies { pac_url: Some("http://127.0.0.1:1/pac".into()), ..Default::default() });
+        let env = |pairs: &'static [(&'static str, &'static str)]| move |k: &str| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string());
+        for vars in [&[("https_proxy", "http://127.0.0.1:7890")][..], &[("HTTP_PROXY", "http://127.0.0.1:7890")], &[("all_proxy", "socks5://127.0.0.1:7891")]] {
+            let p = terminal_or(env(vars), system).expect("read");
+            assert_eq!(p.pac_url, None, "{vars:?}: the terminal's, not the system's");
+            assert!(p.https.is_some() || p.http.is_some() || p.socks.is_some(), "{vars:?}");
+        }
+        for vars in [&[][..], &[("no_proxy", "localhost")], &[("https_proxy", "  ")]] {
+            assert_eq!(terminal_or(env(vars), system).and_then(|p| p.pac_url), Some("http://127.0.0.1:1/pac".into()), "{vars:?}: the system's");
+        }
     }
 
-    /// macOS: explicit proxies (one switched off), exceptions, simple host names excluded, the script address,
-    /// automatic discovery; nothing set.
+    /// Windows: the list's forms (one place with or without `http://`, per-kind entries, `socks=` alone as
+    /// SOCKS5), the bypass list and the script address; disabled keeps only the script address.
+    #[test]
+    fn the_windows_forms_are_read() {
+        let p = from_windows(true, "127.0.0.1:7890", "*.local;<local>;10.*", "");
+        assert_eq!((hp(&p.https), hp(&p.http), hp(&p.socks)), (sp("", "127.0.0.1", 7890), sp("", "127.0.0.1", 7890), None));
+        assert_eq!(p.exceptions, vec!["*.local".to_string(), "<local>".to_string(), "10.*".to_string()]);
+        assert_eq!(hp(&from_windows(true, "http://127.0.0.1:2080", "", "").https), sp("http", "127.0.0.1", 2080));
+        let p = from_windows(true, "http=h:1;https=s:2;socks=k:3;ftp=f:4", "", "");
+        assert_eq!((hp(&p.https), hp(&p.http), hp(&p.socks)), (sp("", "s", 2), sp("", "h", 1), sp("socks5", "k", 3)));
+        let p = from_windows(true, "socks=127.0.0.1:10808", "", "");
+        assert_eq!((hp(&p.https), hp(&p.http), hp(&p.socks)), (None, None, sp("socks5", "127.0.0.1", 10808)));
+        assert_eq!(from_windows(false, "h:1", "", ""), Proxies::default());
+        let p = from_windows(false, "", "", " http://127.0.0.1:10811/pac ");
+        assert_eq!(p.pac_url.as_deref(), Some("http://127.0.0.1:10811/pac"));
+    }
+
+    /// macOS: explicit proxies (one switched off), exceptions, simple host names excluded, the script address
+    /// (automatic discovery beside it not read); discovery alone reads as nothing set; nothing set.
     #[test]
     fn the_macos_configuration_is_read() {
         let on = "<dictionary> {\n  ExceptionsList : <array> {\n    0 : *.local\n    1 : 169.254/16\n  }\n  ExcludeSimpleHostnames : 1\n  HTTPEnable : 1\n  HTTPPort : 7890\n  HTTPProxy : 127.0.0.1\n  HTTPSEnable : 1\n  HTTPSPort : 7890\n  HTTPSProxy : 127.0.0.1\n  SOCKSEnable : 0\n  SOCKSPort : 7891\n  SOCKSProxy : 127.0.0.1\n}\n";
         let p = from_scutil(on);
         assert_eq!((hp(&p.https), hp(&p.http), hp(&p.socks)), (sp("http", "127.0.0.1", 7890), sp("http", "127.0.0.1", 7890), None));
         assert_eq!(p.exceptions, vec!["*.local".to_string(), "169.254/16".to_string(), "<local>".to_string()]);
-        assert_eq!((p.pac_url.as_deref(), p.auto_detect), (None, false));
+        assert_eq!(p.pac_url.as_deref(), None);
         let pac = from_scutil("<dictionary> {\n  ProxyAutoConfigEnable : 1\n  ProxyAutoConfigURLString : http://localhost:1089/proxy.pac\n  ProxyAutoDiscoveryEnable : 1\n}\n");
-        assert_eq!((pac.pac_url.as_deref(), pac.auto_detect, pac.https.is_none()), (Some("http://localhost:1089/proxy.pac"), true, true));
+        assert_eq!((pac.pac_url.as_deref(), pac.https.is_none()), (Some("http://localhost:1089/proxy.pac"), true));
+        assert_eq!(from_scutil("<dictionary> {\n  ProxyAutoDiscoveryEnable : 1\n}\n"), Proxies::default());
         let off = from_scutil("<dictionary> {\n  ProxyAutoConfigEnable : 0\n  ProxyAutoConfigURLString : http://localhost:1089/proxy.pac\n}\n");
         assert_eq!(off.pac_url, None);
         let nothing = from_scutil("<dictionary> {\n  ExceptionsList : <array> {\n    0 : *.local\n  }\n  FTPPassive : 1\n}\n");
-        assert_eq!((nothing.https, nothing.socks, nothing.pac_url, nothing.auto_detect), (None, None, None, false));
+        assert_eq!((nothing.https, nothing.socks, nothing.pac_url), (None, None, None));
     }
 
-    /// KDE: manual with each value form (the SOCKS value is SOCKS5 whatever its scheme), the script, discovery,
-    /// none; the environment type and a file without a type are left to the environment.
+    /// KDE: manual with each value form (the SOCKS value is SOCKS5 whatever its scheme), the script, discovery
+    /// (read as nothing set), none; the environment type and a file without a type are left to the environment.
     #[test]
     fn kde_settings_are_read() {
         let p = from_kioslaverc("[General]\nx=1\n[Proxy Settings]\nProxyType=1\nhttpProxy=http://127.0.0.1 7890\nhttpsProxy=http://127.0.0.1:7890\nsocksProxy=http://127.0.0.1:10808\nNoProxyFor=localhost,127.0.0.1\n").expect("manual");
@@ -666,7 +700,7 @@ mod tests {
         assert_eq!(p.exceptions, vec!["localhost".to_string(), "127.0.0.1".to_string()]);
         assert_eq!(from_kioslaverc("[Proxy Settings]\nProxyType=1\nsocksProxy=socks://127.0.0.1 1089\n").and_then(|q| hp(&q.socks)), sp("socks5", "127.0.0.1", 1089));
         assert_eq!(from_kioslaverc("[Proxy Settings]\nProxyType=2\nProxy Config Script=http://127.0.0.1:1/pac\n").and_then(|p| p.pac_url.clone()), Some("http://127.0.0.1:1/pac".into()));
-        assert!(from_kioslaverc("[Proxy Settings]\nProxyType=3\n").is_some_and(|p| p.auto_detect));
+        assert_eq!(from_kioslaverc("[Proxy Settings]\nProxyType=3\n"), Some(Proxies::default()));
         assert_eq!(from_kioslaverc("[Proxy Settings]\nProxyType=0\nhttpProxy=http://h:1\n"), Some(Proxies::default()));
         assert_eq!(from_kioslaverc("[Proxy Settings]\nProxyType=4\n"), None);
         assert_eq!(from_kioslaverc("[Other]\nProxyType=1\n"), None);
@@ -738,7 +772,7 @@ mod tests {
     }
 
     /// GNOME: the dconf database read back key by key; manual with credentials and the same proxy for https;
-    /// the script; discovery; nothing stored; the keyfile backend.
+    /// the script; discovery (`auto` without a script address, read as nothing set); nothing stored; the keyfile backend.
     #[test]
     fn gnome_settings_are_read_from_the_dconf_database_and_the_keyfile() {
         let db = gvdb(&[
@@ -760,7 +794,7 @@ mod tests {
         let auto = gvdb(&[("/system/proxy/mode", GValue::Str("auto".into())), ("/system/proxy/autoconfig-url", GValue::Str("http://127.0.0.1:1/pac".into()))]);
         assert_eq!(from_gsettings(lookup(gsettings_from_gvdb(&auto).expect("db"))).and_then(|p| p.pac_url.clone()), Some("http://127.0.0.1:1/pac".into()));
         let wpad = gvdb(&[("/system/proxy/mode", GValue::Str("auto".into()))]);
-        assert!(from_gsettings(lookup(gsettings_from_gvdb(&wpad).expect("db"))).is_some_and(|p| p.auto_detect));
+        assert_eq!(from_gsettings(lookup(gsettings_from_gvdb(&wpad).expect("db"))), Some(Proxies::default()));
         let unset = gvdb(&[("/org/other/key", GValue::Str("x".into()))]);
         assert_eq!(from_gsettings(lookup(gsettings_from_gvdb(&unset).expect("db"))), None);
         assert!(gsettings_from_gvdb(b"not a database").is_none());

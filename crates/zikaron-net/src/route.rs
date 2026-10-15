@@ -4,16 +4,18 @@
 //! The route is chosen per new connection from one of three settings: follow the system (platform proxy
 //! settings, read when the connection opens, so a system change applies to the next connection without a
 //! restart), none, or one manually entered proxy. Loopback hosts always go direct; under a manual proxy,
-//! private, link-local and `.local` hosts do too. Following the system, its automatic settings come first, as
-//! browsers take them: automatic discovery, then the configuration script ([`crate::pac`]), then the explicit
-//! proxies; a script names a list of ways, tried in order until one opens.
+//! private, link-local and `.local` hosts do too. Following the system, a configuration script at the address it
+//! names comes first ([`crate::pac`]), then the explicit proxies; a script names a list of ways, tried in order
+//! until one opens. Automatic discovery (WPAD) is not followed.
 //!
 //! Through a proxy, the proxy resolves the host name (CONNECT names it, SOCKS5 sends the domain form, SOCKS4
 //! the 4a domain tail); the leg to the proxy is dialed like any connection (every address, one deadline); to an
 //! HTTPS proxy it is TLS, verified against the proxy's name; TLS stays end to end with the node, verified
 //! against the node's name. A proxy that asks for credentials gets the ones written with it (HTTP Basic,
-//! SOCKS5 user name and password, the SOCKS4 user id); the password is wiped once written. An unreachable or
-//! refusing proxy is a connection failure naming the proxy and its answer; no extra failure kind is added.
+//! SOCKS5 user name and password, the SOCKS4 user id); the password is wiped once written. A proxy that asks for
+//! credentials when none are written, or refuses the ones written, is its own failure
+//! ([`crate::Fail::ProxyCredentials`]); any other unreachable or refusing proxy is a connection failure naming the
+//! proxy and its answer.
 
 use crate::{dial, keep, Clock, Fail, Scheme, Sock, Target};
 use std::io::{Read, Write};
@@ -221,7 +223,7 @@ pub fn proxy_text_shown(typed: &str) -> (String, bool) {
 }
 
 /// The system proxy settings in the transport's form: the https proxy, the http proxy, a SOCKS proxy, the
-/// exception list, the configuration script's address, and whether automatic discovery is on.
+/// exception list and the configuration script's address.
 #[derive(Clone, Default, PartialEq, Eq, Debug)]
 pub struct SystemProxies {
     pub https: Option<Proxy>,
@@ -229,13 +231,12 @@ pub struct SystemProxies {
     pub socks: Option<Proxy>,
     pub exceptions: Vec<String>,
     pub pac_url: Option<String>,
-    pub auto_detect: bool,
 }
 
 impl SystemProxies {
-    /// Whether the system names automatic settings (a script or discovery).
+    /// Whether the system names automatic settings (a configuration script).
     pub fn automatic(&self) -> bool {
-        self.pac_url.is_some() || self.auto_detect
+        self.pac_url.is_some()
     }
 }
 
@@ -320,7 +321,6 @@ impl SystemProxies {
             socks: p.socks.as_ref().and_then(|x| system_proxy(x, true)),
             exceptions: p.exceptions.clone(),
             pac_url: p.pac_url.clone(),
-            auto_detect: p.auto_detect,
         }
     }
 }
@@ -346,6 +346,17 @@ struct System {
 
 static SYSTEM: Mutex<System> = Mutex::new(System { reader: platform, epoch: 0, last: None, landed: 0, reading: false });
 static SYSTEM_LANDED: Condvar = Condvar::new();
+
+/// Follow the system the way a command line does from now on: the terminal's proxy variables when any is set,
+/// else the system's settings (`zikaron_os::proxy::for_the_terminal`, the same on every system). The desktop
+/// follows the system's settings alone.
+pub fn follow_the_terminal() {
+    read_system_with(terminal);
+}
+
+fn terminal() -> Option<SystemProxies> {
+    zikaron_os::proxy::for_the_terminal().map(|p| SystemProxies::from_platform(&p))
+}
 
 /// Read the system settings through `read` from now on instead of the platform (for tests and test harnesses;
 /// `None`: the settings could not be read).
@@ -430,7 +441,7 @@ pub enum Way {
 /// What the system's automatic settings did for a route. Closed set.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Script {
-    /// None in force: none named, discovery found none, or the setting is not to follow the system.
+    /// None in force: no script named, or the setting is not to follow the system.
     None,
     /// The configuration script named the ways.
     Used,
@@ -777,6 +788,7 @@ fn through(p: &Proxy, f: Fail) -> Fail {
             Fail::Proxy(format!("via proxy {}: {x}", p.spelled()))
         }
         Fail::Overlong(n) => Fail::Proxy(format!("via proxy {}: its answer passed {n} bytes", p.spelled())),
+        Fail::ProxyCredentials { given, said } => Fail::ProxyCredentials { given, said: format!("via proxy {}: {said}", p.spelled()) },
     }
 }
 
@@ -908,8 +920,8 @@ fn connect_tunnel(sock: &mut Sock, t: &Target, auth: Option<&Auth>, clock: &Cloc
     };
     match status {
         Some(s) if (200..300).contains(&s) => Ok(()),
-        Some(407) if auth.is_none() => Err(Fail::Stream(format!("CONNECT {place} answered {line} (it asks for credentials, and none are written with this proxy)"))),
-        Some(407) => Err(Fail::Stream(format!("CONNECT {place} answered {line} (the credentials written with this proxy were refused)"))),
+        Some(407) if auth.is_none() => Err(Fail::ProxyCredentials { given: false, said: format!("CONNECT {place} answered {line} (it asks for credentials, and none are written with this proxy)") }),
+        Some(407) => Err(Fail::ProxyCredentials { given: true, said: format!("CONNECT {place} answered {line} (the credentials written with this proxy were refused)") }),
         _ => Err(Fail::Stream(format!("CONNECT {place} answered {line}"))),
     }
 }
@@ -958,10 +970,10 @@ fn socks_tunnel(sock: &mut Sock, t: &Target, auth: Option<&Auth>, clock: &Clock)
             let mut said = [0u8; 2];
             read_exact(sock, &mut said, clock)?;
             if said[1] != 0 {
-                return Err(Fail::Stream(format!("SOCKS5 refused the user name and password written with it (status {})", said[1])));
+                return Err(Fail::ProxyCredentials { given: true, said: format!("SOCKS5 refused the user name and password written with it (status {})", said[1]) });
             }
         }
-        ([5, 0xFF], None) => return Err(Fail::Stream("SOCKS5 asks for authentication, and no credentials are written with this proxy".into())),
+        ([5, 0xFF], None) => return Err(Fail::ProxyCredentials { given: false, said: "SOCKS5 asks for authentication, and no credentials are written with this proxy".into() }),
         ([5, 0xFF], Some(_)) => return Err(Fail::Stream("SOCKS5 accepts neither no authentication nor a user name and password".into())),
         ([5, m], _) => return Err(Fail::Stream(format!("SOCKS5 picked method {m}, which was not offered"))),
         _ => return Err(Fail::Stream("the SOCKS5 greeting answer does not read".into())),
@@ -1043,7 +1055,10 @@ fn socks4_tunnel(sock: &mut Sock, t: &Target, auth: Option<&Auth>, clock: &Clock
     match reply[1] {
         90 => Ok(()),
         91 => Err(Fail::Stream(format!("SOCKS4 refused {}:{} (code 91: rejected or failed)", host, t.port))),
-        92 | 93 => Err(Fail::Stream(format!("SOCKS4 refused {}:{} (code {}: the user id was not confirmed)", host, t.port, reply[1]))),
+        92 | 93 => Err(Fail::ProxyCredentials {
+            given: auth.is_some_and(|a| !a.user.is_empty()),
+            said: format!("SOCKS4 refused {}:{} (code {}: the user id was not confirmed)", host, t.port, reply[1]),
+        }),
         c => Err(Fail::Stream(format!("SOCKS4 refused {}:{} (code {c})", host, t.port))),
     }
 }

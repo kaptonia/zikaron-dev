@@ -34,7 +34,7 @@ mod route;
 pub use dial::{CONNECT_CAP, STAGGER};
 pub use keep::{close_down, cuts, open_up, IDLE_KEEP, PER_PLACE};
 pub use pac::{Auto, PacTrouble};
-pub use route::{excepted, is_local, is_loopback, proxy_of, proxy_text_shown, read_choice, read_system_with, set_choice, way_for, way_shown, way_shown_under, way_under, Auth, Choice, Kind, NotAProxy, Proxy, Reading, Script, Secret, SystemProxies, Way, SYSTEM_FRESH, SYSTEM_READ_CAP};
+pub use route::{excepted, follow_the_terminal, is_local, is_loopback, proxy_of, proxy_text_shown, read_choice, read_system_with, set_choice, way_for, way_shown, way_shown_under, way_under, Auth, Choice, Kind, NotAProxy, Proxy, Reading, Script, Secret, SystemProxies, Way, SYSTEM_FRESH, SYSTEM_READ_CAP};
 
 // ───────────────────────── The request head ─────────────────────────
 
@@ -331,9 +331,13 @@ pub enum Fail {
     Overlong(usize),
     /// The stream broke, or the response is not valid HTTP.
     Stream(String),
-    /// The leg to a proxy failed (not reached, refused the tunnel or its credentials, broke off), the proxy
-    /// named: the node itself was never reached.
+    /// The leg to a proxy failed (not reached, refused the tunnel, broke off), the proxy named: the node itself
+    /// was never reached.
     Proxy(String),
+    /// The proxy asked who is calling: no credentials were written with it (`given` false), or the ones written
+    /// were refused (`given` true). The proxy and how it asked or refused are in `said`; the node was never
+    /// reached.
+    ProxyCredentials { given: bool, said: String },
     /// The transport is shutting down (the app is quitting): the exchange was cut or never began.
     Closed,
 }
@@ -615,8 +619,13 @@ fn open(t: &Target, ways: &[Way], clock: &Clock) -> Result<keep::Live, Fail> {
         return Err(match failed.len() {
             0 => Fail::Connect("no way to the node".into()),
             1 => failed.remove(0),
+            // Every way tried was a proxy asking for credentials: that, named; given when any was given.
+            _ if failed.iter().all(|f| matches!(f, Fail::ProxyCredentials { .. })) => Fail::ProxyCredentials {
+                given: failed.iter().any(|f| matches!(f, Fail::ProxyCredentials { given: true, .. })),
+                said: failed.iter().map(fail_said).collect::<Vec<_>>().join("; then "),
+            },
             // Every way tried was a proxy and each failed: the proxies' failure, not the node's.
-            _ if failed.iter().all(|f| matches!(f, Fail::Proxy(_))) => Fail::Proxy(failed.iter().map(fail_said).collect::<Vec<_>>().join("; then ")),
+            _ if failed.iter().all(|f| matches!(f, Fail::Proxy(_) | Fail::ProxyCredentials { .. })) => Fail::Proxy(failed.iter().map(fail_said).collect::<Vec<_>>().join("; then ")),
             _ => Fail::Connect(failed.iter().map(fail_said).collect::<Vec<_>>().join("; then ")),
         });
     };
@@ -631,6 +640,7 @@ fn open(t: &Target, ways: &[Way], clock: &Clock) -> Result<keep::Live, Fail> {
 fn fail_said(f: &Fail) -> String {
     match f {
         Fail::Name(x) | Fail::Connect(x) | Fail::Handshake(x) | Fail::Certificate(x) | Fail::Stream(x) | Fail::Proxy(x) => x.clone(),
+        Fail::ProxyCredentials { said, .. } => said.clone(),
         Fail::Late(d) => format!("the deadline passed ({d:?})"),
         Fail::Overlong(n) => format!("an answer passed {n} bytes"),
         Fail::Closed => "closed".into(),

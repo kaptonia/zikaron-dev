@@ -44,8 +44,8 @@ pub const MIN_H: f32 = 560.0;
 
 #[derive(Default)]
 struct Typed {
-    /// The proxy address being typed (settings, network page, "enter one"); never a saved password.
-    proxy: String,
+    /// The custom proxy's cells being typed (settings, network page); the password cell never holds a saved one.
+    proxy: crate::proxycells::Cells,
     home: String,
     cap: String,
     migrate: String,

@@ -342,10 +342,6 @@
     },
     {
      "path": "crates/zikaron-net/tests/auto_proxy.rs",
-     "name": "discovery_finds_a_script_or_passes_on_quietly"
-    },
-    {
-     "path": "crates/zikaron-net/tests/auto_proxy.rs",
      "name": "credentials_go_to_the_proxy_that_asks_and_nowhere_else"
     },
     {

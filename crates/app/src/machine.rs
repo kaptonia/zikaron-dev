@@ -622,7 +622,8 @@ pub fn proxy_now() -> zikaron_net::Choice {
 /// How new connections go now, as one line: through which proxy (its user name if any, never its password), or
 /// direct with the reason when it is not the setting itself (node on this machine, on a local network under a
 /// custom proxy, system settings not read yet); the system's script deciding when its answer is not known yet;
-/// and, when the system's script could not be used, its trouble by name.
+/// and, when the system's script could not be used, its trouble by name (a script on another machine over plain
+/// `http` also says what to do: an `https` address, or a custom proxy).
 pub fn proxy_said(r: &zikaron_net::Reading) -> String {
     use crate::lang::{filln, t, Key};
     use zikaron_net::{Script, Way};
@@ -635,6 +636,7 @@ pub fn proxy_said(r: &zikaron_net::Reading) -> String {
         Way::Direct => t(Key::ProxyNowDirect).to_string(),
     };
     match r.script {
+        Script::Trouble(x @ zikaron_net::PacTrouble::RemoteHttp) => filln(Key::ProxyScriptRemoteHttp, &[&base, x.code()]),
         Script::Trouble(x) => filln(Key::ProxyScriptTrouble, &[&base, x.code()]),
         _ => base,
     }

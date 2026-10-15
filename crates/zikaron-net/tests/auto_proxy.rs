@@ -2,21 +2,21 @@
 //! stub resolves the node's name by piping to a local listener):
 //!
 //! - a configuration script served over HTTP names the ways, tried in order until one opens; one that cannot
-//!   be used is named and the route is the one without it; discovery finds a script or passes on quietly;
+//!   be used is named and the route is the one without it;
 //! - credentials go to the proxy that asks for them (HTTP Basic, SOCKS5 user name and password, SOCKS4 user
 //!   id) and nowhere else;
 //! - an HTTPS proxy is its own TLS leg, the node keeps its own TLS inside it;
 //! - `SOCKS` tries SOCKS5, then SOCKS4 with the name for the proxy to resolve;
 //! - a manual proxy leaves local networks straight.
 //!
-//! Its own test binary: the proxy choice, the system reader, discovery's address and the test root are
-//! process-wide, so its tests take turns.
+//! Its own test binary: the proxy choice, the system reader and the test root are process-wide, so its tests
+//! take turns.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
-use zikaron_net::pac::{discover_at, PacTrouble, RUN_LIMIT, SCRIPT_MAX};
+use zikaron_net::pac::{PacTrouble, RUN_LIMIT, SCRIPT_MAX};
 use zikaron_net::{parse, post_json, read_system_with, set_choice, way_for, Ask, Choice, Fail, Kind, Limits, Proxy, Script, SystemProxies, Way, SYSTEM_READ_CAP};
 
 fn turn() -> MutexGuard<'static, ()> {
@@ -25,7 +25,6 @@ fn turn() -> MutexGuard<'static, ()> {
     let held = TURN.lock().unwrap_or_else(|e| e.into_inner());
     assert!(*ROOT.get_or_init(|| zikaron_net::drive_trust_root(include_bytes!("fixtures/tls-proxy/ca.crt.der"))), "the test root is added before any handshake");
     set_choice(Choice::System);
-    discover_at(None);
     held
 }
 
@@ -421,27 +420,6 @@ fn credentials_longer_than_socks5_carries_are_refused_by_name() {
     assert!(seen.iter().all(|x| !x.starts_with("user ")), "nothing cut was sent: {seen:?}");
 }
 
-/// Discovery: a script found there decides; none found (no answer, not found) passes on to the explicit
-/// proxies without a word.
-#[test]
-fn discovery_finds_a_script_or_passes_on_quietly() {
-    let _t = turn();
-    let (wpad, _) = served(200, script("return 'SOCKS5 127.0.0.1:1080';"));
-    discover_at(Some(format!("http://127.0.0.1:{wpad}/wpad.dat")));
-    system_is(SystemProxies { auto_detect: true, ..Default::default() });
-    let r = reading("https://node.invalid/");
-    assert_eq!((r.way, r.script), (Way::Through(px(Kind::Socks5, 1080)), Script::Used));
-    let explicit = px(Kind::Http, 7890);
-    let (missing, _) = served(404, String::new());
-    for url in [format!("http://127.0.0.1:{}/wpad.dat", closed_port()), format!("http://127.0.0.1:{missing}/wpad.dat")] {
-        discover_at(Some(url.clone()));
-        system_is(SystemProxies { auto_detect: true, https: Some(explicit.clone()), ..Default::default() });
-        let r = reading("https://node.invalid/");
-        assert_eq!((r.way, r.script), (Way::Through(explicit.clone()), Script::None), "{url}");
-    }
-    discover_at(None);
-}
-
 /// HTTP Basic to a CONNECT proxy that asks (the node never sees it); a proxy that asks and gets none says so;
 /// SOCKS5's user name and password exchange, refused when wrong.
 #[test]
@@ -455,7 +433,7 @@ fn credentials_go_to_the_proxy_that_asks_and_nowhere_else() {
     assert!(node_seen.lock().unwrap().iter().all(|h| !h.contains("Proxy-Authorization")), "the node never sees it");
     set_choice(Choice::Manual(px(Kind::Http, hp)));
     match ask(&format!("http://node.invalid:{n}/")) {
-        Err(Fail::Proxy(why)) => assert!(why.contains("407") && why.contains("asks for credentials"), "{why}"),
+        Err(Fail::ProxyCredentials { given: false, said: why }) => assert!(why.contains("407") && why.contains("asks for credentials"), "{why}"),
         other => panic!("{other:?}"),
     }
     let (s5, socks_seen) = socks5(n, Some(("u", "pw")));
@@ -464,12 +442,12 @@ fn credentials_go_to_the_proxy_that_asks_and_nowhere_else() {
     assert_eq!(socks_seen.lock().unwrap()[..3].to_vec(), vec!["method 2".to_string(), "user u pass pw".to_string(), format!("node.invalid:{n}")]);
     set_choice(Choice::Manual(zikaron_net::proxy_of(&format!("socks5://u:bad@127.0.0.1:{s5}")).expect("typed")));
     match ask(&format!("http://node.invalid:{n}/")) {
-        Err(Fail::Proxy(why)) => assert!(why.contains("refused the user name and password"), "{why}"),
+        Err(Fail::ProxyCredentials { given: true, said: why }) => assert!(why.contains("refused the user name and password"), "{why}"),
         other => panic!("{other:?}"),
     }
     set_choice(Choice::Manual(px(Kind::Socks5, s5)));
     match ask(&format!("http://node.invalid:{n}/")) {
-        Err(Fail::Proxy(why)) => assert!(why.contains("asks for authentication"), "{why}"),
+        Err(Fail::ProxyCredentials { given: false, said: why }) => assert!(why.contains("asks for authentication"), "{why}"),
         other => panic!("{other:?}"),
     }
 }

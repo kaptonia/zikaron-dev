@@ -1,10 +1,12 @@
-//! The system's automatic proxy settings: automatic discovery (WPAD, by name only: `http://wpad/wpad.dat`) and
-//! the proxy auto-configuration script (PAC), run as browsers run it.
+//! The system's automatic proxy settings: the proxy auto-configuration script (PAC) at the address the system
+//! names, run as browsers run it. Automatic discovery (WPAD, a script looked for by the name `wpad` on whatever
+//! network the machine is on) is not followed: only a script at an address the person set runs here.
 //!
 //! The script is fetched directly (never through a proxy), within [`FETCH_LIMIT`] and up to [`SCRIPT_MAX`]
 //! bytes, following up to [`REDIRECTS`] redirects (each `Location` resolved against the address it came from,
-//! RFC 3986 §5.2); only `http` and `https` addresses are fetched (a `file:`
-//! script is not read, as browsers do not). Each fetch has its whole limit on a thread of its own, whatever the
+//! RFC 3986 §5.2). It is fetched only from this machine over `http` or from anywhere over `https`
+//! ([`script_source`], the address and every redirect judged alike): someone else on the network can hand no
+//! script in. A `file:` script is not read, as browsers do not. Each fetch has its whole limit on a thread of its own, whatever the
 //! exchange that wanted it has left (it waits within its own deadline); what the fetch found, a script or none,
 //! is kept by the address for [`SCRIPT_FRESH`]. It runs in QuickJS (through `rquickjs`) in a sandbox that holds
 //! the language's own objects and the standard PAC functions ([`PAC_FUNCTIONS`]) and nothing else: no network,
@@ -33,30 +35,14 @@ pub const STACK_LIMIT: usize = 512 << 10;
 pub const RUN_LIMIT: Duration = Duration::from_secs(2);
 /// One name lookup's limit, within the run's time left.
 pub const DNS_LIMIT: Duration = Duration::from_secs(1);
-/// Fetching the script (or the discovery address), within the exchange's time left.
+/// Fetching the script, within the exchange's time left.
 pub const FETCH_LIMIT: Duration = Duration::from_secs(5);
 /// The largest script fetched.
 pub const SCRIPT_MAX: usize = 1 << 20;
-/// How long a fetched script (or a discovery that found none) is kept before it is fetched again.
+/// How long a fetched script (or the trouble fetching it) is kept before it is fetched again.
 pub const SCRIPT_FRESH: Duration = Duration::from_secs(300);
 /// How long the script's answer for one node address is kept.
 pub const ANSWER_FRESH: Duration = Duration::from_secs(60);
-/// Where automatic discovery looks (by name only).
-pub const WPAD_URL: &str = "http://wpad/wpad.dat";
-
-/// Where discovery looks instead of [`WPAD_URL`], for test harnesses (no name `wpad` can be staged).
-static DISCOVERY: Mutex<Option<String>> = Mutex::new(None);
-
-/// Look for discovery at `url` from now on instead of [`WPAD_URL`] (`None`: back to it). For tests and test
-/// harnesses.
-pub fn discover_at(url: Option<String>) {
-    *DISCOVERY.lock().unwrap_or_else(|e| e.into_inner()) = url;
-}
-
-fn discovery_url() -> String {
-    DISCOVERY.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_else(|| WPAD_URL.to_string())
-}
-
 /// The functions the sandbox holds besides the language's own objects: the standard PAC functions and the
 /// `Ex` family as Chromium has them. Closed set.
 pub const PAC_FUNCTIONS: [&str; 21] = [
@@ -129,6 +115,9 @@ pub enum PacTrouble {
     Unfetched,
     /// Its address is not `http` or `https` (a `file:` script is not read).
     Scheme,
+    /// Its address, or a redirect on the way, is `http` on another machine: not fetched (only this machine's
+    /// `http`, or `https` from anywhere).
+    RemoteHttp,
     /// It is longer than [`SCRIPT_MAX`].
     TooLarge,
     /// It threw, or does not parse.
@@ -144,9 +133,10 @@ pub enum PacTrouble {
 }
 
 impl PacTrouble {
-    pub const ALL: [PacTrouble; 8] = [
+    pub const ALL: [PacTrouble; 9] = [
         PacTrouble::Unfetched,
         PacTrouble::Scheme,
+        PacTrouble::RemoteHttp,
         PacTrouble::TooLarge,
         PacTrouble::Failed,
         PacTrouble::Timeout,
@@ -160,6 +150,7 @@ impl PacTrouble {
         match self {
             PacTrouble::Unfetched => "PAC_UNFETCHED",
             PacTrouble::Scheme => "PAC_SCHEME",
+            PacTrouble::RemoteHttp => "PAC_REMOTE_HTTP",
             PacTrouble::TooLarge => "PAC_TOO_LARGE",
             PacTrouble::Failed => "PAC_FAILED",
             PacTrouble::Timeout => "PAC_TIMEOUT",
@@ -173,7 +164,7 @@ impl PacTrouble {
 /// What the system's automatic settings give for one node. Closed set.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Auto {
-    /// No automatic settings in force (none named, or discovery found none).
+    /// No automatic settings in force (no script named).
     None,
     /// The script's ways, in order (never empty).
     Ways(Vec<Way>),
@@ -483,16 +474,44 @@ pub(crate) fn run(script: Arc<String>, url: &str, host: &str, limit: Duration, m
 #[derive(Clone)]
 enum Fetched {
     Script(Arc<String>),
-    /// Nothing there (discovery only: no such name, no answer, not found).
-    Nothing,
     Trouble(PacTrouble),
 }
 
-/// Fetch a script directly within `limit`. For discovery (`found_or_nothing`), every way of not finding one is
-/// [`Fetched::Nothing`].
-fn fetch(url: &str, limit: Duration, discovery: bool) -> Fetched {
-    let not_there = |t: PacTrouble| if discovery { Fetched::Nothing } else { Fetched::Trouble(t) };
+/// Where a script may be fetched from: over `https` from anywhere (the server's certificate verified), over `http`
+/// only from this machine, a literal loopback address (`127.0.0.0/8`, `::1`) or the name `localhost`, judged by
+/// the address as written and never by a lookup. An `http` address on any other host is refused by name.
+pub fn script_source(t: &Target) -> Result<(), PacTrouble> {
+    let host = t.host.trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
+    let this_machine = host == "localhost"
+        || match host.parse::<IpAddr>() {
+            Ok(IpAddr::V4(a)) => a.octets()[0] == 127,
+            Ok(IpAddr::V6(a)) => a == std::net::Ipv6Addr::LOCALHOST,
+            Err(_) => false,
+        };
+    match t.scheme {
+        crate::Scheme::Https => Ok(()),
+        crate::Scheme::Http if this_machine => Ok(()),
+        crate::Scheme::Http => Err(PacTrouble::RemoteHttp),
+    }
+}
+
+/// A script address as configured: `http`/`https` (else [`PacTrouble::Scheme`]) from where scripts may come
+/// ([`script_source`]).
+fn script_address(url: &str) -> Result<(), PacTrouble> {
+    let lower = url.trim().to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err(PacTrouble::Scheme);
+    }
+    script_source(&crate::read_address(url.trim()).map_err(|_| PacTrouble::Scheme)?)
+}
+
+/// Fetch a script directly within `limit`, from where scripts may come; every redirect is judged the same way
+/// before it is followed.
+fn fetch(url: &str, limit: Duration) -> Fetched {
     let Ok(mut t) = crate::read_address(url) else { return Fetched::Trouble(PacTrouble::Scheme) };
+    if let Err(x) = script_source(&t) {
+        return Fetched::Trouble(x);
+    }
     let until = Instant::now() + limit.min(FETCH_LIMIT);
     // Redirects are followed as browsers follow them for a script, within the one fetch limit.
     for _ in 0..=REDIRECTS {
@@ -505,15 +524,18 @@ fn fetch(url: &str, limit: Duration, discovery: bool) -> Fetched {
             Ok(a) if a.status == 200 && a.body.len() > SCRIPT_MAX => return Fetched::Trouble(PacTrouble::TooLarge),
             Ok(a) if a.status == 200 => return Fetched::Script(Arc::new(String::from_utf8_lossy(&a.body).into_owned())),
             Ok(a) if matches!(a.status, 301 | 302 | 303 | 307 | 308) => match a.location.as_deref().and_then(|l| redirected(&t, l)) {
-                Some(next) => t = next,
-                None => return not_there(PacTrouble::Unfetched),
+                Some(next) => match script_source(&next) {
+                    Ok(()) => t = next,
+                    Err(x) => return Fetched::Trouble(x),
+                },
+                None => return Fetched::Trouble(PacTrouble::Unfetched),
             },
-            Ok(_) => return not_there(PacTrouble::Unfetched),
+            Ok(_) => return Fetched::Trouble(PacTrouble::Unfetched),
             Err(crate::Fail::Overlong(_)) => return Fetched::Trouble(PacTrouble::TooLarge),
-            Err(_) => return not_there(PacTrouble::Unfetched),
+            Err(_) => return Fetched::Trouble(PacTrouble::Unfetched),
         }
     }
-    not_there(PacTrouble::Unfetched)
+    Fetched::Trouble(PacTrouble::Unfetched)
 }
 
 /// How many redirects a script fetch follows.
@@ -666,9 +688,9 @@ fn wait_kept<T>(until: Instant, found: impl Fn(&Kept) -> Option<T>, start: impl 
 }
 
 /// The script at `url`: kept, or fetched with its whole fetch limit on a thread of its own and waited for within
-/// `limit`. Whatever the fetch found (a script, or none) is its verdict and is kept; an exchange whose time runs
-/// out first is answered as not fetched this once, and the fetch lands for the next.
-fn script_at(url: &str, limit: Duration, discovery: bool) -> Fetched {
+/// `limit`. Whatever the fetch found (a script, or the trouble) is its verdict and is kept; an exchange whose time
+/// runs out first is answered as not fetched this once, and the fetch lands for the next.
+fn script_at(url: &str, limit: Duration) -> Fetched {
     let until = Instant::now() + limit;
     let owned = url.to_string();
     let got = wait_kept(
@@ -681,7 +703,7 @@ fn script_at(url: &str, limit: Duration, discovery: bool) -> Fetched {
             k.fetching.push(owned.clone());
             let u = owned.clone();
             let started = std::thread::Builder::new().name("pac-fetch".into()).spawn(move || {
-                let f = fetch(&u, FETCH_LIMIT, discovery);
+                let f = fetch(&u, FETCH_LIMIT);
                 let mut k = kept();
                 k.fetching.retain(|x| *x != u);
                 k.scripts.retain(|(x, _, _)| *x != u);
@@ -695,7 +717,7 @@ fn script_at(url: &str, limit: Duration, discovery: bool) -> Fetched {
             true
         },
     );
-    got.unwrap_or(if discovery { Fetched::Nothing } else { Fetched::Trouble(PacTrouble::Unfetched) })
+    got.unwrap_or(Fetched::Trouble(PacTrouble::Unfetched))
 }
 
 fn digest(s: &str) -> u64 {
@@ -758,8 +780,8 @@ fn auto_of(a: Result<Vec<Way>, PacTrouble>) -> Auto {
     }
 }
 
-/// The system's automatic settings for a node, within `limit`: discovery first (a script found there decides;
-/// none found passes on), then the named script. Only `http`/`https` script addresses are fetched.
+/// The system's automatic settings for a node, within `limit`: the script at the address the system names. Only
+/// `http`/`https` script addresses are fetched.
 pub(crate) fn auto_for(t: &Target, s: &SystemProxies, limit: Duration) -> Auto {
     auto_with(t, s, limit, MACHINE)
 }
@@ -767,53 +789,27 @@ pub(crate) fn auto_for(t: &Target, s: &SystemProxies, limit: Duration) -> Auto {
 pub(crate) fn auto_with(t: &Target, s: &SystemProxies, limit: Duration, machine: Host) -> Auto {
     let until = Instant::now() + limit;
     let left = || until.saturating_duration_since(Instant::now());
-    if s.auto_detect {
-        match script_at(&discovery_url(), left(), true) {
-            Fetched::Script(sc) => return auto_of(answer(&sc, t, left(), machine)),
-            Fetched::Trouble(x) => return Auto::Trouble(x),
-            Fetched::Nothing => {}
-        }
-    }
     let Some(url) = s.pac_url.as_deref() else { return Auto::None };
-    let lower = url.trim().to_ascii_lowercase();
-    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
-        return Auto::Trouble(PacTrouble::Scheme);
+    if let Err(x) = script_address(url) {
+        return Auto::Trouble(x);
     }
-    match script_at(url.trim(), left(), false) {
+    match script_at(url.trim(), left()) {
         Fetched::Script(sc) => auto_of(answer(&sc, t, left(), machine)),
         Fetched::Trouble(x) => Auto::Trouble(x),
-        Fetched::Nothing => Auto::Trouble(PacTrouble::Unfetched),
     }
 }
 
 /// For display: what is already known, never fetching or running ([`Auto::Pending`] when the answer for this
 /// node is not known yet).
 pub(crate) fn auto_known(t: &Target, s: &SystemProxies) -> Auto {
-    let known = |f: Fetched| -> Option<Auto> {
-        match f {
-            Fetched::Script(sc) => Some(kept_answer(&(digest(&sc), asked_url(t))).map(auto_of).unwrap_or(Auto::Pending)),
-            Fetched::Trouble(x) => Some(Auto::Trouble(x)),
-            Fetched::Nothing => None,
-        }
-    };
-    if s.auto_detect {
-        match kept_script(&discovery_url()) {
-            None => return Auto::Pending,
-            Some(f) => {
-                if let Some(a) = known(f) {
-                    return a;
-                }
-            }
-        }
-    }
     let Some(url) = s.pac_url.as_deref() else { return Auto::None };
-    let lower = url.trim().to_ascii_lowercase();
-    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
-        return Auto::Trouble(PacTrouble::Scheme);
+    if let Err(x) = script_address(url) {
+        return Auto::Trouble(x);
     }
     match kept_script(url.trim()) {
         None => Auto::Pending,
-        Some(f) => known(f).unwrap_or(Auto::Trouble(PacTrouble::Unfetched)),
+        Some(Fetched::Script(sc)) => kept_answer(&(digest(&sc), asked_url(t))).map(auto_of).unwrap_or(Auto::Pending),
+        Some(Fetched::Trouble(x)) => Auto::Trouble(x),
     }
 }
 
@@ -955,7 +951,7 @@ mod tests {
         };
         let gone = std::net::TcpListener::bind("127.0.0.1:0").expect("bind").local_addr().expect("addr").port();
         let url = format!("http://127.0.0.1:{gone}/own-time.pac");
-        assert!(matches!(script_at(&url, Duration::ZERO, false), Fetched::Trouble(PacTrouble::Unfetched)));
+        assert!(matches!(script_at(&url, Duration::ZERO), Fetched::Trouble(PacTrouble::Unfetched)));
         assert!(landed(&|| kept_script(&url).is_some()), "the fetch lands and is kept");
         let script = Arc::new("function FindProxyForURL(u, h) { return isResolvable('node.example') ? 'PROXY p:1' : 'DIRECT'; }".to_string());
         let t = crate::parse("https://own-time.example/").expect("address");
@@ -1030,6 +1026,36 @@ mod tests {
         let s = SystemProxies { pac_url: Some("file:///etc/proxy.pac".into()), ..Default::default() };
         assert_eq!(auto_with(&t, &s, Duration::from_secs(1), STAGED), Auto::Trouble(PacTrouble::Scheme));
         let codes: Vec<&str> = PacTrouble::ALL.iter().map(|t| t.code()).collect();
-        assert_eq!(codes, ["PAC_UNFETCHED", "PAC_SCHEME", "PAC_TOO_LARGE", "PAC_FAILED", "PAC_TIMEOUT", "PAC_MEMORY", "PAC_NO_FUNCTION", "PAC_ANSWER"]);
+        assert_eq!(codes, ["PAC_UNFETCHED", "PAC_SCHEME", "PAC_REMOTE_HTTP", "PAC_TOO_LARGE", "PAC_FAILED", "PAC_TIMEOUT", "PAC_MEMORY", "PAC_NO_FUNCTION", "PAC_ANSWER"]);
+    }
+
+    /// A script comes over `https` from anywhere and over `http` from this machine only: a literal loopback
+    /// address or the name `localhost`, judged as written (no lookup); `http` from anywhere else is refused by
+    /// name before anything is fetched, as the system's address and as a redirect on the way.
+    #[test]
+    fn a_script_comes_from_this_machine_or_over_https() {
+        let src = |u: &str| script_source(&crate::read_address(u).expect("address"));
+        for ok in ["http://127.0.0.1:1/p.pac", "http://127.9.9.9/p.pac", "http://[::1]:1/p.pac", "http://localhost:1/p.pac", "http://LOCALHOST/p.pac", "https://pac.example/p.pac", "https://10.0.0.1/p.pac"] {
+            assert_eq!(src(ok), Ok(()), "{ok}");
+        }
+        for no in ["http://pac.example/p.pac", "http://10.0.0.1/p.pac", "http://192.168.1.1/p.pac", "http://localhost.example/p.pac", "http://sub.localhost/p.pac", "http://0.0.0.0/p.pac", "http://[::ffff:127.0.0.1]/p.pac"] {
+            assert_eq!(src(no), Err(PacTrouble::RemoteHttp), "{no}");
+        }
+        let t = crate::parse("https://node.example/").expect("address");
+        let s = SystemProxies { pac_url: Some("http://pac.example/proxy.pac".into()), ..Default::default() };
+        assert_eq!(auto_with(&t, &s, Duration::from_secs(1), STAGED), Auto::Trouble(PacTrouble::RemoteHttp));
+        assert_eq!(auto_known(&t, &s), Auto::Trouble(PacTrouble::RemoteHttp));
+        // A redirect from this machine to `http` elsewhere is not followed.
+        let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = l.local_addr().expect("addr").port();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            if let Ok((mut c, _)) = l.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = c.read(&mut buf);
+                let _ = c.write_all(b"HTTP/1.1 302 Found\r\nLocation: http://192.0.2.10/p.pac\r\nContent-Length: 0\r\n\r\n");
+            }
+        });
+        assert!(matches!(fetch(&format!("http://127.0.0.1:{port}/p.pac"), FETCH_LIMIT), Fetched::Trouble(PacTrouble::RemoteHttp)));
     }
 }

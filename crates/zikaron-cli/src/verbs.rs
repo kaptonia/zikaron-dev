@@ -118,11 +118,13 @@ const MORE_FLAGS: [&str; 25] = [
     "key-file", "home", "as", "kit", "handoff",
 ];
 
-/// The way out for the verbs that reach nodes: `--proxy system` (or no flag: the transport's default) follows
-/// the system's proxy settings, `--proxy none` goes straight, an address (`http://host:port`,
-/// `socks5://host:port`) is that proxy; anything else is misuse. Loopback nodes are always reached straight.
+/// The way out for the verbs that reach nodes: `--proxy system` (or no flag) follows the terminal's proxy
+/// variables when any is set, else the system's proxy settings (as programs in a terminal do, on every system);
+/// `--proxy none` goes straight, an address (`http://host:port`, `socks5://host:port`) is that proxy; anything
+/// else is misuse. Loopback nodes are always reached straight.
 fn proxy_from(a: &Args) {
-    use zikaron_anchor::rpc::{proxy_of, set_choice, Choice};
+    use zikaron_anchor::rpc::{follow_the_terminal, proxy_of, set_choice, Choice};
+    follow_the_terminal();
     let choice = match a.one("proxy").as_deref().map(str::trim) {
         None | Some("system") => Choice::System,
         Some("none") => Choice::Off,

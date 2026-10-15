@@ -92,8 +92,27 @@ pub fn partial(reason: Reason, members: Vec<(Key, Value)>) -> Answer {
 }
 
 /// No answer: unreachable endpoint, disagreeing readings, declined scan. Exit 4 (law §9.4).
+///
+/// An endpoint unreached because its proxy asked who is calling (`detail` is the transport's sentence for it,
+/// `zikaron_anchor::rpc::proxy_credentials`) is named here, for every verb at once: the line says how `--proxy`
+/// carries credentials, and an `E_UNREACHABLE` answer carries `token` `PROXY_CREDENTIALS_MISSING` (none given) or
+/// `PROXY_CREDENTIALS_REFUSED` (the ones given refused); a reason with a `token` of its own (`E_SCAN`) keeps it.
 pub fn unanswered(reason: Reason, members: Vec<(Key, Value)>) -> Answer {
-    at(Exit::Unanswered, reason, members)
+    let asked = members.iter().find_map(|(k, v)| match (k, v) {
+        (Key::Detail, Value::Str(d)) => zikaron_anchor::rpc::proxy_credentials_of(d),
+        _ => None,
+    });
+    match asked {
+        Some(given) => {
+            let (token, said) = if given { ("PROXY_CREDENTIALS_REFUSED", Said::ProxyCredentialsRefused) } else { ("PROXY_CREDENTIALS_MISSING", Said::ProxyCredentialsMissing) };
+            let mut ms = members;
+            if reason == Reason::Unreachable && !ms.iter().any(|(k, _)| *k == Key::Token) {
+                ms.push((Key::Token, s(token)));
+            }
+            at(Exit::Unanswered, reason, ms).telling(said.text().to_string())
+        }
+        None => at(Exit::Unanswered, reason, members),
+    }
 }
 
 fn at(exit: Exit, reason: Reason, members: Vec<(Key, Value)>) -> Answer {
@@ -345,10 +364,12 @@ pub enum Said {
     HandoffNotOneLine,
     RecordsNotAll,
     OnChain,
+    ProxyCredentialsMissing,
+    ProxyCredentialsRefused,
 }
 
 impl Said {
-    pub const ALL: [Said; 65] = [
+    pub const ALL: [Said; 67] = [
         Said::Usage,
         Said::NotAVerb,
         Said::NotAFlag,
@@ -414,6 +435,8 @@ impl Said {
         Said::HandoffNotOneLine,
         Said::RecordsNotAll,
         Said::OnChain,
+        Said::ProxyCredentialsMissing,
+        Said::ProxyCredentialsRefused,
     ];
 
     /// The words, one table: Chinese and English.
@@ -482,6 +505,14 @@ impl Said {
             Said::HandoffNotBack => ("这一处已交出这本账,这份交接件不是交回来的那一份,未写", "This place handed the ledger off, and this handoff is not the one coming back; nothing was written"),
             Said::HandoffAhead => ("这一处有交接件里没有的条目,收下会丢掉或分叉它,未写", "This place holds an entry the handoff lacks; taking it would lose or fork that entry; nothing was written"),
             Said::HandoffNotOneLine => ("交接件里的账不是一条线,未写", "The handoff's ledger is not one line; nothing was written"),
+            Said::ProxyCredentialsMissing => (
+                "代理要用户名与密码:在 --proxy 写成 协议://用户名:密码@主机:端口(其中的 @、: 写成 %40、%3A)",
+                "The proxy asks for a user name and password: write them in --proxy as scheme://user:password@host:port (an @ or : in them as %40, %3A)",
+            ),
+            Said::ProxyCredentialsRefused => (
+                "代理不收所给的用户名与密码:请核对 --proxy 里写的(其中的 @、: 写成 %40、%3A)",
+                "The proxy refused the user name and password given: check the ones written in --proxy (an @ or : in them as %40, %3A)",
+            ),
             Said::OnChain => ("链上已有这一条(别处已上链),没有再发", "The chain already holds this anchor (put on chain elsewhere); nothing was sent"),
             Said::RecordsNotAll => ("不是每一条记录都成立:看各条的 original 与 anchored", "Not every record holds: see each one's original and anchored"),
         }
