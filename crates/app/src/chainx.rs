@@ -183,6 +183,8 @@ pub enum Wire {
     NotJson,
     /// JSON, but not an answer to the question (no `result` and no `error`, both, an array, another `id`).
     Shape,
+    /// The leg to a proxy failed: the node was never reached (`rpc::is_proxy`).
+    Proxy,
     Other(String),
 }
 
@@ -201,6 +203,7 @@ pub fn said(t: &rpc::Trouble) -> Said {
             None if rpc::is_overlong(e) => Wire::Oversize,
             None if rpc::is_not_json(e) => Wire::NotJson,
             None if rpc::is_shapeless(e) => Wire::Shape,
+            None if rpc::is_proxy(e) => Wire::Proxy,
             None => Wire::Other(e.clone()),
         }),
         rpc::Trouble::NotServed(k) | rpc::Trouble::Contradiction(k) => Said::Wire(Wire::Other(k.clone())),
@@ -300,6 +303,7 @@ pub fn said_fault(url: &str, t: &rpc::Trouble) -> Fault {
             Wire::Oversize => Known::AnswerTooLong,
             Wire::NotJson => Known::AnswerNotJson,
             Wire::Shape => Known::ChainShape,
+            Wire::Proxy => Known::ProxyUnreachable,
             Wire::Other(_) => Known::Unreachable,
         },
     };

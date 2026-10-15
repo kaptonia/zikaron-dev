@@ -187,3 +187,22 @@ pub mod member {
     pub const SAID: &str = "said";
     pub const STEP: &str = "step";
 }
+
+/// The payment request the gas step's code carries (EIP-681): this address on the chain of the network the
+/// wizard chose (`ethereum:<address>@<chain id>`), so a wallet set to another network asks to switch rather than
+/// paying on that one.
+pub fn gas_request(address: &str, chain_id: u64) -> String {
+    format!("ethereum:{address}@{chain_id}")
+}
+
+#[cfg(test)]
+mod gas_request_tests {
+    /// The code names the address and the chain, in EIP-681's form: a wallet on another network is asked to
+    /// switch to this one, never left to pay on its own.
+    #[test]
+    fn the_gas_code_names_the_chosen_networks_chain() {
+        let a = "0x5d5a0de8ac3b41b649e0985c141d1735832cbf8f";
+        assert_eq!(super::gas_request(a, 11_155_111), "ethereum:0x5d5a0de8ac3b41b649e0985c141d1735832cbf8f@11155111");
+        assert_eq!(super::gas_request(a, 1), "ethereum:0x5d5a0de8ac3b41b649e0985c141d1735832cbf8f@1");
+    }
+}

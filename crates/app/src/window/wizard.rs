@@ -389,7 +389,9 @@ impl Win {
                     _ => t(Key::SetNotRead).to_string(),
                 };
                 let addr = self.shell.anchor.map(|a| a.hex());
-                gas_face(ui, addr.as_deref(), &gas, gas_side);
+                // No code until the chain is known: a code without it lets a wallet pay on whichever network it is on.
+                let code = addr.as_deref().zip(self.shell.settings.chain_id).map(|(a, chain)| crate::wizard::gas_request(a, chain));
+                gas_face(ui, addr.as_deref(), code.as_deref(), &gas, gas_side);
                 self.stage_line(ui, crate::task::Kind::Chain);
                 if self.ux.wiz_gas_not_seen {
                     hint(ui, t(Key::WizGasNotSeen));
@@ -491,11 +493,11 @@ fn gas_text(ui: &egui::Ui, s: &str, t: Type, colour: egui::Color32, wrap: Option
     (g, base)
 }
 
-/// The key's address (two equal lines) and balance on the left; the code a wallet scans to pay on the right
-/// with its caption under it. Both groups are centered on one middle line, each key on its value's first
+/// The key's address (two equal lines) and balance on the left; the code a wallet scans to pay (`code`, the
+/// payment request; none while the chain is not known) on the right with its caption under it. Both groups are centered on one middle line, each key on its value's first
 /// baseline. When the column is too narrow for both side by side (`side`, decided by the caller from the
 /// window), the code goes under the words (nothing overlaps or is cut).
-fn gas_face(ui: &mut egui::Ui, addr: Option<&str>, gas: &str, side: bool) {
+fn gas_face(ui: &mut egui::Ui, addr: Option<&str>, code: Option<&str>, gas: &str, side: bool) {
     let addr_said = match addr {
         Some(a) => a.to_string(),
         None => t(Key::SetNoKey).to_string(),
@@ -551,8 +553,8 @@ fn gas_face(ui: &mut egui::Ui, addr: Option<&str>, gas: &str, side: bool) {
     }
     let code_rect = egui::Rect::from_min_size(code_at, egui::vec2(code_w, code_h));
     let mut code_ui = ui.new_child(egui::UiBuilder::new().max_rect(code_rect).layout(egui::Layout::top_down(egui::Align::Center)));
-    if let Some(a) = addr {
-        qr_plate(&mut code_ui, &format!("ethereum:{a}"));
+    if let Some(code) = code {
+        qr_plate(&mut code_ui, code);
     } else {
         code_ui.add_space(code_w);
     }
@@ -592,7 +594,7 @@ mod gas_address {
             ..Default::default()
         };
         ctx.run(input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| gas_face(ui, Some(ADDR), "0.0000 ETH", true));
+            egui::CentralPanel::default().show(ctx, |ui| gas_face(ui, Some(ADDR), Some(&crate::wizard::gas_request(ADDR, 11_155_111)), "0.0000 ETH", true));
         })
     }
 

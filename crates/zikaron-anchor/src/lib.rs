@@ -26,6 +26,7 @@ pub fn seam() {
     zikaron::trace::mark(A2);
 }
 
+pub mod deploy;
 pub mod endpoints;
 pub mod input;
 pub mod judge;

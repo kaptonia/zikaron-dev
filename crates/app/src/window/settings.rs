@@ -143,12 +143,12 @@ impl Win {
         self.go(Place::Settings(Section::Data), now);
     }
 
-    /// Open the "write alone" sheet (every other sheet closes); the validity starts at one day.
+    /// Open the "write alone" sheet (every other sheet closes); the validity starts empty.
     pub(super) fn cli_open(&mut self) {
         self.sheets_clear();
         self.ux.cli_sheet = true;
-        self.ux.cli_unit = 2;
-        self.ux.cli_amount = "1".to_string();
+        self.ux.cli_span = Default::default();
+        self.ux.cli_never = false;
     }
 
     /// Close the "write alone" sheet, wiping the passcode typed on it.
@@ -158,18 +158,24 @@ impl Win {
         self.ux.cli_trouble = None;
     }
 
-    /// The "write alone" sheet: the passcode, then how long the credential lasts (minutes, hours or days, or
-    /// never), like a token's expiry. The key turns it on only with a whole passcode and a validity in range.
+    /// The "write alone" sheet: the passcode, then how long the credential lasts: days, hours and minutes (an
+    /// empty cell is zero), or never by the switch under them, which leaves the cells faint and not taken. A cell
+    /// past its most is framed red and the line under the switch says why; the key turns it on only with a
+    /// whole passcode and a validity in range.
     pub(super) fn cli_sheet(&mut self, ctx: &egui::Context, now: f64) {
         if !self.ux.cli_sheet {
             return;
         }
         let len = crate::keybox::PIN_LEN;
         let busy = self.shell.tasks.in_flight(crate::task::Kind::Vault);
-        let lasts = cli_lasts(self.ux.cli_unit, &self.ux.cli_amount);
+        let span = cli_span(&self.ux.cli_span, self.ux.cli_never);
+        let lasts = match span {
+            Span::Lasts(l) => Some(l),
+            _ => None,
+        };
         let pin_full = self.ux.cli_pin.chars() == len;
         let trouble = self.ux.cli_trouble.clone();
-        let cells: Vec<seg::Cell> = CLI_UNITS.iter().map(|k| seg::Cell::from(t(*k))).collect();
+        let said = cli_span_said(span, (self.shell.clock)());
         let (mut go, mut close) = (false, false);
         let out = sheet::show(
             ctx,
@@ -180,18 +186,36 @@ impl Win {
                 field(ui, t(Key::IdPinGate), None, |ui| {
                     pin::pin_row(ui, "cli-alone-pin", &mut me.ux.cli_pin, len, me.ux.pin_shake, !busy, true);
                 });
-                field(ui, t(Key::CliLastsTitle), None, |ui| {
-                    if let Some(i) = seg::seg(ui, "cli-lasts-unit", &cells, me.ux.cli_unit) {
-                        me.ux.cli_unit = i;
-                    }
-                    if me.ux.cli_unit < CLI_NEVER {
-                        let w = ui.available_width().min(160.0);
-                        input::field(ui, &mut me.ux.cli_amount, t(Key::CliLastsAmount), w, input::Look { mono: true, ..Default::default() });
+                field(ui, t(Key::U3Window), None, |ui| {
+                    let never = me.ux.cli_never;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        if never {
+                            ui.disable();
+                            ui.multiply_opacity(tk::OFF);
+                        }
+                        for (i, (unit, _, _)) in CLI_SPAN.iter().enumerate() {
+                            if i > 0 {
+                                ui.add_space(CLI_CELL_GAP);
+                            }
+                            let bad = matches!(span, Span::Over(o) if o[i]);
+                            ui.push_id(("cli-span", i), |ui| {
+                                input::field(ui, &mut me.ux.cli_span[i], "0", CLI_CELL_W, input::Look { mono: true, bad, centred: true, ..Default::default() });
+                            });
+                            me.ux.cli_span[i] = cli_cell(&me.ux.cli_span[i]);
+                            ui.add_space(tk::S2);
+                            paint::text(ui, t(*unit), Type::Body, c(C::Ink2));
+                        }
+                    });
+                    paint::rule(ui, CLI_RULE_GAP);
+                    toggle::toggle(ui, &mut me.ux.cli_never, t(Key::CliLastsNever), "", true);
+                    ui.add_space(tk::S3);
+                    let colour = if said.1 { c(C::Bad) } else { c(C::Ink2) };
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), Type::Small.size() + 5.0), egui::Sense::hover());
+                    if !said.0.is_empty() {
+                        ui.painter().text(rect.left_top(), egui::Align2::LEFT_TOP, &said.0, Type::Small.font(), colour);
                     }
                 });
-                if lasts.is_none() {
-                    hint(ui, t(Key::CliLastsBad));
-                }
                 if let Some(f) = &trouble {
                     states::err_box(ui, "cli-trouble", f.human(), f.next(), t(Key::U3RawError), &f.raw());
                 }
@@ -694,32 +718,6 @@ impl Win {
                 }
             }
         }
-        // How a typed node address would go under the saved setting: read only, nothing connects.
-        let _ = width::line_then(ui, &mut self.typed.proxy_try, t(Key::ProxyTryHint), true, |_| ());
-        let tried = self.typed.proxy_try.trim().to_string();
-        if !tried.is_empty() {
-            let said = self.proxy_tried(&tried, now);
-            states::okline(ui, Mark::Todo, &said);
-        }
-    }
-
-    /// The way a node address would go under the saved setting, said; judged again when the address or the
-    /// setting changes, and at most every half second otherwise (the system's settings and its script's answers
-    /// may change meanwhile). Display only: the system's last reading and the answers already known are used,
-    /// nothing is fetched or connected.
-    fn proxy_tried(&mut self, tried: &str, now: f64) -> String {
-        let setting = self.shell.machine.proxy.clone();
-        if let Some((a, s, at, said)) = &self.ux.proxy_tried {
-            if a == tried && *s == setting && now - at < 0.5 {
-                return said.clone();
-            }
-        }
-        let said = match zikaron_net::parse(tried) {
-            Some(t) => crate::machine::proxy_goes(&zikaron_net::way_shown_under(&t, &crate::machine::proxy_choice(&self.shell.machine))),
-            None => t(Key::ProxyGoesNotAddress).to_string(),
-        };
-        self.ux.proxy_tried = Some((tried.to_string(), setting, now, said.clone()));
-        said
     }
 
     /// The read-only networks (machine-wide): one row each with its name and reading; a row opens to its four
@@ -1019,7 +1017,10 @@ impl Win {
         self.set_fetch(ui, now);
         self.set_old_data(ui, now);
         // What is here, how it is kept, how much room it takes (every number from the last background
-        // measurement; the frame reads no disk).
+        // measurement; the frame reads no disk). Measured again once the ledger moved, whoever wrote.
+        if self.shell.take_measure_due() {
+            self.auto(Action::Measure, now);
+        }
         let usage = match self.shell.archive.as_ref() {
             Some(a) => Val::Mark(if a.bytes > self.shell.settings.cap_bytes { Mark::Bad } else { Mark::Ok }, fill2(Key::SetUsageHuman, &size_say(a.bytes), &size_say(self.shell.settings.cap_bytes))),
             None => Val::Mark(Mark::Todo, t(Key::SetNotRead).to_string()),
@@ -1517,30 +1518,82 @@ fn net_cells(ui: &mut egui::Ui, d: &mut Draft, fresh: bool) {
     field(ui, t(Key::SetNodes), None, |ui| input::area(ui, &mut d.nodes, 2));
 }
 
-/// The validity's units on the "write alone" sheet, in order; the last is "never".
-const CLI_UNITS: [Key; 4] = [Key::CliLastsMinutes, Key::CliLastsHours, Key::CliLastsDays, Key::CliLastsNever];
-/// The index of "never" in [`CLI_UNITS`].
-const CLI_NEVER: usize = 3;
+/// The validity's three cells on the "write alone" sheet, in order: the unit's word, the most the cell takes,
+/// and the unit in seconds. Together they run from a minute to a year (`machine::LASTS_MIN`, `LASTS_MAX`).
+const CLI_SPAN: [(Key, u64, u64); 3] = [(Key::CliLastsDays, 365, 86_400), (Key::CliLastsHours, 23, 3_600), (Key::CliLastsMinutes, 59, 60)];
+/// One cell's width, the gap between a unit and the next cell, and the room above and below the rule.
+pub(super) const CLI_CELL_W: f32 = 64.0;
+const CLI_CELL_GAP: f32 = 20.0;
+const CLI_RULE_GAP: f32 = 18.0;
 
-/// The validity as chosen: a whole number of the unit, within `machine::Lasts::ok`, or never; `None` when it is
-/// not one.
-fn cli_lasts(unit: usize, amount: &str) -> Option<crate::machine::Lasts> {
+/// The validity as typed on the "write alone" sheet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Span {
+    /// Nothing typed yet.
+    Empty,
+    /// These cells (days, hours, minutes) are past their most.
+    Over([bool; 3]),
+    /// Every cell zero.
+    Zero,
+    /// Longer than a year.
+    PastYear,
+    /// A validity that may be chosen (`machine::Lasts::ok`).
+    Lasts(crate::machine::Lasts),
+}
+
+/// The validity as typed: the three cells (an empty cell is zero), or never when the switch is on (the cells are
+/// then not read).
+fn cli_span(cells: &[String; 3], never: bool) -> Span {
+    use crate::machine::{Lasts, LASTS_MAX};
+    if never {
+        return Span::Lasts(Lasts::Never);
+    }
+    if cells.iter().all(|x| x.is_empty()) {
+        return Span::Empty;
+    }
+    let n: [Option<u64>; 3] = std::array::from_fn(|i| if cells[i].is_empty() { Some(0) } else { cells[i].parse().ok() });
+    let over: [bool; 3] = std::array::from_fn(|i| n[i].is_none_or(|v| v > CLI_SPAN[i].1));
+    if over.contains(&true) {
+        return Span::Over(over);
+    }
+    match (0..3).map(|i| n[i].unwrap_or(0) * CLI_SPAN[i].2).sum::<u64>() {
+        0 => Span::Zero,
+        s if s > LASTS_MAX => Span::PastYear,
+        s => Span::Lasts(Lasts::Secs(s)),
+    }
+}
+
+/// One cell as typed, kept to digits without leading zeros.
+fn cli_cell(typed: &str) -> String {
+    let digits: String = typed.chars().filter(|ch| ch.is_ascii_digit()).collect();
+    match digits.trim_start_matches('0') {
+        "" if digits.is_empty() => String::new(),
+        "" => "0".to_string(),
+        rest => rest.to_string(),
+    }
+}
+
+/// The line under the switch: when a validity expires from `now`, or why it cannot be chosen (and whether that
+/// is a refusal, said in red); empty while nothing is typed or it never expires.
+fn cli_span_said(span: Span, now: u64) -> (String, bool) {
     use crate::machine::Lasts;
-    let per = match unit {
-        0 => 60,
-        1 => 3_600,
-        2 => 86_400,
-        _ => return Some(Lasts::Never),
-    };
-    let n: u64 = amount.trim().parse().ok()?;
-    Some(Lasts::Secs(n.checked_mul(per)?)).filter(|l| l.ok())
+    match span {
+        Span::Empty | Span::Lasts(Lasts::Never) => (String::new(), false),
+        Span::Over(over) => {
+            let each: Vec<String> = CLI_SPAN.iter().zip(over).filter(|(_, o)| *o).map(|((unit, most, _), _)| crate::lang::filln(Key::CliLastsAtMost, &[t(*unit), &most.to_string()])).collect();
+            (each.join(t(Key::ListJoin)), true)
+        }
+        Span::Zero => (t(Key::CliLastsZero).to_string(), true),
+        Span::PastYear => (t(Key::CliLastsPastYear).to_string(), true),
+        Span::Lasts(Lasts::Secs(s)) => (cli_expiry_said(Some(now + s)), false),
+    }
 }
 
 /// When the command line's credential expires, said for people (`None`: never).
 pub(super) fn cli_expiry_said(expires: Option<u64>) -> String {
     match expires {
         Some(at) => fill1(Key::CliAloneUntil, &crate::when::when(at)),
-        None => t(Key::CliAloneNever).to_string(),
+        None => t(Key::CliLastsNever).to_string(),
     }
 }
 
@@ -1548,15 +1601,51 @@ pub(super) fn cli_expiry_said(expires: Option<u64>) -> String {
 mod cli_lasts_tests {
     use super::*;
 
+    fn cells(d: &str, h: &str, m: &str) -> [String; 3] {
+        [d.to_string(), h.to_string(), m.to_string()]
+    }
+
+    /// Days, hours and minutes add up (an empty cell is zero) to a validity from a minute to a year; a cell past
+    /// its most, all zero or past a year is no validity; never, with the switch on, whatever the cells hold.
     #[test]
-    fn a_validity_is_a_whole_number_of_its_unit_within_a_minute_and_a_year_or_never() {
+    fn a_validity_is_three_cells_within_a_minute_and_a_year_or_never() {
         use crate::machine::Lasts;
-        assert_eq!(cli_lasts(0, "5"), Some(Lasts::Secs(300)));
-        assert_eq!(cli_lasts(1, "2"), Some(Lasts::Secs(7_200)));
-        assert_eq!(cli_lasts(2, "365"), Some(Lasts::Secs(365 * 86_400)));
-        assert_eq!(cli_lasts(2, "366"), None);
-        assert_eq!(cli_lasts(0, "0"), None);
-        assert_eq!(cli_lasts(1, "x"), None);
-        assert_eq!(cli_lasts(CLI_NEVER, ""), Some(Lasts::Never));
+        assert_eq!(cli_span(&cells("", "", ""), false), Span::Empty);
+        assert_eq!(cli_span(&cells("", "", "1"), false), Span::Lasts(Lasts::Secs(60)));
+        assert_eq!(cli_span(&cells("1", "2", "3"), false), Span::Lasts(Lasts::Secs(86_400 + 7_200 + 180)));
+        assert_eq!(cli_span(&cells("365", "", ""), false), Span::Lasts(Lasts::Secs(365 * 86_400)));
+        assert_eq!(cli_span(&cells("365", "", "1"), false), Span::PastYear);
+        assert_eq!(cli_span(&cells("0", "0", "0"), false), Span::Zero);
+        assert_eq!(cli_span(&cells("366", "24", "59"), false), Span::Over([true, true, false]));
+        assert_eq!(cli_span(&cells("", "", "99999999999999999999999"), false), Span::Over([false, false, true]));
+        assert_eq!(cli_span(&cells("400", "x", ""), true), Span::Lasts(Lasts::Never));
+        for s in [cli_span(&cells("1", "", ""), false), cli_span(&cells("", "", ""), true)] {
+            if let Span::Lasts(l) = s {
+                assert!(l.ok());
+            }
+        }
+    }
+
+    /// A cell keeps digits only, without leading zeros; a typed zero stays one zero.
+    #[test]
+    fn a_cell_keeps_its_digits() {
+        assert_eq!(cli_cell("0012"), "12");
+        assert_eq!(cli_cell("1a2"), "12");
+        assert_eq!(cli_cell("000"), "0");
+        assert_eq!(cli_cell("x"), "");
+    }
+
+    /// The line under the switch: the expiry from now for a validity, each cell past its most by name, zero and
+    /// past a year in red; nothing while empty or never.
+    #[test]
+    fn the_line_under_the_switch_says_the_expiry_or_why_not() {
+        use crate::machine::Lasts;
+        assert_eq!(cli_span_said(Span::Lasts(Lasts::Secs(60)), 1_000), (cli_expiry_said(Some(1_060)), false));
+        assert_eq!(cli_span_said(Span::Zero, 0), (t(Key::CliLastsZero).to_string(), true));
+        assert_eq!(cli_span_said(Span::PastYear, 0), (t(Key::CliLastsPastYear).to_string(), true));
+        let over = cli_span_said(Span::Over([true, false, true]), 0);
+        assert!(over.1 && over.0.contains("365") && over.0.contains("59") && !over.0.contains("23"), "{over:?}");
+        assert_eq!(cli_span_said(Span::Empty, 0), (String::new(), false));
+        assert_eq!(cli_span_said(Span::Lasts(Lasts::Never), 0), (String::new(), false));
     }
 }

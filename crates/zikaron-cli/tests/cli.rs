@@ -245,7 +245,7 @@ fn the_kit_never_lands_unless_the_kit_law_says_it_is_a_kit() {
         run_in(&w, &["init", "--ledger", "b", "--key", A_KEY, "--statement", "开端"]).code,
         0
     );
-    let r = run_in(&w, &["kit-export", "--ledger", "b", "--out", "pack", "--note", ""]);
+    let r = run_in(&w, &["kit-export", "--ledger", "b", "--out", "pack", "--note", "", "--as", "folder"]);
     assert_eq!(r.code, 0);
     assert!(String::from_utf8_lossy(&r.out).contains("\"state\":\"KIT_OK\""));
     assert!(w.join("pack/manifest.json").is_file());
@@ -349,9 +349,9 @@ fn every_flag_a_verb_asks_for_lives_in_the_flag_table() {
 }
 
 #[test]
-fn the_twenty_two_verbs_are_twenty_two_and_each_one_answers() {
+fn the_verbs_are_counted_and_each_one_answers() {
     let names = zikaron_cli::verbs::VERBS;
-    assert_eq!(names.len(), 22);
+    assert_eq!(names.len(), 25);
     let text = src("verbs.rs");
     for v in names {
         assert!(text.contains(&format!("\"{v}\" =>")), "{v} 没有分发的落点");
@@ -359,7 +359,7 @@ fn the_twenty_two_verbs_are_twenty_two_and_each_one_answers() {
     let mut sorted = names.to_vec();
     sorted.sort_unstable();
     sorted.dedup();
-    assert_eq!(sorted.len(), 22, "二十二个名字里有重的");
+    assert_eq!(sorted.len(), 25, "二十五个名字里有重的");
 }
 
 #[test]
@@ -772,7 +772,7 @@ fn the_cli_schema_lists_every_flag_the_code_knows() {
     real.dedup();
     assert_eq!(real.len(), m, "码里的旗名闭表有重名");
     assert_eq!(listed, real, "§八 与旗名闭表对不上");
-    assert_eq!(listed.len(), 56, "the flag count changed; update the flag count stated in CLI-SCHEMA.md");
+    assert_eq!(listed.len(), 59, "the flag count changed; update the flag count stated in CLI-SCHEMA.md");
 }
 
 // init: one ledger, one root.

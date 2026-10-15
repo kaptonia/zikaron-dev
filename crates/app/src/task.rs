@@ -596,6 +596,8 @@ pub enum Done {
         /// another transaction: the batch is void and its entries are back in the queue (reported as
         /// `Known::BatchVoided`).
         voided: bool,
+        /// How long the receipt wait actually ran, in whole seconds (measured, not the wait it was given).
+        waited: u64,
     },
     /// One due-diligence pass: all four panels.
     Diligence(Box<crate::diligx::Read>),

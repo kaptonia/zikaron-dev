@@ -619,64 +619,25 @@ pub fn proxy_now() -> zikaron_net::Choice {
     }
 }
 
-/// The sentences one route reading is said with: as "new connections now …" or as "this address …".
-struct Words {
-    via: crate::lang::Key,
-    direct: crate::lang::Key,
-    loopback: crate::lang::Key,
-    local: crate::lang::Key,
-    unread: crate::lang::Key,
-    pending: crate::lang::Key,
-}
-
-const NOW: Words = Words {
-    via: crate::lang::Key::ProxyNowVia,
-    direct: crate::lang::Key::ProxyNowDirect,
-    loopback: crate::lang::Key::ProxyNowLoopback,
-    local: crate::lang::Key::ProxyNowLocal,
-    unread: crate::lang::Key::ProxyNowUnread,
-    pending: crate::lang::Key::ProxyNowScriptPending,
-};
-
-const GOES: Words = Words {
-    via: crate::lang::Key::ProxyGoesVia,
-    direct: crate::lang::Key::ProxyGoesDirect,
-    loopback: crate::lang::Key::ProxyGoesLoopback,
-    local: crate::lang::Key::ProxyGoesLocal,
-    unread: crate::lang::Key::ProxyGoesUnread,
-    pending: crate::lang::Key::ProxyGoesPending,
-};
-
-/// One route reading said: through which proxy (its user name if any, never its password), or direct with the
-/// reason when it is not the setting itself (node on this machine, on a local network under a custom proxy,
-/// system settings not read yet); the system's script deciding when its answer is not known yet; and, when the
-/// system's script could not be used, its trouble by name.
-fn said(r: &zikaron_net::Reading, w: &Words) -> String {
+/// How new connections go now, as one line: through which proxy (its user name if any, never its password), or
+/// direct with the reason when it is not the setting itself (node on this machine, on a local network under a
+/// custom proxy, system settings not read yet); the system's script deciding when its answer is not known yet;
+/// and, when the system's script could not be used, its trouble by name.
+pub fn proxy_said(r: &zikaron_net::Reading) -> String {
     use crate::lang::{filln, t, Key};
     use zikaron_net::{Script, Way};
     let base = match &r.way {
-        _ if r.script == Script::Pending => t(w.pending).to_string(),
-        Way::Through(p) => filln(w.via, &[&p.shown()]),
-        Way::Direct if r.loopback => t(w.loopback).to_string(),
-        Way::Direct if r.local => t(w.local).to_string(),
-        Way::Direct if r.system_unread => t(w.unread).to_string(),
-        Way::Direct => t(w.direct).to_string(),
+        _ if r.script == Script::Pending => t(Key::ProxyNowScriptPending).to_string(),
+        Way::Through(p) => filln(Key::ProxyNowVia, &[&p.shown()]),
+        Way::Direct if r.loopback => t(Key::ProxyNowLoopback).to_string(),
+        Way::Direct if r.local => t(Key::ProxyNowLocal).to_string(),
+        Way::Direct if r.system_unread => t(Key::ProxyNowUnread).to_string(),
+        Way::Direct => t(Key::ProxyNowDirect).to_string(),
     };
     match r.script {
         Script::Trouble(x) => filln(Key::ProxyScriptTrouble, &[&base, x.code()]),
         _ => base,
     }
-}
-
-/// How new connections go now, as one line.
-pub fn proxy_said(r: &zikaron_net::Reading) -> String {
-    said(r, &NOW)
-}
-
-/// How a node address typed on the settings page would go under the setting in hand (read only: nothing
-/// connects).
-pub fn proxy_goes(r: &zikaron_net::Reading) -> String {
-    said(r, &GOES)
 }
 
 /// Values the `network` member accepts: a table row, or "custom".

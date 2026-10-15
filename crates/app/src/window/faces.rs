@@ -573,6 +573,24 @@ pub struct LangPick {
     pub still_up: bool,
 }
 
+/// What the "write alone" sheet did when its validity cells were typed into and its switch clicked
+/// (`probe_cli_sheet`).
+#[derive(Clone, Debug, Default)]
+pub struct CliSheet {
+    /// The days cell after "400" was typed into it, and whether the line under the switch said days are at
+    /// most 365 (in red).
+    pub days_typed: String,
+    pub over_said: bool,
+    /// The days cell after it was cleared and "2" typed, and whether the line then said when it expires.
+    pub days_fixed: String,
+    pub expiry_said: bool,
+    /// Whether the switch was on after its title was clicked; the days cell after "9" was typed into it while
+    /// on (not taken: unchanged); and whether the line under the switch was empty then.
+    pub never_on: bool,
+    pub days_while_never: String,
+    pub quiet_while_never: bool,
+}
+
 /// What typing at the passcode gate did, with nothing over it and with the lock screen's restore sheet over it.
 #[derive(Clone, Debug, Default)]
 pub struct TypedUnder {

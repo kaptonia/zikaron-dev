@@ -342,8 +342,11 @@ fn a_proxy_trickling_its_answer_is_cut_at_the_deadline() {
     });
     for (form, kind, port) in [("CONNECT answer trickled", Kind::Http, connect), ("SOCKS5 reply trickled", Kind::Socks5, reply)] {
         set_choice(Choice::Manual(Proxy { kind, host: "127.0.0.1".into(), port, auth: None }));
-        // A name that is not this machine, so the proxy is taken.
-        late_at_the_deadline(form, ask_short("http://node.invalid:8545/"));
+        // A name that is not this machine, so the proxy is taken. The deadline passes on the proxy's leg: the
+        // proxy's failure, named as such.
+        let (got, took) = ask_short("http://node.invalid:8545/");
+        assert!(matches!(&got, Err(Fail::Proxy(s)) if s.contains("no answer within")), "{form}: ended by the deadline on the proxy's leg: {got:?}");
+        assert!(took < short().deadline + SLICE + Duration::from_secs(1), "{form}: at the deadline, not when the proxy stops ({took:?})");
     }
     set_choice(Choice::Off);
 }

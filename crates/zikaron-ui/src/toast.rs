@@ -5,8 +5,9 @@
 //! An alert (raised by the watch) has the alerts page's mark on the warning colour and "close", and stays as
 //! long as an error.
 //!
-//! One at a time: a new sentence replaces the one on screen in place (the old one fades out); the same
-//! sentence as the one on screen gives it a small bump and starts its time again. Nothing is compared with
+//! One at a time: a new sentence replaces the one on screen in place: the old one fades out first, and the new
+//! one drops in once it has left (its time starts then), so one place never holds two toasts in one frame. The
+//! same sentence as the one on screen gives it a small bump and starts its time again. Nothing is compared with
 //! sentences that have already left.
 //!
 //! This file says nothing itself: the labels of its keys come from the caller.
@@ -126,8 +127,10 @@ impl Toasts {
         if let Some(old) = self.cur.take() {
             self.leaving.push((old, now));
         }
+        // The new one enters once every one leaving has left.
+        let enter = self.leaving.iter().map(|(_, at)| at + OUT as f64).fold(now, f64::max);
         self.minted += 1;
-        self.cur = Some(Slip { id: self.minted, text, next: next.to_string(), raw: raw.to_string(), tone, born: now, entered: now, bumped: f64::NEG_INFINITY, open: false, keys });
+        self.cur = Some(Slip { id: self.minted, text, next: next.to_string(), raw: raw.to_string(), tone, born: enter, entered: enter, bumped: f64::NEG_INFINITY, open: false, keys });
     }
 
     /// How many toasts are on screen (zero or one; one leaving does not count).
@@ -181,7 +184,11 @@ impl Toasts {
             let r = paint_slip(ctx, &s, center_x, screen, &labels, e, vec2(0.0, -10.0 * (1.0 - e)), 0.98 + 0.02 * e, false);
             out.rects.push(r.0);
         }
-        if let Some(s) = self.cur.clone() {
+        // Waiting for the one leaving to leave: not drawn, and nothing to press.
+        if let Some(s) = self.cur.as_ref().filter(|s| now < s.entered) {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64((s.entered - now).max(0.0)));
+        }
+        if let Some(s) = self.cur.clone().filter(|s| now >= s.entered) {
             let enter_t = ((now - s.entered) as f32 / IN).clamp(0.0, 1.0);
             let e = Curve::Ease.at(enter_t);
             if enter_t < 1.0 {

@@ -234,6 +234,15 @@ pub fn read_fees(ep: &mut dyn Endpoint) -> Fees {
     Fees::of(base, tip)
 }
 
+/// The head one node says (`eth_blockNumber`, read as its question's decision reads it, as [`read_fees`] reads
+/// it); `None` when it does not answer, or answers in another shape. The command line's `scan` of a home takes its
+/// window's last block from here.
+pub fn read_head(ep: &mut dyn Endpoint) -> Option<u64> {
+    crate::seam();
+    let params = Value::Arr(vec![]);
+    crate::patience::ask(ep, "eth_blockNumber", &params).ok().and_then(|w| crate::judge::read_as_decided("eth_blockNumber", &params, &w)).as_ref().and_then(|v| v.as_str().and_then(quantity))
+}
+
 /// A `0x` quantity that fits in 64 bits.
 fn quantity(x: &str) -> Option<u64> {
     let body = x.strip_prefix("0x")?;
@@ -729,9 +738,11 @@ pub const RECEIPT_BACKOFF: [std::time::Duration; 4] = [
 
 /// Ask each endpoint for the same receipt, round after round until the caller's deadline. A receipt counts when
 /// every endpoint that answered gives it, alike (block and status, `judge::RECEIPT_FACTS`); an endpoint that
-/// does not answer is passed over. When some give it and others say "not yet", it is asked again after each
-/// of the judging table's pauses (`judge::not_yet_pauses`), and still split after the last it is
-/// [`Confirm::Split`], naming both sides: one node's word alone does not anchor anything. A round in which
+/// does not answer is passed over. When some give it and others say "not yet" (nodes a block or two apart), it
+/// is asked again round after round like "not yet", and still split at the deadline it is [`Confirm::Split`],
+/// naming both sides: one node's word alone does not anchor anything, and a split is no outcome while the wait
+/// lasts. With no wait (one round) it is asked again after each of the judging table's pauses
+/// (`judge::not_yet_pauses`) instead. A round in which
 /// every endpoint fails (rate limited, down for a moment) is not an answer: the transaction is already out, and
 /// a node that refuses one round may give the receipt the next, so the rounds go on, paused by `backoff` (the
 /// product's is [`RECEIPT_BACKOFF`]; a test gives its own so no wall clock is waited; an empty list does not
@@ -754,6 +765,9 @@ pub fn confirm_each(eps: &mut [&mut dyn Endpoint], hash: &[u8; 32], wait: std::t
     let mut round = 0usize;
     let split_pauses = crate::judge::not_yet_pauses();
     let mut split_rounds = 0usize;
+    // The last whole round's split, when it was one: with a deadline, nodes a block or two apart are ordinary, so
+    // a split is asked again until the deadline and named only if it still stands then.
+    let mut split: Option<(Vec<String>, Vec<String>)> = None;
     loop {
         // This round's receipts (by node) and the nodes that said "not yet".
         let mut has: Vec<(String, (u64, u64))> = Vec::new();
@@ -792,29 +806,36 @@ pub fn confirm_each(eps: &mut [&mut dyn Endpoint], hash: &[u8; 32], wait: std::t
                 Err(e) => last = Some(format!("{e:?}")),
             }
         }
+        if !cut {
+            split = None;
+        }
         if let Some((_, first)) = has.first().filter(|_| !cut) {
             let alike = has.iter().all(|(_, r)| r == first);
             let (status, block_number) = *first;
             match (alike, not_yet.is_empty()) {
                 (true, true) => return Confirm::Included { status, block_number },
-                // Split: asked again after the judging table's pauses, then named.
-                (true, false) => match split_pauses.get(split_rounds) {
+                // Split with no wait: asked again after the judging table's pauses, then named.
+                (true, false) if wait.is_zero() => match split_pauses.get(split_rounds) {
                     Some(pause) => {
                         split_rounds += 1;
-                        let left = deadline.saturating_duration_since(std::time::Instant::now());
                         if !pause.is_zero() {
-                            std::thread::sleep((*pause).min(left));
+                            std::thread::sleep(*pause);
                         }
                         continue;
                     }
                     None => return Confirm::Split { has: has.into_iter().map(|(n, _)| n).collect(), not_yet },
                 },
+                // Split within a wait: asked again like "not yet" until the deadline.
+                (true, false) => split = Some((has.into_iter().map(|(n, _)| n).collect(), not_yet)),
                 // Receipts that differ: no reading this round.
                 (false, _) => {}
             }
         }
         let now = std::time::Instant::now();
         if now >= deadline {
+            if let Some((has, not_yet)) = split {
+                return Confirm::Split { has, not_yet };
+            }
             return match ever_answered {
                 true => Confirm::NotYet,
                 false => Confirm::Unreachable(last.unwrap_or_else(|| "没有可问的端点".into())),
@@ -910,4 +931,49 @@ mod fee_tests {
         assert_eq!(base_fee_of(&Value::Obj(Vec::new())), None);
         assert_eq!(Fees::of(base_fee_of(&b("0x8000000000000000")), Some(1)).max_fee, u64::MAX, "doubled saturates");
     }
+}
+
+/// One anchor the chain already holds: the hash, the transaction that carried it, and its block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OnChain {
+    pub hash: [u8; 32],
+    pub tx: [u8; 32],
+    pub block: u64,
+}
+
+/// Which of `hashes` the sender `from` already anchored through `registry` on chain `chain`, as the registry's
+/// logs say from block `start` to the head: the anchor scan's own reader (`scan::logs_over_window`: asked with
+/// patience, the range shrunk where the node limits it, never fewer logs than asked), every log judged here again
+/// (the registry, topic 0, this sender, one of these hashes; the node's filtering is not trusted). Each hash once,
+/// with the transaction and block of its earliest log. A head that does not read, or a range the node does not
+/// answer, is said in words: whether a hash is on chain is never guessed, so nothing is to be sent on a guess.
+pub fn on_chain(ep: &mut dyn Endpoint, chain: u64, registry: &[u8; 20], from: &[u8; 20], hashes: &[[u8; 32]], start: u64) -> Result<Vec<OnChain>, String> {
+    crate::seam();
+    if hashes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let head = read_head(ep).ok_or_else(|| "eth_blockNumber".to_string())?;
+    let mut sender = [0u8; 32];
+    sender[12..].copy_from_slice(from);
+    let t0 = crate::scan::topic0();
+    let filter = crate::scan::LogFilter { addresses: vec![*registry], topics: vec![crate::scan::Topic::One(t0), crate::scan::Topic::One(sender), crate::scan::Topic::AnyOf(hashes.to_vec())] };
+    let logs = crate::scan::logs_over_window(ep, chain, &filter, start.min(head), head).map_err(|r| format!("{r:?}"))?;
+    let h32 = |w: Option<&crate::wire::W>| -> Option<[u8; 32]> { hexfmt::decode(w?.as_str()?)?.try_into().ok() };
+    let mut found: Vec<OnChain> = Vec::new();
+    for log in &logs {
+        let address = log.member("address").and_then(|a| a.as_str()).and_then(hexfmt::decode);
+        let topics = log.member("topics").and_then(|t| t.as_arr()).unwrap_or(&[]);
+        let (Some(t), Some(s), Some(hash)) = (h32(topics.first()), h32(topics.get(1)), h32(topics.get(2))) else { continue };
+        if address.as_deref() != Some(&registry[..]) || t != t0 || s != sender || !hashes.contains(&hash) {
+            continue;
+        }
+        let (Some(tx), Some(block)) = (h32(log.member("transactionHash")), log.member("blockNumber").and_then(|b| b.as_str()).and_then(quantity)) else { continue };
+        match found.iter_mut().find(|f| f.hash == hash) {
+            Some(f) if f.block <= block => {}
+            Some(f) => *f = OnChain { hash, tx, block },
+            None => found.push(OnChain { hash, tx, block }),
+        }
+    }
+    found.sort_by_key(|f| (f.block, f.hash));
+    Ok(found)
 }

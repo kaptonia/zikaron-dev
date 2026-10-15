@@ -67,6 +67,10 @@ impl Win {
         let (mut close, mut first_pin) = (false, false);
         let mut go: Option<Action> = None;
         let esc;
+        // The export and mirror cards show the home's reading: measured again once the ledger moved.
+        if matches!(which, Bk::Export | Bk::Mirror) && self.shell.take_measure_due() {
+            self.auto(Action::Measure, now);
+        }
         match which {
             Bk::Export => {
                 let pin_full = self.ux.bk_pin.chars() == len;

@@ -224,7 +224,7 @@ fn the_english_first_layer_has_no_cjk() {
     for k in app::fault::Known::ALL {
         let f = app::fault::Fault::known(k, "节点答:读不成");
         assert!(!cjk(f.human()), "{k:?}: first sentence {:?}", f.human());
-        assert!(!cjk(app::lang::t(k.next())), "{k:?}: next sentence");
+        assert!(!k.next().is_some_and(|n| cjk(app::lang::t(n))), "{k:?}: next sentence");
         let r = app::verifyx::Rejected::of_fault("x.zk1", &f);
         assert!(!cjk(&r.human()), "{k:?}: refused file {:?}", r.human());
     }

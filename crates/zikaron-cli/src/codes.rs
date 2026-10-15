@@ -155,6 +155,20 @@ pub enum Reason {
     /// Writing a plain ledger that ZIKARON Desk has adopted (its root is on the desktop's adopted list): written
     /// from now on through the desktop's sealed copy, never here.
     Adopted,
+    /// `kit-verify`: not every record of the package holds (`state` says which way: an original that is not the
+    /// one recorded, or a record not anchored, not read on chain, or without its original).
+    Records,
+    /// Writing a ledger this machine handed off to another place (a ledger handoff) and has not taken back: it is
+    /// not written here (`handoff` names the handoff).
+    HandedOff,
+    /// `take-over`: the handoff is not taken (its `token` says why: the file does not read as a handoff, it is not
+    /// this place's own handoff coming back, this place holds an entry it lacks, or its ledger is not one line);
+    /// nothing is written.
+    Handoff,
+    /// `anchor`: the chain already holds an anchor of a hash given, from this key through this registry (anchored
+    /// on another side, the desktop or another place): nothing is sent; `names` are those hashes, `tx` and
+    /// `blockNumber` the earliest such anchor.
+    OnChain,
 }
 
 impl Reason {
@@ -195,10 +209,14 @@ impl Reason {
             Reason::HomeHeld => "E_HOME_HELD",
             Reason::HomeOtherMachine => "E_HOME_OTHER_MACHINE",
             Reason::Adopted => "E_ADOPTED",
+            Reason::Records => "E_RECORDS",
+            Reason::HandedOff => "E_HANDED_OFF",
+            Reason::Handoff => "E_HANDOFF",
+            Reason::OnChain => "E_ON_CHAIN",
         }
     }
 
-    pub const ALL: [Reason; 35] = [
+    pub const ALL: [Reason; 39] = [
         Reason::Args,
         Reason::Unreadable,
         Reason::Key,
@@ -234,6 +252,10 @@ impl Reason {
         Reason::HomeHeld,
         Reason::HomeOtherMachine,
         Reason::Adopted,
+        Reason::Records,
+        Reason::HandedOff,
+        Reason::Handoff,
+        Reason::OnChain,
     ];
 }
 
@@ -276,6 +298,14 @@ pub enum Key {
     Written,
     Names,
     Value,
+    Records,
+    Content,
+    Original,
+    Anchored,
+    FirstAt,
+    Originals,
+    LeftOut,
+    Handoff,
 }
 
 impl Key {
@@ -316,10 +346,18 @@ impl Key {
             Key::Written => "written",
             Key::Names => "names",
             Key::Value => "value",
+            Key::Records => "records",
+            Key::Content => "content",
+            Key::Original => "original",
+            Key::Anchored => "anchored",
+            Key::FirstAt => "firstAt",
+            Key::Originals => "originals",
+            Key::LeftOut => "leftOut",
+            Key::Handoff => "handoff",
         }
     }
     /// The whole set; `CLI-SCHEMA.md` section 7 lists it cell by cell (checked by the tests).
-    pub const ALL: [Key; 35] = [
+    pub const ALL: [Key; 43] = [
         Key::Ok,
         Key::Reason,
         Key::Detail,
@@ -355,6 +393,14 @@ impl Key {
         Key::Written,
         Key::Names,
         Key::Value,
+        Key::Records,
+        Key::Content,
+        Key::Original,
+        Key::Anchored,
+        Key::FirstAt,
+        Key::Originals,
+        Key::LeftOut,
+        Key::Handoff,
     ];
 
 }
@@ -446,6 +492,9 @@ pub enum Door {
     /// This machine's folder could not be found (the system says no home directory, or its pointer does not
     /// read).
     NoMachine,
+    /// This machine writes alone: the desktop keeps its door shut while that switch is on (write without
+    /// `--home`).
+    Alone,
 }
 
 impl Door {
@@ -457,10 +506,11 @@ impl Door {
             Door::NotYou => "NOT_YOU",
             Door::Broken => "BROKEN",
             Door::NoMachine => "NO_MACHINE",
+            Door::Alone => "ALONE",
         }
     }
 
-    pub const ALL: [Door; 6] = [Door::NotOpen, Door::Closed, Door::PathTooLong, Door::NotYou, Door::Broken, Door::NoMachine];
+    pub const ALL: [Door; 7] = [Door::NotOpen, Door::Closed, Door::PathTooLong, Door::NotYou, Door::Broken, Door::NoMachine, Door::Alone];
 }
 
 /// Law field names: the seven envelope members (law §4.1), the body members of the seven types (law §6), kit

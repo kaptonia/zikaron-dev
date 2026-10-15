@@ -1234,6 +1234,7 @@ fn every_legal_action_names_a_verb_from_the_contract_six_table() {
             attach: String::new(),
             note: String::new(),
             out: String::new(),
+            form: "folder".into(),
         },
         Action::ReadDepth { work: String::new() },
         Action::DraftGrant {
@@ -2088,25 +2089,36 @@ fn the_proxy_line_says_the_way_and_why_it_is_straight() {
     let texts = |k: app::lang::Key| -> Vec<String> { app::lang::TABLE.iter().filter(|(x, _, _)| *x == k).flat_map(|(_, zh, en)| [zh.to_string(), en.to_string()]).collect() };
     let plain = Reading { way: Way::Direct, then: Vec::new(), choice: Choice::System, loopback: false, local: false, system_unread: false, script: Script::None };
     let p = zikaron_net::proxy_of("socks5://me:secret@127.0.0.1:1080").expect("typed");
-    for (say, via_key) in [(app::machine::proxy_said as fn(&Reading) -> String, app::lang::Key::ProxyNowVia), (app::machine::proxy_goes, app::lang::Key::ProxyGoesVia)] {
-        let via = say(&Reading { way: Way::Through(p.clone()), choice: Choice::Off, ..plain.clone() });
-        assert!(texts(via_key).iter().any(|t| via == t.replace("{0}", "socks5://me@127.0.0.1:1080")), "{via}");
-        assert!(!via.contains("secret"));
-    }
+    let via = app::machine::proxy_said(&Reading { way: Way::Through(p.clone()), choice: Choice::Off, ..plain.clone() });
+    assert!(texts(app::lang::Key::ProxyNowVia).iter().any(|t| via == t.replace("{0}", "socks5://me@127.0.0.1:1080")), "{via}");
+    assert!(!via.contains("secret"));
     let manual = Choice::Manual(Proxy { kind: Kind::Http, host: "p".into(), port: 1, auth: None });
-    for (r, now, goes) in [
-        (Reading { loopback: true, choice: manual.clone(), ..plain.clone() }, app::lang::Key::ProxyNowLoopback, app::lang::Key::ProxyGoesLoopback),
-        (Reading { local: true, choice: manual.clone(), ..plain.clone() }, app::lang::Key::ProxyNowLocal, app::lang::Key::ProxyGoesLocal),
-        (Reading { system_unread: true, ..plain.clone() }, app::lang::Key::ProxyNowUnread, app::lang::Key::ProxyGoesUnread),
-        (Reading { script: Script::Pending, ..plain.clone() }, app::lang::Key::ProxyNowScriptPending, app::lang::Key::ProxyGoesPending),
-        (plain.clone(), app::lang::Key::ProxyNowDirect, app::lang::Key::ProxyGoesDirect),
+    for (r, now) in [
+        (Reading { loopback: true, choice: manual.clone(), ..plain.clone() }, app::lang::Key::ProxyNowLoopback),
+        (Reading { local: true, choice: manual.clone(), ..plain.clone() }, app::lang::Key::ProxyNowLocal),
+        (Reading { system_unread: true, ..plain.clone() }, app::lang::Key::ProxyNowUnread),
+        (Reading { script: Script::Pending, ..plain.clone() }, app::lang::Key::ProxyNowScriptPending),
+        (plain.clone(), app::lang::Key::ProxyNowDirect),
     ] {
         assert!(texts(now).contains(&app::machine::proxy_said(&r)), "{now:?}");
-        assert!(texts(goes).contains(&app::machine::proxy_goes(&r)), "{goes:?}");
     }
     let troubled = app::machine::proxy_said(&Reading { script: Script::Trouble(PacTrouble::Timeout), ..plain.clone() });
     let direct = texts(app::lang::Key::ProxyNowDirect);
     assert!(texts(app::lang::Key::ProxyScriptTrouble).iter().any(|t| direct.iter().any(|d| troubled == t.replace("{0}", d).replace("{1}", "PAC_TIMEOUT"))), "{troubled}");
+}
+
+/// A failure on the leg to a proxy is the proxy's, never the node's: whichever endpoint said it (the shared plain
+/// one, or the app's https one), it is refused as "the proxy cannot be reached", whose next step points at the
+/// proxy setting, and it is of the network kind (an estimate that never reached the node is no revert).
+#[test]
+fn a_failed_proxy_leg_is_said_as_the_proxys() {
+    let leg = zikaron_net::Fail::Proxy("via proxy http://127.0.0.1:9: 127.0.0.1:9 refused".into());
+    for t in [zikaron_anchor::rpc::transport_said("https://node.example/", &leg), zikaron_anchor::rpc::proxy_leg("http://node.example/", "via proxy socks5://127.0.0.1:1080: SOCKS5 refused")] {
+        let f = app::chainx::said_fault("https://node.example/", &t);
+        assert_eq!(f.which(), Some(app::fault::Known::ProxyUnreachable), "{t:?}");
+        assert!(app::fault::Known::NETWORK.contains(&app::fault::Known::ProxyUnreachable));
+        assert_ne!(f.next(), app::lang::t(app::lang::Key::FaultNextNodeTls));
+    }
 }
 
 /// A JSON-RPC node on a local port answering each request with `answer(method)` (`None`: close the
@@ -3325,8 +3337,9 @@ fn which_identity_is_current_is_asked_in_two_named_places() {
 
 // ═════════════════════ Removal records its reason ═════════════════════
 
-/// Only a receipt records "anchored" (`Queue::anchored_out`); other removals use `Queue::drop_ids`, and
-/// re-queueing a deleted entry states the ledger fact, never a false chain fact.
+/// Only a chain fact records "anchored" (`Queue::anchored_out`, reached from a receipt and from a self-audit's
+/// reading through `Queue::seen_out`); other removals use `Queue::drop_ids`, and re-queueing a deleted entry
+/// states the ledger fact, never a false chain fact.
 #[test]
 fn only_the_receipt_path_records_that_an_entry_was_anchored() {
     let queue = code_only(&read_crate_file("zikaron-seal", "queue.rs").expect("读不出 queue.rs"));
@@ -3334,6 +3347,9 @@ fn only_the_receipt_path_records_that_an_entry_was_anchored() {
     let at = queue.find("pub fn anchored_out(").expect("收据那一路自己的口");
     let body = &queue[at..queue[at..].find("\n    }\n").map(|e| at + e).unwrap_or(queue.len())];
     assert!(body.contains("self.anchored.push("), "那一句住在收据那一路的口里");
+    let at = queue.find("pub fn seen_out(").expect("自审读到链上那一口");
+    let body = &queue[at..queue[at..].find("\n    }\n").map(|e| at + e).unwrap_or(queue.len())];
+    assert!(body.contains("self.anchored_out(") && !body.contains("self.anchored.push("), "自审那一口经收据那一路的口记事实");
     let at = queue.find("pub fn drop_ids(").expect("只出队那一口");
     let body = &queue[at..queue[at..].find("\n    }\n").map(|e| at + e).unwrap_or(queue.len())];
     assert!(!body.contains("anchored"), "只出队那一口一个字节也不碰 `anchored`");
@@ -3594,8 +3610,9 @@ fn what_the_node_said_reads_by_one_table_for_the_app_and_the_command_line() {
         assert_eq!(Layer::of(&format!("{} · words", l.code())), Some(l));
     }
     assert_eq!(Layer::of(&format!("{url} 答 HTTP 403")), None);
-    // Every member here is one of the network family's fourteen, or a refusal about the call.
-    assert_eq!(Known::NETWORK.len(), 14);
+    // Every member here is one of the network family's fifteen (the proxy's leg among them), or a refusal about
+    // the call.
+    assert_eq!(Known::NETWORK.len(), 15);
 }
 
 /// Passcodes allow letters and digits, case-sensitive; all-identical is refused for any passcode, and
@@ -3766,8 +3783,12 @@ fn each_landing_failure_says_its_own_sentence() {
 #[test]
 fn kit_names_are_judged_by_the_kit_law_in_one_place() {
     let kitx = code_only(&read_src_file("kitx.rs").expect("读不出 kitx.rs"));
-    assert!(body_of(&kitx, "pub fn kit_segment(").contains("kitdir::is_kit_path"));
-    assert!(body_of(&kitx, "pub fn attach(").contains("kit_rel("), "附件逐件走转写那一处");
+    // The transliteration lives in the glue (`kitnames`), where the command line's record package names by it too.
+    let names = code_only(&read_crate_file("zikaron-glue", "kitnames.rs").expect("读不出 kitnames.rs"));
+    assert!(body_of(&names, "pub fn kit_segment(").contains("kitdir::is_kit_path"));
+    assert!(body_of(&names, "pub fn put_original(").contains("kit_rel("), "原件逐件走转写那一处");
+    assert!(body_of(&kitx, "pub fn attach(").contains("put_original("), "附件逐件走转写那一处");
+    assert!(!kitx.contains("fn kit_segment("), "转写只此一处");
     let window = code_only(&read_src_file("window.rs").expect("读不出 window.rs"));
     assert!(window.contains("crate::kitx::preview_names("), "附件列表预览与出包同一处转写");
 }
@@ -5108,6 +5129,8 @@ mod recovery_seals;
 mod window_habits;
 #[path = "checks_more/cli_writes.rs"]
 mod cli_writes;
+#[path = "checks_more/handed_off.rs"]
+mod handed_off;
 #[path = "checks_more/proxy_locked.rs"]
 mod proxy_locked;
 #[path = "checks_more/door_serial.rs"]

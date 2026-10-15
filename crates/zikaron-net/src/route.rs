@@ -767,15 +767,16 @@ pub fn way_shown_under(t: &Target, choice: &Choice) -> Reading {
     way_under(t, &choice, sys.as_ref(), &auto)
 }
 
-/// A failure on the proxy leg, reported as a connection failure naming the proxy. Deadline and shutdown
-/// failures pass through unchanged.
+/// A failure on the proxy leg, reported as the proxy's ([`Fail::Proxy`], the proxy named): the node was never
+/// reached, a proxy that does not answer within the deadline included. Only shutdown passes through unchanged.
 fn through(p: &Proxy, f: Fail) -> Fail {
     match f {
-        Fail::Late(_) | Fail::Closed => f,
-        Fail::Name(x) | Fail::Connect(x) | Fail::Handshake(x) | Fail::Certificate(x) | Fail::Stream(x) => {
-            Fail::Connect(format!("via proxy {}: {x}", p.spelled()))
+        Fail::Closed => f,
+        Fail::Late(d) => Fail::Proxy(format!("via proxy {}: no answer within {} ms", p.spelled(), d.as_millis())),
+        Fail::Name(x) | Fail::Connect(x) | Fail::Handshake(x) | Fail::Certificate(x) | Fail::Stream(x) | Fail::Proxy(x) => {
+            Fail::Proxy(format!("via proxy {}: {x}", p.spelled()))
         }
-        Fail::Overlong(n) => Fail::Connect(format!("via proxy {}: its answer passed {n} bytes", p.spelled())),
+        Fail::Overlong(n) => Fail::Proxy(format!("via proxy {}: its answer passed {n} bytes", p.spelled())),
     }
 }
 

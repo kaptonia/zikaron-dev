@@ -499,6 +499,7 @@ pub(super) fn confirm_batch(
     };
     let mut confirm: Option<zikaron_anchor::send::Confirm> = None;
     let mut tx = txs.last().cloned().unwrap_or_default();
+    let began = std::time::Instant::now();
     for (h, t) in hashes.iter().zip(&txs) {
         let c = zikaron_anchor::send::confirm_each(&mut refs, h, share, backoff);
         let included = matches!(c, zikaron_anchor::send::Confirm::Included { .. });
@@ -511,6 +512,7 @@ pub(super) fn confirm_batch(
         }
     }
     let confirm = confirm.unwrap_or(zikaron_anchor::send::Confirm::NotYet);
+    let waited = began.elapsed().as_secs();
     // What the sent transaction actually contains: `input` read back from the chain by hash, never rebuilt
     // here. If unreadable it is empty (the UI says "not read"); the broadcast already happened, so this must
     // not fail the call.
@@ -582,6 +584,7 @@ pub(super) fn confirm_batch(
         calldata,
         stuck,
         voided,
+        waited,
     })
 }
 

@@ -12,7 +12,9 @@
 //!
 //! The door is found where the desktop opens it: in this user's machine folder (`zikaron_os::machine`), named
 //! by that folder and the home (`zikaron_glue::door::place`). No door there means the desktop is absent
-//! (`E_DESKTOP`, exit 4: locked, that home not open, or not running); this path never writes anything.
+//! (`E_DESKTOP`, exit 4: locked, that home not open, or not running), unless this machine writes alone: then the
+//! door is shut because of that switch, and the answer says so (`ALONE`, write without `--home`). This path never
+//! writes anything.
 
 use crate::args::Args;
 use crate::codes::{Door, Key, Reason};
@@ -33,6 +35,8 @@ pub fn ask(a: &Args) -> Answer {
         Ok(d) => d,
         Err(e) => {
             return match e.kind() {
+                // No door: shut because this machine writes alone (its credential is there), or no desktop for it.
+                std::io::ErrorKind::NotFound if writes_alone(&machine) => absent(Door::Alone, Said::DoorAlone),
                 std::io::ErrorKind::NotFound => absent(Door::NotOpen, Said::DesktopLocked),
                 std::io::ErrorKind::InvalidInput => absent(Door::PathTooLong, Said::DoorPathLong),
                 std::io::ErrorKind::PermissionDenied => absent(Door::NotYou, Said::DoorNotYou),
@@ -48,6 +52,12 @@ pub fn ask(a: &Args) -> Answer {
         Some(r) => answer_of(r),
         None => absent(Door::Broken, Said::DoorBroken),
     }
+}
+
+/// Whether this machine writes alone: a command-line credential is in its folder (the desktop keeps one exactly
+/// while that switch is on, and keeps its door shut meanwhile).
+fn writes_alone(machine: &std::path::Path) -> bool {
+    !matches!(zikaron_seal::credential::find(machine), Err(t) if t.code == zikaron_seal::Code::CredentialMissing)
 }
 
 /// "This must be done on the desktop": refused, exit 1, nothing written (the desktop's answer for an action that

@@ -950,6 +950,14 @@
     {
      "path": "crates/app/tests/checks_more/a8_send.rs",
      "name": "already_taken_answers_are_asked_by_hash_and_no_new_nonce_is_signed"
+    },
+    {
+     "path": "crates/zikaron-anchor/tests/on_chain.rs",
+     "name": "only_this_senders_anchors_through_this_registry_count_each_at_its_earliest"
+    },
+    {
+     "path": "crates/zikaron-anchor/tests/on_chain.rs",
+     "name": "a_node_that_does_not_say_is_no_answer"
     }
    ],
    "nameZh": "发送、nonce、收据、费率与 gas"
@@ -1402,6 +1410,7 @@
     "crates/zikaron-os/src/lib.rs",
     "crates/zikaron-os/src/unix.rs",
     "crates/zikaron-os/src/windows.rs",
+    "crates/zikaron-seal/src/handover.rs",
     "crates/zikaron-seal/src/writer.rs"
    ],
    "tests": [
@@ -1440,6 +1449,22 @@
     {
      "path": "crates/zikaron-seal/src/writer.rs",
      "name": "another_machines_mark_or_one_that_does_not_read_is_no_license"
+    },
+    {
+     "path": "crates/zikaron-seal/src/handover.rs",
+     "name": "the_pen_goes_with_the_ledger_and_comes_back_only_by_its_return"
+    },
+    {
+     "path": "crates/zikaron-seal/src/handover.rs",
+     "name": "only_a_follow_on_is_taken"
+    },
+    {
+     "path": "crates/zikaron-seal/src/handover.rs",
+     "name": "the_note_and_the_list_read_back_as_written_and_nothing_else"
+    },
+    {
+     "path": "crates/app/tests/checks_more/handed_off.rs",
+     "name": "the_desktop_wakes_to_look_at_the_disk_only_while_writing_alone_and_unlocked"
     }
    ],
    "nameZh": "单写者锁与跨机写者标"
@@ -1880,7 +1905,11 @@
     "zikaron_ui::nav::home",
     "zikaron_ui::nav::rail_list",
     "zikaron_ui::nav::page_area",
-    "zikaron_ui::nav::entry_key"
+    "zikaron_ui::nav::entry_key",
+    "zikaron_ui::full::bar_room",
+    "zikaron_ui::full::centered",
+    "zikaron_ui::input::Look",
+    "zikaron_ui::toast::Toasts"
    ],
    "tests": [
     {
@@ -2190,6 +2219,18 @@
     {
      "path": "crates/zikaron-ui/tests/toast_wrap.rs",
      "name": "an_english_value_breaks_between_words_and_a_chinese_one_anywhere"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/controls.rs",
+     "name": "a_new_toast_enters_once_the_one_it_replaces_has_left"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/controls.rs",
+     "name": "a_scrolling_full_window_column_keeps_its_right_edge_clear_of_the_bar"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/controls.rs",
+     "name": "a_centred_field_draws_its_number_and_its_hint_in_the_middle"
     }
    ],
    "nameZh": "界面件库与窗壳"
@@ -2387,6 +2428,7 @@
     "crates/zikaron-cli/src/args.rs",
     "crates/zikaron-cli/src/bin/zikaron.rs",
     "crates/zikaron-cli/src/codes.rs",
+    "crates/zikaron-cli/src/handoff.rs",
     "crates/zikaron-cli/src/lib.rs",
     "crates/zikaron-cli/src/out.rs",
     "crates/zikaron-cli/src/verbs.rs"
@@ -2658,7 +2700,7 @@
     },
     {
      "path": "crates/zikaron-cli/tests/cli.rs",
-     "name": "the_twenty_two_verbs_are_twenty_two_and_each_one_answers"
+     "name": "the_verbs_are_counted_and_each_one_answers"
     },
     {
      "path": "crates/zikaron-cli/tests/contract.rs",
@@ -3232,11 +3274,14 @@
     "crates/zikaron-seal/Cargo.toml",
     "crates/zikaron-seal/src/adopted.rs",
     "crates/zikaron-seal/src/credential.rs",
+    "crates/zikaron-seal/src/ground.rs",
     "crates/zikaron-seal/src/identities.rs",
     "crates/zikaron-seal/src/ledger.rs",
     "crates/zikaron-seal/src/lib.rs",
+    "crates/zikaron-seal/src/pens.rs",
     "crates/zikaron-seal/src/places.rs",
     "crates/zikaron-seal/src/queue.rs",
+    "crates/zikaron-seal/src/records.rs",
     "crates/zikaron-seal/src/trouble.rs",
     "crates/zikaron-seal/src/writer.rs"
    ],
@@ -3305,9 +3350,51 @@
     {
      "path": "crates/zikaron-seal/src/adopted.rs",
      "name": "a_list_or_salt_out_of_its_shape_is_refused_by_name"
+    },
+    {
+     "path": "crates/zikaron-seal/src/pens.rs",
+     "name": "a_handed_ledger_is_refused_by_its_handoff_and_the_list_names_no_ledger"
+    },
+    {
+     "path": "crates/zikaron-seal/src/records.rs",
+     "name": "the_index_reads_back_what_it_wrote_and_refuses_another_form"
+    },
+    {
+     "path": "crates/zikaron-seal/src/ground.rs",
+     "name": "the_three_read_as_set_or_not_set"
     }
    ],
    "nameZh": "封存层(桌面与命令行同一实现)"
+  },
+  {
+   "id": "one-file",
+   "familyVersion": 1,
+   "origin": {
+    "by": "ZIKARON",
+    "previous": null
+   },
+   "home": [
+    "crates/zikaron-glue/src/onefile.rs"
+   ],
+   "tests": [
+    {
+     "path": "crates/zikaron-glue/src/onefile.rs",
+     "name": "a_set_lays_out_the_same_whatever_order_it_comes_in_and_reads_back_whole"
+    },
+    {
+     "path": "crates/zikaron-glue/src/onefile.rs",
+     "name": "the_writer_refuses_a_name_out_of_shape_or_order_before_writing_it"
+    },
+    {
+     "path": "crates/zikaron-glue/src/onefile.rs",
+     "name": "a_stream_is_read_item_by_item_without_a_bound_and_an_unread_rest_is_skipped"
+    },
+    {
+     "path": "crates/zikaron-glue/src/onefile.rs",
+     "name": "each_bad_form_is_named"
+    }
+   ],
+   "nameZh": "单文件容器"
   }
  ]
 }

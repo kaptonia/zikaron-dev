@@ -129,6 +129,46 @@ pub fn land_bytes_for(readers: Readers, out: &Path, bytes: &[u8]) -> Result<(), 
     }
 }
 
+/// Why a streamed landing did not land: what filled the file refused, or the landing itself.
+#[derive(Debug)]
+pub enum Streamed<E> {
+    Fill(E),
+    Land(Trouble),
+}
+
+/// Write one file by streaming into it: `fill` writes the temporary sibling (whatever size), which is then fsynced
+/// and moved into place as [`land_bytes_for`] moves it. An existing path is refused before `fill` runs and again,
+/// atomically, at the move; `fill` refusing, or any step failing, leaves nothing at `out`.
+pub fn land_stream<E>(readers: Readers, out: &Path, fill: impl FnOnce(&mut std::fs::File) -> Result<(), E>) -> Result<(), Streamed<E>> {
+    if out.exists() {
+        return Err(Streamed::Land(Trouble::Occupied(say(out))));
+    }
+    let tmp = beside(out).map_err(Streamed::Land)?;
+    let _ = std::fs::remove_file(&tmp);
+    let mut f = match create_for(readers, &tmp) {
+        Ok(f) => f,
+        Err(e) => return Err(Streamed::Land(failed(out, "write", &tmp, &e))),
+    };
+    if let Err(x) = fill(&mut f) {
+        drop(f);
+        let _ = std::fs::remove_file(&tmp);
+        return Err(Streamed::Fill(x));
+    }
+    if let Err(e) = f.sync_all() {
+        drop(f);
+        let _ = std::fs::remove_file(&tmp);
+        return Err(Streamed::Land(failed(out, "write", &tmp, &e)));
+    }
+    drop(f);
+    let linked = zikaron_os::land_new(&tmp, out);
+    let _ = std::fs::remove_file(&tmp);
+    match linked {
+        Ok(_) => sync_parent(out).map_err(Streamed::Land),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(Streamed::Land(Trouble::Occupied(say(out)))),
+        Err(e) => Err(Streamed::Land(failed(out, "land", out, &e))),
+    }
+}
+
 /// Create the temporary file for `readers`. Permissions are set here only.
 fn create_for(readers: Readers, tmp: &Path) -> std::io::Result<std::fs::File> {
     let mut o = zikaron_os::Options::new();
@@ -155,6 +195,12 @@ pub fn land_tree(out: &Path, staged: &Path) -> Result<(), Trouble> {
 /// overwritten there and nobody reads it yet.
 pub fn put(path: &Path, bytes: &[u8]) -> Result<(), Trouble> {
     std::fs::write(path, bytes).map_err(|e| failed(path, "write", path, &e))
+}
+
+/// [`put`], streamed from `body`: a file of any size inside a staging area we just created.
+pub fn put_from(path: &Path, body: &mut dyn std::io::Read) -> Result<(), Trouble> {
+    let mut f = std::fs::File::create(path).map_err(|e| failed(path, "write", path, &e))?;
+    std::io::copy(body, &mut f).map(|_| ()).map_err(|e| failed(path, "write", path, &e))
 }
 
 /// Create a directory of our own.

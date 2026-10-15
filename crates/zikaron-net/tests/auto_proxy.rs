@@ -400,7 +400,7 @@ fn credentials_longer_than_socks5_carries_are_refused_by_name() {
     let long = zikaron_net::Auth { user: "u".into(), pass: Some(zikaron_net::Secret::new("p".repeat(300))) };
     set_choice(Choice::Manual(Proxy { kind: Kind::Socks5, host: "127.0.0.1".into(), port: s5, auth: Some(long) }));
     match ask(&format!("http://node.invalid:{n}/")) {
-        Err(Fail::Connect(why)) => assert!(why.contains("longer than SOCKS5 carries"), "{why}"),
+        Err(Fail::Proxy(why)) => assert!(why.contains("longer than SOCKS5 carries"), "{why}"),
         other => panic!("{other:?}"),
     }
     assert!(seen.lock().unwrap().iter().all(|x| !x.starts_with("user ")), "nothing cut was sent");
@@ -440,7 +440,7 @@ fn credentials_go_to_the_proxy_that_asks_and_nowhere_else() {
     assert!(node_seen.lock().unwrap().iter().all(|h| !h.contains("Proxy-Authorization")), "the node never sees it");
     set_choice(Choice::Manual(px(Kind::Http, hp)));
     match ask(&format!("http://node.invalid:{n}/")) {
-        Err(Fail::Connect(why)) => assert!(why.contains("407") && why.contains("asks for credentials"), "{why}"),
+        Err(Fail::Proxy(why)) => assert!(why.contains("407") && why.contains("asks for credentials"), "{why}"),
         other => panic!("{other:?}"),
     }
     let (s5, socks_seen) = socks5(n, Some(("u", "pw")));
@@ -449,12 +449,12 @@ fn credentials_go_to_the_proxy_that_asks_and_nowhere_else() {
     assert_eq!(socks_seen.lock().unwrap()[..3].to_vec(), vec!["method 2".to_string(), "user u pass pw".to_string(), format!("node.invalid:{n}")]);
     set_choice(Choice::Manual(zikaron_net::proxy_of(&format!("socks5://u:bad@127.0.0.1:{s5}")).expect("typed")));
     match ask(&format!("http://node.invalid:{n}/")) {
-        Err(Fail::Connect(why)) => assert!(why.contains("refused the user name and password"), "{why}"),
+        Err(Fail::Proxy(why)) => assert!(why.contains("refused the user name and password"), "{why}"),
         other => panic!("{other:?}"),
     }
     set_choice(Choice::Manual(px(Kind::Socks5, s5)));
     match ask(&format!("http://node.invalid:{n}/")) {
-        Err(Fail::Connect(why)) => assert!(why.contains("asks for authentication"), "{why}"),
+        Err(Fail::Proxy(why)) => assert!(why.contains("asks for authentication"), "{why}"),
         other => panic!("{other:?}"),
     }
 }
@@ -472,7 +472,7 @@ fn an_https_proxy_is_its_own_tls_leg_and_the_node_keeps_its_own() {
     let (bad, _) = https_proxy(tn, include_bytes!("fixtures/self-signed-cert.der"), include_bytes!("fixtures/self-signed-key.pk8.der"));
     set_choice(Choice::Manual(zikaron_net::proxy_of(&format!("https://localhost:{bad}")).expect("typed")));
     match ask(&format!("https://node.invalid:{tn}/")) {
-        Err(Fail::Connect(why)) => assert!(why.contains(&format!("via proxy https://localhost:{bad}")), "{why}"),
+        Err(Fail::Proxy(why)) => assert!(why.contains(&format!("via proxy https://localhost:{bad}")), "{why}"),
         other => panic!("{other:?}"),
     }
 }

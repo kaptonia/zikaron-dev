@@ -286,80 +286,23 @@ pub fn outcome_of(items: &[Vec<u8>], fragment: &Value) -> Result<zikaron::audit:
         .ok_or_else(|| Fault::known(Known::AuditInput, crate::lang::t(crate::lang::Key::Tail081).to_string()))
 }
 
+/// The earliest counted anchor that reaches a ledger entry, in full (the shared record judge's,
+/// `zikaron_glue::recordcheck`).
+pub use zikaron_glue::recordcheck::FirstAnchor;
+
 /// **Each entry's first-anchor block time**: the earliest block timestamp among the counted anchors that reach
-/// it (the kit format's rule, the same as the depth reading's "first anchored"). `None` when the fragment does
-/// not audit; entries no anchor reaches are left out.
+/// it (the kit format's rule, the same as the depth reading's "first anchored"; `zikaron_glue::recordcheck`).
+/// `None` when the fragment does not audit; entries no anchor reaches are left out.
 pub fn first_anchored(items: &[Vec<u8>], fragment: &Value) -> Option<Vec<(String, u64)>> {
     let outcome = outcome_of(items, fragment).ok()?;
-    let lines = zikaron_kit::reading::Lines::of(&outcome.ledger);
-    let bounds = zikaron_kit::reading::bounds(&outcome, &lines);
-    Some(bounds.iter().enumerate().filter_map(|(i, t)| t.map(|t| (lines.id(i).to_string(), t))).collect())
+    Some(zikaron_glue::recordcheck::first_anchored(&outcome))
 }
 
-/// The earliest counted anchor that reaches a ledger entry, in full: the same rule as [`first_anchored`]'s
-/// time, plus which anchor gave it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FirstAnchor {
-    pub chain_id: u64,
-    pub block_number: u64,
-    pub block_timestamp: u64,
-    /// The anchoring transaction (hex32).
-    pub tx: String,
-    /// The hash it anchored (hex32): the entry it points to, at or after the one it reaches.
-    pub hash: String,
-    /// The registry contract whose log carried it (hex20), when the scan noted one.
-    pub registry: Option<String>,
-}
-
-/// **Each entry's first anchor, in full**: per entry, among the counted anchors whose time is that entry's
-/// bound and that reach it, the one with the smallest (chain id, block, transaction). `None` when the fragment
-/// does not audit; entries no anchor reaches are left out.
+/// **Each entry's first anchor, in full** (`zikaron_glue::recordcheck`). `None` when the fragment does not audit;
+/// entries no anchor reaches are left out.
 pub fn first_anchors(items: &[Vec<u8>], fragment: &Value) -> Option<Vec<(String, FirstAnchor)>> {
     let outcome = outcome_of(items, fragment).ok()?;
-    let lines = zikaron_kit::reading::Lines::of(&outcome.ledger);
-    let bounds = zikaron_kit::reading::bounds(&outcome, &lines);
-    let int = |v: &Value, k: &str| match v.member(k) {
-        Some(Value::Int(n)) => Some(*n),
-        _ => None,
-    };
-    let text = |v: &Value, k: &str| match v.member(k) {
-        Some(Value::Str(s)) => Some(s.clone()),
-        _ => None,
-    };
-    // The fragment's counted rows from a sender of this lineage (the set `counted` was trimmed from).
-    let rows: Vec<FirstAnchor> = match fragment.member("anchors") {
-        Some(Value::Arr(a)) => a
-            .iter()
-            .filter(|r| text(r, "verdict").as_deref() == Some(zikaron::tokens::Verdict::Counted.as_str()))
-            .filter(|r| text(r, "sender").map(|s| outcome.lineage.iter().any(|l| l.eq_ignore_ascii_case(&s))).unwrap_or(false))
-            .filter_map(|r| {
-                Some(FirstAnchor {
-                    chain_id: int(r, "chainId")?,
-                    block_number: int(r, "blockNumber")?,
-                    block_timestamp: int(r, "blockTimestamp")?,
-                    tx: text(r, "tx")?,
-                    hash: text(r, "hash")?,
-                    registry: None,
-                })
-            })
-            .collect(),
-        _ => Vec::new(),
-    };
-    let mut out = Vec::new();
-    for (i, t) in bounds.iter().enumerate() {
-        let Some(t) = *t else { continue };
-        let first = outcome
-            .counted
-            .iter()
-            .filter(|a| a.block_timestamp == t)
-            .filter(|a| lines.position(&a.hash).map(|p| zikaron_kit::reading::reachable_at(&outcome.ledger, &lines, p, i)).unwrap_or(false))
-            .flat_map(|a| rows.iter().filter(move |r| r.hash.eq_ignore_ascii_case(&a.hash) && r.block_timestamp == a.block_timestamp))
-            .min_by(|x, y| (x.chain_id, x.block_number, &x.tx).cmp(&(y.chain_id, y.block_number, &y.tx)));
-        if let Some(f) = first {
-            out.push((lines.id(i).to_string(), f.clone()));
-        }
-    }
-    Some(out)
+    Some(zikaron_glue::recordcheck::first_anchors(&outcome, fragment))
 }
 
 /// Names the registry of each first anchor from a scan's side reading (if several, the lowest address).
@@ -396,43 +339,13 @@ pub struct Ground {
 /// DISCARDED, so declaring wider only scans more, never counts more. Sorting and deduplicating is required
 /// (one scan, one assembly).
 pub fn senders_of(items: &[Vec<u8>]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for b in items {
-        let Ok(e) = zikaron::entry::check(b) else { continue };
-        out.push(e.author.clone());
-        if e.kind == zikaron::tokens::EntryType::Succession {
-            if let Value::Obj(m) = &e.body {
-                if let Some((_, Value::Str(to))) = m.iter().find(|(k, _)| k == "to") {
-                    out.push(to.clone());
-                }
-            }
-        }
-    }
-    out.sort();
-    out.dedup();
-    out
+    zikaron_glue::basis::senders_of(items)
 }
 
-/// Lays out a basis (three tables, member order set by the canonical byte rules).
+/// Lays out a basis (`zikaron_glue::basis`, where the command line lays its out too).
 pub fn basis_of(g: &Ground) -> Value {
-    let window = Value::Obj(vec![
-        ("chainId".to_string(), Value::Int(g.chain)),
-        ("fromBlock".to_string(), Value::Int(g.from_block)),
-        (
-            "registries".to_string(),
-            Value::Arr(vec![Value::Str(g.registry.hex())]),
-        ),
-        (
-            "senders".to_string(),
-            Value::Arr(g.senders.iter().map(|s| Value::Str(s.clone())).collect()),
-        ),
-        ("toBlock".to_string(), Value::Int(g.to_block)),
-    ]);
-    Value::Obj(vec![
-        ("adoptionChains".to_string(), Value::Arr(Vec::new())),
-        ("bareTx".to_string(), Value::Arr(Vec::new())),
-        ("chains".to_string(), Value::Arr(vec![window])),
-    ])
+    let registry = g.registry.hex();
+    zikaron_glue::basis::basis_of(&zikaron_glue::basis::Window { chain: g.chain, registry: &registry, from_block: g.from_block, to_block: g.to_block, senders: &g.senders })
 }
 
 /// The largest number of endpoints on any chain: how many rounds a scan runs.

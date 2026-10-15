@@ -91,6 +91,20 @@ pub fn settle(home: &Home, ids: &[String], anchored: bool, at: Option<&Inclusion
     })
 }
 
+/// The queue follows the ledger and the chain: entries a self-audit read on chain that still wait here leave it,
+/// recorded as anchored ([`Queue::seen_out`]); entries owed an anchor that are neither queued nor on chain join
+/// it ([`Queue::push`], which refuses one recorded as anchored). One read-modify-write under [`amend`]; the queue
+/// as written comes back for the shell's copy.
+pub fn follow(home: &Home, on_chain: &[String], owed: &[String], at: u64) -> Result<Queue, Fault> {
+    amend(home, |q| {
+        q.seen_out(on_chain);
+        for id in owed {
+            let _ = q.push(id, at);
+        }
+    })
+    .map(|(_, q)| q)
+}
+
 /// Where an included transaction landed, for recording the block number.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Inclusion {

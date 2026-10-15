@@ -46,8 +46,6 @@ pub const MIN_H: f32 = 560.0;
 struct Typed {
     /// The proxy address being typed (settings, network page, "enter one"); never a saved password.
     proxy: String,
-    /// A node address typed on the proxy section to see how it would go.
-    proxy_try: String,
     home: String,
     cap: String,
     migrate: String,
@@ -479,8 +477,6 @@ impl Win {
             Action::OpenEntry { id } => Some(id.clone()),
             _ => None,
         };
-        // The sequence number the next entry takes, read before the table goes stale (toasts name entries by number).
-        self.ux.next_seq = self.shell.rows.as_ref().map(|(r, _)| r.iter().map(|x| x.seq + 1).max().unwrap_or(0));
         // A long action records where it started, so the rail can go back there and its landing can offer "view"
         // once the user has left.
         if let Some(k) = task_of(&a) {
@@ -499,9 +495,10 @@ impl Win {
         self.told(applied, want, now)
     }
 
-    /// The next entry's number as a sentence piece ("#12"), or empty when the table was not read.
+    /// The number of the entry just written, as written ("#12"): another writer may have moved the head
+    /// meanwhile, so it is never guessed beforehand.
     fn new_seq(&self) -> String {
-        self.ux.next_seq.map(|n| format!("#{n}")).unwrap_or_default()
+        self.shell.landed.as_ref().map(|(_, n)| format!("#{n}")).unwrap_or_default()
     }
 
     /// An entry named for a toast: "#seq" when the table knows it, else a short id.
@@ -1134,12 +1131,12 @@ struct Ux {
     bk_pin: crate::secret::Secret,
     bk_dir: String,
     bk_trouble: Option<crate::fault::Fault>,
-    /// The "write alone" sheet is open, and what was typed on it: the passcode, the validity's unit
-    /// (`CLI_UNITS`) and amount, and the last refusal.
+    /// The "write alone" sheet is open, and what was typed on it: the passcode, the validity's three cells
+    /// (days, hours, minutes: `CLI_SPAN`), whether it never expires, and the last refusal.
     cli_sheet: bool,
     cli_pin: crate::secret::Secret,
-    cli_unit: usize,
-    cli_amount: String,
+    cli_span: [String; 3],
+    cli_never: bool,
     cli_trouble: Option<crate::fault::Fault>,
     /// The backup password for fetching a restored identity's ledger.
     fetch_pw: crate::secret::Secret,
@@ -1184,9 +1181,6 @@ struct Ux {
     proxy_manual: bool,
     /// The proxy address line was filled once from the machine settings.
     proxy_seeded: bool,
-    /// The last way said for the node address tried: the address, the saved setting it was judged under, when,
-    /// and the sentence.
-    proxy_tried: Option<(String, Option<String>, f64, String)>,
     open_cadence: bool,
     /// Background tasks the user started (one per kind, may repeat). Only these toast when they land.
     asked: Vec<crate::task::Kind>,
@@ -1198,8 +1192,6 @@ struct Ux {
     syncing: Vec<crate::task::Kind>,
     sync_said: Vec<Result<Done, crate::fault::Fault>>,
     synced_at: Option<f64>,
-    /// The next entry's sequence number, read before a write (toasts name entries by number).
-    next_seq: Option<u64>,
     /// Wizard and settings inputs.
     wiz_statement: String,
     /// The network row chosen in the wizard's network step.
@@ -1493,6 +1485,8 @@ struct U3 {
     kit_orig: Option<(String, Result<Vec<crate::kitx::Listed>, String>)>,
     /// Originals the user removed (by path); the rest travel with the kit.
     kit_orig_off: std::collections::BTreeSet<String>,
+    /// Export the kit as a folder (to publish it at an address) rather than one file.
+    kit_folder: bool,
     /// This pick's originals gate (same key as the list).
     kit_admit: Option<(String, Option<crate::kitx::Originals>)>,
     /// The pick list's working state while open (written back only on "done").

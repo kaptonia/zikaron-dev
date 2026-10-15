@@ -51,8 +51,8 @@ fn back_from_the_words_check_returns_to_the_same_words() {
 }
 
 #[test]
-fn the_language_switches_on_the_wizard_and_on_the_gate() {
-    if super::alone_in(module_path!(), "the_language_switches_on_the_wizard_and_on_the_gate") {
+fn the_language_switches_on_the_wizard_and_the_gate_keeps_it() {
+    if super::alone_in(module_path!(), "the_language_switches_on_the_wizard_and_the_gate_keeps_it") {
         return;
     }
     // The true first run: no vault yet (the passcode is the wizard's first step).
@@ -66,8 +66,9 @@ fn the_language_switches_on_the_wizard_and_on_the_gate() {
     assert!(wizard.drawn && wizard.after != wizard.before && wizard.machine_after == wizard.after && wizard.still_up, "{wizard:?}");
     answers!(app::action::apply_settled(&mut s, Action::SetPin { pin: "27618394".into(), again: "27618394".into() }), Applied::Unlocked);
     apply(&mut s, Action::Lock);
+    // Once the master key is made the gate has no switch, and speaks the language chosen last.
     let (_, gate) = app::window::probe_lang_pick(&ctx, s, Place::Home, true, Step::Pin, W, H);
-    assert!(gate.drawn && gate.after == wizard.before && gate.machine_after == gate.after && gate.still_up, "{gate:?}");
+    assert!(!gate.drawn && gate.after == gate.before && gate.before == wizard.after && gate.still_up, "{gate:?}");
 }
 
 #[test]

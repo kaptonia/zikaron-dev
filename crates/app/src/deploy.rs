@@ -43,41 +43,20 @@ pub struct Deployment {
     pub nodes: [&'static str; 2],
 }
 
-/// The whole table.
+/// The whole table: each row's chain, registry, start block and nodes are the anchoring crate's
+/// (`zikaron_anchor::deploy::ROWS`, where the command line reads them too); the display name is this table's.
 pub const KNOWN: [Deployment; 4] = [
-    Deployment {
-        name: "mainnet",
-        label: Key::DeployMainnet,
-        chain_id: 1,
-        registry: "0x36Ea8A857a5FE813429d4D9947000C644A88809A",
-        from_block: 26_087_229,
-        nodes: ["https://mainnet.gateway.tenderly.co", "https://rpc.mevblocker.io"],
-    },
-    Deployment {
-        name: "sepolia",
-        label: Key::DeploySepolia,
-        chain_id: 11_155_111,
-        registry: "0xC29410B882c4C3b77e33659d2f06ac563e7B08a3",
-        from_block: 11_715_660,
-        nodes: ["https://sepolia.gateway.tenderly.co", "https://rpc.sepolia.ethpandaops.io"],
-    },
-    Deployment {
-        name: "arbitrum-one",
-        label: Key::ChainArbitrumOne,
-        chain_id: 42_161,
-        registry: "0x36Ea8A857a5FE813429d4D9947000C644A88809A",
-        from_block: 511_445_184,
-        nodes: ["https://arb1.arbitrum.io/rpc", "https://arbitrum.gateway.tenderly.co"],
-    },
-    Deployment {
-        name: "op-mainnet",
-        label: Key::ChainOpMainnet,
-        chain_id: 10,
-        registry: "0x36Ea8A857a5FE813429d4D9947000C644A88809A",
-        from_block: 157_735_914,
-        nodes: ["https://mainnet.optimism.io", "https://optimism.gateway.tenderly.co"],
-    },
+    row(0, Key::DeployMainnet),
+    row(1, Key::DeploySepolia),
+    row(2, Key::ChainArbitrumOne),
+    row(3, Key::ChainOpMainnet),
 ];
+
+/// A row of this table from the anchoring crate's row `i`, with its display name.
+const fn row(i: usize, label: Key) -> Deployment {
+    let r = zikaron_anchor::deploy::ROWS[i];
+    Deployment { name: r.name, label, chain_id: r.chain_id, registry: r.registry, from_block: r.from_block, nodes: r.nodes }
+}
 
 /// The row selected by default in the wizard's network step and the new-identity sheet, until this machine
 /// chooses one.

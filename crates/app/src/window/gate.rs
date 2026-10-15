@@ -53,7 +53,6 @@ impl Win {
         let len = crate::keybox::PIN_LEN;
         let mut first_pin = false;
         let mut act: Option<Action> = None;
-        let mut lang_to: Option<crate::lang::Lang> = None;
         full::cover(ctx, "gate", |ui, drop| {
             let rect = ui.max_rect();
             full::centered(ui, "gate", rect, tk::SHEET_W, drop, |ui| {
@@ -68,9 +67,6 @@ impl Win {
                         Key::PinRecoverTitle
                     };
                     paint::text(ui, t(title), Type::Page, c(C::Ink));
-                    // The language, switchable before anything is unlocked (kept on this machine).
-                    ui.add_space(10.0);
-                    lang_to = lang_pick(ui, "gate-lang");
                 });
                 if !recover {
                     ui.vertical_centered(|ui| {
@@ -224,9 +220,6 @@ impl Win {
         });
         if from_backup {
             self.bk_open(Bk::Restore(RestoreFrom::Locked));
-        }
-        if let Some(lang) = lang_to {
-            let _ = self.act(Action::SetLang { lang }, now);
         }
         if first_pin {
             self.take_first_pin(now, true);

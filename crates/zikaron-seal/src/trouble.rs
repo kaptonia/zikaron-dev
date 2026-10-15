@@ -65,6 +65,9 @@ pub enum Code {
     HomeHeld,
     /// The home's writer mark names another machine, or does not read: no license to write it here.
     HomeOtherMachine,
+    /// This ledger was handed off to another place (the handoff's id in the evidence) and not taken back: it is
+    /// not written here.
+    HandedOff,
 }
 
 /// One refusal: its code and its evidence (paths, members, numbers; never a sentence).

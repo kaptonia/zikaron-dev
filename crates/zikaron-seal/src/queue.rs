@@ -6,16 +6,19 @@
 //! ─── No miscounting ───
 //!
 //! The risk is an entry sent but not removed, or removed without being sent. There is one way in
-//! ([`Queue::push`]) and two ways out, each with its reason: a successful chain receipt goes through
+//! ([`Queue::push`]) and three ways out, each with its reason: a successful chain receipt goes through
 //! [`Queue::anchored_out`] (removed and recorded as anchored; [`Queue::included_out`] also records the block),
-//! called only by the receipt path; a deleted entry goes through [`Queue::drop_ids`] (removed, nothing
-//! recorded). Anything that failed to send stays queued for retry because no other removal path exists.
+//! called by the receipt path and by [`Queue::seen_out`] (an entry a self-audit read on chain while it still
+//! waited here, another writer having anchored it); a deleted entry goes
+//! through [`Queue::drop_ids`] (removed, nothing recorded). Anything that failed to send stays queued for retry
+//! because no other removal path exists.
 //!
 //! ─── Only the receipt path records "anchored" ───
 //!
 //! The `anchored` list states a chain fact. If one exit recorded "anchored" for every caller, a retraction
 //! would mark an entry that never reached the chain as anchored, and re-queueing it would wrongly answer
-//! "already on chain". So only the receipt path's exit writes `anchored`.
+//! "already on chain". So only the exit that states a chain fact writes `anchored`, reached from the receipt path
+//! and from a self-audit's reading.
 
 use crate::trouble::{Code, Trouble};
 use zikaron::json::{self, Value};
@@ -355,7 +358,8 @@ impl Queue {
         before - self.items.len()
     }
 
-    /// A successful chain receipt: remove and record as anchored. Only the receipt path (the desktop's `queue::settle`) calls this.
+    /// A chain fact: remove and record as anchored. Reached from the receipt path (the desktop's `queue::settle`)
+    /// and from a self-audit's reading ([`Queue::seen_out`]).
     ///
     /// Removal and recording happen together; split apart, there would be a moment where the entry was removed
     /// but not recorded and could be queued again. `anchored` is written only here.
@@ -367,6 +371,16 @@ impl Queue {
             }
         }
         n
+    }
+
+    /// Entries a self-audit read on chain (the registry's logs carry them): those with no transaction of theirs
+    /// out leave through [`Queue::anchored_out`], removed and recorded as anchored (another writer, the command
+    /// line, put them on chain); one whose transaction is out is left to its receipt. Only the desktop's
+    /// `queue::follow` calls this.
+    pub fn seen_out(&mut self, ids: &[String]) -> usize {
+        let not_out: Vec<String> =
+            ids.iter().filter(|id| !self.step_of(id).is_some_and(Step::in_flight)).cloned().collect();
+        self.anchored_out(&not_out)
     }
 
     /// Set the state of these entries (only entries still queued are affected).
@@ -474,3 +488,24 @@ impl Queue {
         Ok(out)
     }
 }
+
+#[cfg(test)]
+mod seen_tests {
+    use super::*;
+
+    /// An entry a self-audit read on chain leaves the queue recorded as anchored, unless its transaction is out
+    /// (left to its receipt, recorded then); one not queued is recorded too, so it can never be queued again.
+    #[test]
+    fn an_entry_seen_on_chain_leaves_unless_its_transaction_is_out() {
+        let mut q = Queue::default();
+        let _ = q.push("aa", 1);
+        let _ = q.push("bb", 2);
+        q.mark(&["bb".to_string()], Step::Submitted { tx: "0x01".into(), chain: 1, nonce: Some(0) });
+        let gone = q.seen_out(&["aa".to_string(), "bb".to_string(), "cc".to_string()]);
+        assert_eq!(gone, 1);
+        assert!(!q.has("aa") && q.has("bb"), "{q:?}");
+        assert_eq!(q.anchored, vec!["aa".to_string(), "cc".to_string()]);
+        assert_eq!(q.push("cc", 3), Pushed::Anchored);
+    }
+}
+

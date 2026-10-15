@@ -199,6 +199,27 @@ pub fn probe_face(ctx: &egui::Context, shell: Shell, place: Place, width: f32, h
     )
 }
 
+/// The wake the window asks for after frames with no input: `place` drawn `frames` times, the clock starting at
+/// `start` and stepping `step` seconds (each frame turns the shell's clock as the window's does), and the delay the
+/// last frame asked before the next one, in seconds (`None`: it asked none). What the window wakes for while idle is
+/// read off its own output, not computed beside it.
+pub fn probe_wake(ctx: &egui::Context, shell: Shell, place: Place, start: f64, frames: usize, step: f64, width: f32, height: f32) -> (Shell, Option<f64>) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(place, role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut delay: Option<f64> = None;
+    for k in 0..frames.max(1) {
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(start + step * k as f64), ..Default::default() };
+        let out = ctx.run(input, |c| win.draw(c));
+        delay = out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.repaint_delay).filter(|d| *d < std::time::Duration::MAX).map(|d| d.as_secs_f64());
+    }
+    (win.shell, delay)
+}
+
 /// Walk a list page's history: settle, open the first row, go back (⌘[), go forward (⌘]). After each: the
 /// route drawn and whether back and forward were shown.
 pub fn probe_history(ctx: &egui::Context, shell: Shell, place: Place, width: f32, height: f32) -> (Shell, Vec<(String, bool, bool)>) {
@@ -618,7 +639,8 @@ pub fn probe_wizard_back(ctx: &egui::Context, shell: Shell, place: Place, width:
 }
 
 /// The first-run wizard opened at `step` (`gate`: false), or the passcode gate (`gate`: true, the vault locked);
-/// then the other language's cell on its switch clicked the way a click presses it.
+/// then the other language's cell on its switch clicked the way a click presses it, when one is drawn (the gate
+/// draws none: once the master key is made, the language is the one chosen last).
 pub fn probe_lang_pick(ctx: &egui::Context, shell: Shell, place: Place, gate: bool, step: crate::nav::Step, width: f32, height: f32) -> (Shell, LangPick) {
     let role = shell.settings.role;
     let mut ux = Ux::default();
@@ -709,14 +731,74 @@ pub fn probe_typed_under(ctx: &egui::Context, shell: Shell, width: f32, height: 
     (win.shell, reading)
 }
 
-/// Settings, network: the proxy section drawn with `tried` typed on its "try a node address" line (the saved
-/// proxy fills its own line as the page fills it); every text drawn once the page has settled.
-pub fn probe_proxy_section(ctx: &egui::Context, shell: Shell, tried: &str, width: f32, height: f32) -> (Shell, Vec<String>) {
+/// The "write alone" sheet opened over the local data page and driven by the window's own input: the days cell
+/// clicked and "400" typed, then cleared and "2" typed; the "does not expire" switch's title clicked, and "9"
+/// typed into the days cell while it is on. Read after each: the cell, and the line under the switch.
+pub fn probe_cli_sheet(ctx: &egui::Context, shell: Shell, width: f32, height: f32) -> (Shell, CliSheet) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Settings(crate::nav::Section::Data), role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    win.cli_open();
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run(input, |c| win.draw(c))
+    };
+    let settle = |win: &mut Win, run: &mut dyn FnMut(&mut Win, Vec<egui::Event>) -> egui::FullOutput| {
+        let mut out = run(win, Vec::new());
+        for _ in 0..4 {
+            out = run(win, Vec::new());
+        }
+        texts_of(&out)
+    };
+    let click = |at: egui::Pos2| {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        vec![egui::Event::PointerMoved(at), press(true), press(false)]
+    };
+    let key = |k: egui::Key| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+    let drawn = settle(&mut win, &mut run);
+    // The days cell is the field before the word "days": its middle sits half a cell and the gap left of the word.
+    let unit = drawn.iter().find(|d| d.text == t(Key::CliLastsDays)).map(|d| d.rect);
+    let toggle = drawn.iter().find(|d| d.text == t(Key::CliLastsNever)).map(|d| d.rect.center());
+    let mut reading = CliSheet::default();
+    let (Some(unit), Some(toggle)) = (unit, toggle) else { return (win.shell, reading) };
+    let cell = egui::pos2(unit.left() - tk::S2 - settings::CLI_CELL_W / 2.0, unit.center().y);
+    let said_has = |texts: &[Drawn], s: &str| texts.iter().any(|d| d.text == s);
+    let until = crate::lang::fill1(Key::CliAloneUntil, "");
+    let _ = run(&mut win, click(cell));
+    let _ = run(&mut win, vec![egui::Event::Text("400".into())]);
+    let texts = settle(&mut win, &mut run);
+    reading.days_typed = win.ux.cli_span[0].clone();
+    reading.over_said = said_has(&texts, &crate::lang::filln(Key::CliLastsAtMost, &[t(Key::CliLastsDays), "365"]));
+    let _ = run(&mut win, vec![key(egui::Key::Backspace), key(egui::Key::Backspace), key(egui::Key::Backspace)]);
+    let _ = run(&mut win, vec![egui::Event::Text("2".into())]);
+    let texts = settle(&mut win, &mut run);
+    reading.days_fixed = win.ux.cli_span[0].clone();
+    reading.expiry_said = texts.iter().any(|d| !until.is_empty() && d.text.starts_with(&until));
+    let _ = run(&mut win, click(toggle));
+    let _ = settle(&mut win, &mut run);
+    reading.never_on = win.ux.cli_never;
+    let _ = run(&mut win, click(cell));
+    let _ = run(&mut win, vec![egui::Event::Text("9".into())]);
+    let texts = settle(&mut win, &mut run);
+    reading.days_while_never = win.ux.cli_span[0].clone();
+    reading.quiet_while_never = !texts.iter().any(|d| !until.is_empty() && d.text.starts_with(&until));
+    (win.shell, reading)
+}
+
+/// Settings, network: the proxy section drawn (the saved proxy fills its own line as the page fills it); every
+/// text drawn once the page has settled.
+pub fn probe_proxy_section(ctx: &egui::Context, shell: Shell, width: f32, height: f32) -> (Shell, Vec<String>) {
     let role = shell.settings.role;
     let mut ux = Ux::default();
     ux.nav.land(crate::nav::history_of(Place::Settings(crate::nav::Section::Network), role));
     ux.wizard_asked = true;
-    let mut win = fresh_win(shell, Typed { proxy_try: tried.to_string(), ..Typed::default() }, ux);
+    let mut win = fresh_win(shell, Typed::default(), ux);
     win.faults_told = usize::MAX;
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
     let mut clock = 0.0;

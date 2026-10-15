@@ -99,6 +99,11 @@ pub fn adopt(dir: &std::path::Path, into: &Home) -> Result<Adopted, Fault> {
     let survey = ledger
         .survey()
         .map_err(|t| Fault::known(Known::Ledger, format!("{t:?}")))?;
+    // A ledger handed off to another place is not written here, adopted entries included (`zikaron_seal::pens`).
+    let root = survey.items.iter().filter_map(|b| zikaron::entry::check(b).ok()).find(|e| e.seq == 0).map(|e| e.id);
+    if let Some(root) = root {
+        zikaron_seal::pens::may_write(&crate::home::machine_dir()?, &root)?;
+    }
     let book = into.ledger()?;
     let mut linked = 0;
     for b in &survey.items {
@@ -112,7 +117,6 @@ pub fn adopt(dir: &std::path::Path, into: &Home) -> Result<Adopted, Fault> {
     }
     // The adopted ledger goes on this machine's blind list (`zikaron_seal::adopted`), so the command line refuses
     // to write its folder from now on; the folder itself is not touched.
-    let root = survey.items.iter().filter_map(|b| zikaron::entry::check(b).ok()).find(|e| e.seq == 0).map(|e| e.id);
     if let Some(root) = root {
         zikaron_seal::adopted::mark(&crate::home::machine_dir()?, &root)?;
     }

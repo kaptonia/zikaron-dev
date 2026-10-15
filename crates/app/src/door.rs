@@ -79,7 +79,11 @@ const ROWS: [Row; 10] = [
     Row { flags: &["subject", "note"], make: |q| Action::Retract { subject: one(q, "subject"), note_md: one(q, "note") } },
     // Sending the queue: whether it is sent or left for the user depends on the setting ([`turn_of`]).
     Row { flags: &[], make: |_| Action::SendBatch { count: 0 } },
-    Row { flags: &["entry", "note", "out"], make: |q| Action::ExportKit { from: String::new(), to: String::new(), ids: q.many("entry").join("\n"), attach: String::new(), note: one(q, "note"), out: one(q, "out") } },
+    // `--as`: the form's word as given (`folder`, `file`; none is one file), judged by the action layer.
+    Row {
+        flags: &["entry", "note", "out", "as"],
+        make: |q| Action::ExportKit { from: String::new(), to: String::new(), ids: q.many("entry").join("\n"), attach: String::new(), note: one(q, "note"), out: one(q, "out"), form: one(q, "as") },
+    },
 ];
 
 /// Converts the JSON array from a `--anchors` file into the adoption page's rows, one line per element:
@@ -481,14 +485,15 @@ impl Shell {
                         Some(next) if next != serial => return Some(Doing::Send { answer, serial: next }),
                         _ => Reply::NotYet { tx: tx.clone(), waited: 0 },
                     },
-                    Ok(Done::Anchored { tx, state, voided, .. }) => match crate::action::receipt_of(state) {
+                    Ok(Done::Anchored { tx, state, voided, waited, .. }) => match crate::action::receipt_of(state) {
                         // Void (no node holds it and its nonce was used by another transaction): reported as
                         // void with its entries back in the queue, never as "not yet".
                         _ if *voided => Reply::Voided { tx: tx.clone() },
                         Some((1, block)) => Reply::Anchored { tx: tx.clone(), block },
                         Some((status, _)) => Reply::Reverted { tx: tx.clone(), status },
                         None if crate::action::receipt_unheard(state) => Reply::Unheard { tx: tx.clone(), detail: state.clone() },
-                        None => Reply::NotYet { tx: tx.clone(), waited: self.anchor_wait.as_secs() },
+                        // How long the receipt wait ran, as measured: never the wait it was given.
+                        None => Reply::NotYet { tx: tx.clone(), waited: *waited },
                     },
                     Ok(_) => unexpected(Kind::Anchor),
                     Err(f) => refused(f),

@@ -37,14 +37,22 @@ pub fn centered_w(rect: Rect, width: f32) -> f32 {
     width.min(rect.width() - 32.0).max(0.0)
 }
 
+/// The room right of a scrolling column its bar lies in: the bars float over what scrolls and take no width
+/// (`skin`), so a column flush with its scroll area's edge would have its right edge under the bar.
+pub fn bar_room(ui: &egui::Ui) -> f32 {
+    let s = &ui.spacing().scroll;
+    s.bar_width + s.bar_inner_margin + s.bar_outer_margin
+}
+
 /// A column of `width` centered in `rect` (vertically too, by the height it had last frame), `drop` points
-/// lower while it settles. Taller than the room, it scrolls.
+/// lower while it settles. Taller than the room, it scrolls, its bar in the room right of the column
+/// ([`bar_room`]), never over it.
 pub fn centered<R>(ui: &mut egui::Ui, id_salt: &str, rect: Rect, width: f32, drop: f32, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let id = egui::Id::new(("zikaron-centered", id_salt));
     let h = ui.ctx().data(|d| d.get_temp::<f32>(id)).unwrap_or(0.0);
     let w = centered_w(rect, width);
     let top = (rect.center().y - h / 2.0).max(rect.top() + 24.0) + drop;
-    let col = Rect::from_min_size(pos2(rect.center().x - w / 2.0, rect.top()), vec2(w, rect.height()));
+    let col = Rect::from_min_size(pos2(rect.center().x - w / 2.0, rect.top()), vec2(w + bar_room(ui), rect.height()));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(col).layout(egui::Layout::top_down(egui::Align::Min)));
     child.set_clip_rect(rect);
     let out = egui::ScrollArea::vertical().id_salt(id.with("scroll")).max_height(rect.height()).auto_shrink([false, true]).show(&mut child, |ui| {

@@ -11,7 +11,7 @@ use crate::roles::Role;
 use zikaron::json::{self, Value};
 
 /// The settings file name.
-pub const FILE: &str = "desk.json";
+pub const FILE: &str = zikaron_seal::ground::SETTINGS_FILE;
 
 /// Default size cap in bytes. The cap can be changed but not removed.
 pub const CAP_DEFAULT: u64 = 4 * 1024 * 1024 * 1024;
@@ -171,10 +171,6 @@ impl Settings {
                 .collect(),
             _ => Vec::new(),
         };
-        let addr = |k: &str| match field(&v, k) {
-            Some(Value::Str(s)) => Address::parse(s),
-            _ => None,
-        };
         let mirror = match field(&v, "mirror") {
             Some(m) => {
                 let path = match field(m, "path") {
@@ -203,20 +199,16 @@ impl Settings {
             }
             None => None,
         };
+        // The three basis fields are read where the command line reads them too (`zikaron_seal::ground`).
+        let ground = zikaron_seal::ground::of_settings(&v);
         Ok(Settings {
             role,
             cap_bytes: cap,
             endpoints,
             mirror,
-            chain_id: match field(&v, "chainId") {
-                Some(Value::Int(n)) => Some(*n),
-                _ => None,
-            },
-            registry: addr("registry"),
-            from_block: match field(&v, "fromBlock") {
-                Some(Value::Int(n)) => *n,
-                _ => 0,
-            },
+            chain_id: ground.chain_id,
+            registry: ground.registry.map(Address),
+            from_block: ground.from_block,
             audit_every: match field(&v, "auditEvery") {
                 Some(Value::Int(n)) => *n,
                 _ => AUDIT_EVERY_DEFAULT,

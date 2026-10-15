@@ -348,6 +348,52 @@ pub fn export(out: &Path, mut b: Bundle) -> Result<Landed, Trouble> {
     }
 }
 
+/// The two forms a kit is written in: one file (`.zkit`, [`crate::container`]) or a folder. Closed set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Form {
+    File,
+    Folder,
+}
+
+impl Form {
+    /// The form's word (the command line's `--as` value).
+    pub fn word(self) -> &'static str {
+        match self {
+            Form::File => "file",
+            Form::Folder => "folder",
+        }
+    }
+
+    /// The form a word names; any other word is none.
+    pub fn of(word: &str) -> Option<Form> {
+        [Form::File, Form::Folder].into_iter().find(|f| f.word() == word)
+    }
+}
+
+/// Lay out, self-verify and write to `out` in `form`, only on KIT_OK: a folder as [`export`] writes it; one file
+/// laid out from the same verified folder, streamed into place (`container::pack_dir`), the folder then cleared.
+/// An existing `out` is refused either way and never overwritten.
+pub fn export_as(out: &Path, b: Bundle, form: Form) -> Result<Landed, Trouble> {
+    crate::seam_v2();
+    if form == Form::Folder {
+        return export(out, b);
+    }
+    if out.exists() {
+        return Err(Trouble::Occupied(out.to_string_lossy().into_owned()));
+    }
+    let laid = landing::staging_beside(out)?;
+    let landed = export(&laid, b);
+    let packed = match landed {
+        Ok(l) => crate::container::pack_dir(&laid, out).map(|_| l).map_err(|t| match t {
+            crate::container::PackTrouble::Land(t) => Trouble::from(t),
+            crate::container::PackTrouble::File(b) => Trouble::Io(out.to_string_lossy().into_owned(), format!("{}: {}", b.code(), b.subject())),
+        }),
+        Err(t) => Err(t),
+    };
+    let _ = std::fs::remove_dir_all(&laid);
+    packed
+}
+
 /// Two items at one kit path are refused, with that path as subject. Files and proofs are separate tables.
 fn duplicates(b: &Bundle) -> Result<(), Trouble> {
     for list in [

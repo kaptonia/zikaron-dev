@@ -64,6 +64,19 @@ pub fn salt(machine_dir: &Path) -> Result<Option<[u8; 32]>, Trouble> {
     }
 }
 
+/// This machine's salt, made on first use (32 random bytes). The machine's other blind lists (the pens of handed
+/// ledgers, `pens`) are kept under it too.
+pub fn salt_made(machine_dir: &Path) -> Result<[u8; 32], Trouble> {
+    match salt(machine_dir)? {
+        Some(s) => Ok(s),
+        None => {
+            let s: [u8; 32] = crate::trouble::random(32)?.try_into().map_err(|_| Trouble::new(Code::Unknown, SALT_FILE))?;
+            crate::land::put_at(machine_dir, SALT_FILE, format!("{}\n", line(&s)).as_bytes())?;
+            Ok(s)
+        }
+    }
+}
+
 /// The adopted list's lines (empty when there is none).
 pub fn list(machine_dir: &Path) -> Result<Vec<[u8; 32]>, Trouble> {
     Ok(lines(&machine_dir.join(LIST_FILE))?.unwrap_or_default())
@@ -87,14 +100,7 @@ pub fn contains(machine_dir: &Path, root: &[u8; 32]) -> Result<bool, Trouble> {
 /// Record that the ledger with root id `root` was adopted: the salt is made on first use (32 random bytes), and
 /// the ledger's line is added once. True when the line is new.
 pub fn mark(machine_dir: &Path, root: &[u8; 32]) -> Result<bool, Trouble> {
-    let salt = match salt(machine_dir)? {
-        Some(s) => s,
-        None => {
-            let s: [u8; 32] = crate::trouble::random(32)?.try_into().map_err(|_| Trouble::new(Code::Unknown, SALT_FILE))?;
-            crate::land::put_at(machine_dir, SALT_FILE, format!("{}\n", line(&s)).as_bytes())?;
-            s
-        }
-    };
+    let salt = salt_made(machine_dir)?;
     let mut all = list(machine_dir)?;
     let want = blind(&salt, root);
     if all.contains(&want) {

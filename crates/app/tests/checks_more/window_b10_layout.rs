@@ -197,6 +197,8 @@ fn at_the_least_width_the_gas_codes_caption_is_whole_within_the_plate() {
         let (ctx, frames) = tapped(None);
         let mut shell = probe_shell(&ctx);
         shell.anchor = Some(some_anchor());
+        // The network step came first: the code carries its chain.
+        shell.settings.chain_id = Some(11_155_111);
         let (_, texts, plates) = app::window::probe_wizard_step(&ctx, shell, Place::Home, Step::Gas, app::window::MIN_W, app::window::MIN_H);
         let plate = *plates.first().expect("the code's plate is drawn");
         assert_eq!(plates.len(), 1, "one code: {plates:?}");

@@ -242,7 +242,7 @@ pub enum Action {
     PickKit { from: String, to: String, ids: String },
     /// Write a kit (background): pick, attach, hand to the kit output crate to lay out and self-verify; lands
     /// only on KIT_OK.
-    ExportKit { from: String, to: String, ids: String, attach: String, note: String, out: String },
+    ExportKit { from: String, to: String, ids: String, attach: String, note: String, out: String, form: String },
     /// Digest attachments first: each path dropped on the export page is digested in the background in
     /// content form.
     VetAttachments { paths: Vec<String> },
@@ -2064,8 +2064,8 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             }
             Err(f) => shell.trouble(f),
         },
-        Action::ExportKit { from, to, ids, attach, note, out } => {
-            match export_kit(shell, &from, &to, &ids, &attach, &note, &out) {
+        Action::ExportKit { from, to, ids, attach, note, out, form } => {
+            match export_kit(shell, &from, &to, &ids, &attach, &note, &out, &form) {
                 Ok(s) => match s {
                     Spawned::Started => Applied::Started(Kind::Kit),
                     Spawned::InFlight => Applied::Refused(Kind::Kit),

@@ -312,6 +312,10 @@ pub(super) fn check_published(shell: &mut Shell, local: &str) -> Result<Spawned,
     } else {
         std::path::PathBuf::from(local.trim())
     };
+    // A kit in one file is not published at an address: publication reads a folder file by file.
+    if zikaron_glue::container::is_container_at(&dir) {
+        return Err(crate::fault::Fault::known(crate::fault::Known::NotAdoptable, crate::lang::t(crate::lang::Key::PublishFileKit).to_string()));
+    }
     if !dir.join(zikaron_glue::names::MANIFEST).is_file() {
         return Err(crate::fault::Fault::known(crate::fault::Known::NotAdoptable, crate::lang::filln(crate::lang::Key::Tail027, &[&dir.display().to_string()])));
     }

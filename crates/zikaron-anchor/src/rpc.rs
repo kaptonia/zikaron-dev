@@ -54,6 +54,20 @@ pub fn overlong(url: &str, max: usize) -> Trouble {
 /// The answer is not JSON.
 pub const NOT_JSON: &str = "答不是 JSON";
 
+/// The words between the address and the proxy's own failure in [`proxy_leg`].
+const PROXY_LEG: &str = " 经代理没连上:";
+
+/// The leg to a proxy failed (`zikaron_net::Fail::Proxy`, the proxy and its failure in `said`): the node was
+/// never reached.
+pub fn proxy_leg(url: &str, said: &str) -> Trouble {
+    Trouble::Transport(format!("{}{PROXY_LEG}{said}", zikaron_net::sayable(url)))
+}
+
+/// Whether a sentence says the leg to a proxy failed.
+pub fn is_proxy(said: &str) -> bool {
+    said.contains(PROXY_LEG)
+}
+
 /// Whether a sentence says the total deadline passed.
 pub fn is_late(said: &str) -> bool {
     said.ends_with("秒里没把话说完")
@@ -371,6 +385,7 @@ pub fn transport_said(url: &str, f: &zikaron_net::Fail) -> Trouble {
         | zikaron_net::Fail::Handshake(x)
         | zikaron_net::Fail::Certificate(x)
         | zikaron_net::Fail::Stream(x) => Trouble::Transport(format!("{url}: {x}")),
+        zikaron_net::Fail::Proxy(x) => proxy_leg(url, x),
         zikaron_net::Fail::Closed => Trouble::Transport(format!("{url}: 这一问随收场停下")),
     }
 }

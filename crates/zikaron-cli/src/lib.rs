@@ -38,6 +38,7 @@ pub mod desk;
 pub mod docs;
 pub mod entropy;
 pub mod entry;
+pub mod handoff;
 pub mod kitout;
 pub mod ledger;
 pub mod out;

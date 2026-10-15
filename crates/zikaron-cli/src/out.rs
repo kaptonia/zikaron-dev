@@ -39,6 +39,18 @@ impl Answer {
     pub fn telling(self, line: String) -> Answer {
         Answer { told: Some(line), ..self }
     }
+
+    /// The same answer with these members added to its object (the printed form orders members by itself).
+    pub fn with(self, members: Vec<(Key, Value)>) -> Answer {
+        let value = match self.value {
+            Value::Obj(mut ms) => {
+                ms.extend(members.into_iter().map(|(k, v)| (k.as_str().to_string(), v)));
+                Value::Obj(ms)
+            }
+            other => other,
+        };
+        Answer { value, ..self }
+    }
 }
 
 fn obj(members: Vec<(Key, Value)>) -> Value {
@@ -309,6 +321,7 @@ pub enum Said {
     KeyFileOpen,
     NotWithHome,
     DesktopLocked,
+    DoorAlone,
     DesktopClosed,
     DoorPathLong,
     DoorNotYou,
@@ -323,10 +336,19 @@ pub enum Said {
     HomeHeld,
     HomeOtherMachine,
     Adopted,
+    AsWord,
+    NotAHome,
+    HandedOff,
+    HandoffFile,
+    HandoffNotBack,
+    HandoffAhead,
+    HandoffNotOneLine,
+    RecordsNotAll,
+    OnChain,
 }
 
 impl Said {
-    pub const ALL: [Said; 55] = [
+    pub const ALL: [Said; 65] = [
         Said::Usage,
         Said::NotAVerb,
         Said::NotAFlag,
@@ -368,6 +390,7 @@ impl Said {
         Said::KeyFileOpen,
         Said::NotWithHome,
         Said::DesktopLocked,
+        Said::DoorAlone,
         Said::DesktopClosed,
         Said::DoorPathLong,
         Said::DoorNotYou,
@@ -382,6 +405,15 @@ impl Said {
         Said::HomeHeld,
         Said::HomeOtherMachine,
         Said::Adopted,
+        Said::AsWord,
+        Said::NotAHome,
+        Said::HandedOff,
+        Said::HandoffFile,
+        Said::HandoffNotBack,
+        Said::HandoffAhead,
+        Said::HandoffNotOneLine,
+        Said::RecordsNotAll,
+        Said::OnChain,
     ];
 
     /// The words, one table: Chinese and English.
@@ -402,10 +434,10 @@ impl Said {
             Said::NotJson => ("不是 JSON", "not JSON"),
             Said::NotLawJson => ("不是法 §3.5 收的 JSON", "not JSON the law takes (§3.5)"),
             Said::NotUtf8 => ("参数不是合法 UTF-8", "an argument is not valid UTF-8"),
-            Said::Sealed => ("已锁定:这是 ZIKARON Desk 封存的本机数据,命令行不读", "Locked: this is local data ZIKARON Desk keeps sealed; the command line does not read it"),
+            Said::Sealed => ("已锁定:这是 ZIKARON Desk 封存的本机数据;命令行只凭凭据读桌面所管之家的账本", "Locked: this is local data ZIKARON Desk keeps sealed; the command line reads it only as the ledger of a home the desktop keeps, with the credential"),
             Said::EndpointShape => ("--endpoint 的形是 <链号>=<url>", "--endpoint is <chain id>=<url>"),
             Said::EndpointScheme => ("端点只认 http:// 或 https:// 地址", "an endpoint is an http:// or https:// address"),
-            Said::ProxyShape => ("--proxy 只认 system、none，或 http://、https://、socks5://、socks4:// 加 主机:端口(可带 用户名:口令@，socks4 只带用户名)", "--proxy takes system, none, or http://, https://, socks5://, socks4:// and host:port (user:password@ may go before the host; socks4 takes a user name only)"),
+            Said::ProxyShape => ("--proxy 取 system、none 或代理地址", "--proxy takes system, none or a proxy address"),
             Said::NeedEndpoint => ("至少要一个 --endpoint <链号>=<url>", "at least one --endpoint <chain id>=<url> is wanted"),
             Said::OneEndpoint => ("anchor 只往一条链上发,只收一个 --endpoint", "anchor sends to one chain and takes one --endpoint"),
             Said::ChainIdNotInt => ("链号不是十进制整数", "the chain id is not a decimal integer"),
@@ -428,6 +460,7 @@ impl Said {
             Said::KeyFileOpen => ("这份密钥档别的账户也读得到(只许本人可读)", "other accounts can read this key file (it must be readable by its owner only)"),
             Said::NotWithHome => ("带 --home 时不收这一旗(桌面那一侧用它自己的身份与账本)", "not taken together with --home (the desktop uses its own identity and ledger)"),
             Said::DesktopLocked => ("桌面锁着或没有打开", "The desktop is locked or not open"),
+            Said::DoorAlone => ("纯命令行写入开着,桌面不收 --home;去掉 --home 直写", "Writing alone is on, so the desktop takes no --home; write without --home"),
             Said::DesktopClosed => ("桌面在答之前锁上、关了这处数据或退出了", "The desktop locked, closed this data folder or quit before it answered"),
             Said::DoorPathLong => ("本机数据所在文件夹的路径太长,连不到桌面", "The path of this machine's data folder is too long to reach the desktop"),
             Said::DoorNotYou => ("桌面那一端不是本机这位用户", "The desktop at the other end is another user's"),
@@ -435,13 +468,22 @@ impl Said {
             Said::NoMachine => ("找不到本机数据所在的文件夹", "This machine's data folder cannot be found"),
             Said::OnDesktop => ("此动作须在桌面上做", "This action must be done on the desktop"),
             Said::Queued => ("已在队列,待用户在桌面上发", "Queued; waiting for the user to send it from the desktop"),
-            Said::SealedNoKey => ("ZIKARON Desk 封存的数据,签名钥由桌面的钥库给,不收 --key 或 --key-file", "sealed data of ZIKARON Desk is signed with the key its vault keeps; --key and --key-file are not taken"),
-            Said::CredentialExpired => ("命令行凭据已过期,已删去;请在桌面重新打开纯命令行写入", "The command-line credential has expired and was removed; turn writing alone on again on the desktop"),
-            Said::CredentialMissing => ("这台机器上没有命令行凭据:桌面的纯命令行写入没有打开", "This machine has no command-line credential: writing alone is not on in the desktop"),
-            Said::CredentialShape => ("命令行凭据读不出、开不了,或不是这台机器钥库的;请在桌面关掉再打开纯命令行写入", "The command-line credential cannot be read, does not open, or is not this machine vault's; turn writing alone off and on again on the desktop"),
-            Said::HomeHeld => ("桌面正在写这一处数据,这一笔没有写;请稍后再试", "The desktop is writing this data folder; nothing was written. Try again shortly"),
-            Said::HomeOtherMachine => ("这一处数据的写者标记是另一台机器的(或读不出),这一笔没有写;请在写它的那台机器上写", "This data folder's writer mark names another machine (or does not read); nothing was written. Write on the machine that writes it"),
-            Said::Adopted => ("这本账已被 ZIKARON Desk 采用,原目录不再写;请在桌面打开纯命令行写入,写桌面封存的那一本", "ZIKARON Desk has adopted this ledger; its folder is no longer written. Turn writing alone on in the desktop and write its sealed copy"),
+            Said::SealedNoKey => ("封存数据不收 --key 或 --key-file", "sealed data does not take --key or --key-file"),
+            Said::CredentialExpired => ("命令行凭据已过期;到桌面重新打开纯命令行写入", "The command-line credential has expired; turn writing alone on again on the desktop"),
+            Said::CredentialMissing => ("本机没有命令行凭据;到桌面打开纯命令行写入", "This machine has no command-line credential; turn writing alone on in the desktop"),
+            Said::CredentialShape => ("命令行凭据无效;到桌面关掉再打开纯命令行写入", "The command-line credential is not valid; turn writing alone off and on again on the desktop"),
+            Said::HomeHeld => ("桌面正在写入,未写;稍后再试", "The desktop is writing; nothing was written. Try again shortly"),
+            Said::HomeOtherMachine => ("这份数据由另一台机器写入,未写", "Another machine writes this data; nothing was written"),
+            Said::Adopted => ("这本账已被 ZIKARON Desk 采用,原目录不再写", "ZIKARON Desk has adopted this ledger; its folder is no longer written"),
+            Said::AsWord => ("--as 只认 file 或 folder", "--as takes file or folder"),
+            Said::NotAHome => ("这不是桌面所管之家的账本,没有底账设置;给 --basis", "this is not the ledger of a home the desktop keeps and has no basis settings; give --basis"),
+            Said::HandedOff => ("这本账已交接到另一处;收下交回的交接件之前不在这里写", "This ledger was handed off to another place; it is not written here until its handoff comes back"),
+            Said::HandoffFile => ("这份文件读不出交接件,未写", "This file does not read as a handoff; nothing was written"),
+            Said::HandoffNotBack => ("这一处已交出这本账,这份交接件不是交回来的那一份,未写", "This place handed the ledger off, and this handoff is not the one coming back; nothing was written"),
+            Said::HandoffAhead => ("这一处有交接件里没有的条目,收下会丢掉或分叉它,未写", "This place holds an entry the handoff lacks; taking it would lose or fork that entry; nothing was written"),
+            Said::HandoffNotOneLine => ("交接件里的账不是一条线,未写", "The handoff's ledger is not one line; nothing was written"),
+            Said::OnChain => ("链上已有这一条(别处已上链),没有再发", "The chain already holds this anchor (put on chain elsewhere); nothing was sent"),
+            Said::RecordsNotAll => ("不是每一条记录都成立:看各条的 original 与 anchored", "Not every record holds: see each one's original and anchored"),
         }
     }
 

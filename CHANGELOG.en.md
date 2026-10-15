@@ -8,13 +8,23 @@ This version lets the command line write the data the desktop keeps sealed even 
 
 ### Command-line writing
 
-- **Two switches**: the "Command line" group in Settings > Local data. "Command line writes through the desktop" decides whether the door is open (`--home`, no passcode); "Command line writes alone" asks for the passcode and a validity (minutes, hours, days, or never expiring) each time it is turned on. While writing alone is on, the desktop switch is greyed and the door is closed: there is one command-line path at any time.
+- **Two switches**: the "Command line" group in Settings > Local data. "Command line writes through the desktop" decides whether the door is open (`--home`, no passcode); "Command line writes alone" asks for the passcode and a validity (days, hours and minutes, or never expiring) each time it is turned on. While writing alone is on, the desktop switch is greyed and the door is closed: there is one command-line path at any time.
 - **Credential**: turning writing alone on writes a credential in the machine folder that only you can read and write; with it the command line writes the sealed ledger and anchor queue directly, taking no passcode and no `--key`. Turning the switch off removes it; its expiry removes it with a line saying so; a new master key makes it worthless, turns the switch off and says so; a changed passcode leaves it working; a credential failure counts no passcode try.
 - **Taking turns with the lock**: while writing alone is on, the desktop takes the data folder's writer lock only for each write and lets it go after, reading things again first if the command line wrote; a desktop write that meets the command line writing is not done and says so, with a key to the switches. The command line meeting the desktop writing answers `E_HOME_HELD`; a data folder whose writer mark names another machine answers `E_HOME_OTHER_MACHINE`.
 - **The folder after adoption**: once a plain ledger the command line made is taken in by the desktop ("Import key…", then "Adopt in place"), writing its original folder answers `E_ADOPTED` and the folder is never touched; the machine folder keeps only a blind list (the SHA-256 of a random salt followed by the root entry id), never a ledger name, path or entry id.
 - **`retract`** writes a sealed ledger with the credential like the other entry-writing verbs; `init` is not taken there.
 - New refusal reasons: `E_CREDENTIAL_MISSING`, `E_CREDENTIAL_EXPIRED`, `E_CREDENTIAL_SHAPE`, `E_HOME_HELD`, `E_HOME_OTHER_MACHINE`, `E_ADOPTED`.
 - **Handing the ledger over is done on the desktop by hand**: `succeed --home` always answers `E_ON_DESKTOP` and is not handed to the desktop.
+
+### Command-line reading, record kits and handoffs
+
+- **The credential opens for reading too**: while the command line writes alone, `audit`, `check-grant`, `chain-check`, `depth`, `show --entry` and `kit-export` read the ledger in a desktop data folder with the same credential, refused for the same reasons as a write; `check-grant` so reads the issuer's whole ledger and can say whether a grant was revoked. `kit-export` from such a data folder takes the chosen records' originals and the "where it is anchored" line as the desktop does; `scan --ledger` takes its basis from that data folder's settings.
+- **`kit-verify`**: the command line verifies a record kit record by record (is each original the one recorded, is it anchored), by the desktop's "Verify record" judge.
+- **A record kit is one file**: the desktop and the command line export one `.zkit` file by default (the grant file's format), written and read item by item, with no 64 MiB limit any more; export a folder to publish at an address (the desktop's "Export as a folder", the command line's `--as folder`). Verifying takes a file or a folder.
+- **The command line does not anchor again what the chain holds**: `anchor --form registry` asks the registry first whether this key already anchored those hashes, and answers `E_ON_CHAIN` and sends nothing when one is; used remotely through an agent, what this machine anchored is not paid for twice.
+- **One place for originals**: a file the command line writes into a desktop data folder with `history --file` and the credential is recorded in the same index of signed files as the desktop's, so an exported record kit carries the original.
+- **The idle desktop looks at the disk every second**: while writing alone is on and the desktop is unlocked, it wakes once a second to look at the disk, so what the command line writes shows without waiting for the mouse or the next timer.
+- **Handing a ledger over**: `hand-over` writes the whole ledger into a handoff file and this place stops writing it; `take-over` takes a handoff as a follow-on only and this place writes again. A remote machine's command-line ledger and this machine's desktop can pass a ledger back and forth, one place writing at any time; this machine's side uses the credential, the desktop locked or not. New refusals `E_HANDED_OFF`, `E_HANDOFF`, `E_RECORDS`.
 
 ### Local data
 
@@ -27,8 +37,19 @@ This version lets the command line write the data the desktop keeps sealed even 
 - **Reading each system**: Windows is read as the system answers the current settings (automatic detection, the script, the proxy list and its exceptions), the machine's when it sets one for every user; every way of writing the proxy list is read (no scheme, `http://`, one per protocol, `socks=` alone). Linux reads the desktop's stored settings first (KDE's `kioslaverc`; GNOME, Cinnamon and MATE's GSettings, from the dconf database or the keyfile, running no program), then the environment. macOS is read from the network configuration, the script and discovery included.
 - **Proxies that ask who you are**: a proxy address may carry `user:password@` (HTTP Basic for an HTTP proxy, user name and password for SOCKS5); credentials in the environment, the system settings and a script's answer are used too. The password is kept in the encrypted machine settings, wiped once handed to the proxy, and never shown again: the settings page says "Password set". Saving the address again with the user name alone keeps the password.
 - **HTTPS proxies and SOCKS4**: a custom proxy may be `https://` (TLS to the proxy and TLS to the node, each certificate checked) or `socks4://` (a user name only); host names are always left to the proxy to resolve.
-- **A custom proxy leaves local networks alone**: private (`10/8`, `172.16/12`, `192.168/16`), link-local (`169.254/16`, `fe80::/10`), this machine and `.local` nodes always go straight. Settings > Network > Proxy can try a node address and say whether it goes straight or through which proxy (it only looks, nothing connects).
+- **A custom proxy leaves local networks alone**: private (`10/8`, `172.16/12`, `192.168/16`), link-local (`169.254/16`, `fe80::/10`), this machine and `.local` nodes always go straight.
 - The command line's `--proxy` takes the same forms.
+- **A proxy that fails is named**: when the leg to the proxy cannot be opened, is refused or turns the credentials down, the message says the proxy cannot be reached (`PROXY_UNREACHABLE`) and points at the proxy setting, not at the node.
+
+### Other
+
+- The passcode gate no longer switches the language (the first-run wizard still does).
+- Waiting for a receipt, a node a few blocks behind the others no longer ends the wait early; it runs to its end. When a send through the desktop answers "not in a block yet", `count` is the seconds actually waited.
+- A new message waits for the last one to fade out instead of lying over it; full-window pages (the passcode gate, recovery, first run) keep their content clear of the scroll bar; the validity's three cells centre their numbers.
+- **The open desktop follows what the command line writes**: once a second the desktop looks at the ledger on disk, and entries the command line wrote alone show at once in the ledger, the pending count, the home cards and the local data page's summary; with "auto anchor" on, the send card opens for them as after a record of the desktop's own.
+- **The pending queue follows the ledger and the chain**: entries a self-audit finds on chain that still wait in the queue unsent (the command line anchored them itself, say) leave it, recorded as anchored, and are never sent again; entries the chain does not hold that are not queued (an adopted ledger's, say) join it after the next self-audit.
+- The message after a record names the sequence number actually written (no longer one short when the command line wrote meanwhile).
+- While writing alone is on, a command with `--home` answers `E_DESKTOP` with `detail` `ALONE` (write without `--home`), no longer that the desktop is locked or not open.
 
 ## 0.1.2
 

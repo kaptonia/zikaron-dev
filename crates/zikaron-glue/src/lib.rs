@@ -19,14 +19,19 @@ pub fn seam_v2() {
     zikaron::trace::mark(V2);
 }
 
+pub mod anchoredon;
+pub mod basis;
 pub mod container;
 pub mod door;
 pub mod grantfile;
+pub mod kitnames;
 pub mod landing;
 pub mod mirror;
 pub mod names;
+pub mod onefile;
 pub mod pack;
 pub mod read;
+pub mod recordcheck;
 pub mod recording;
 pub mod retraction;
 pub mod sealed;

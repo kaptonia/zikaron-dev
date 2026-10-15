@@ -214,6 +214,13 @@ impl Win {
                         });
                         field(ui, t(Key::KitNoteLabel), None, |ui| input::area_words(ui, &mut self.typed.kit_note, 2, ""));
                         Self::place_row(ui, Key::IdStore, &mut self.typed.kit_out);
+                        ui.horizontal(|ui| {
+                            if toggle::switch(ui, self.ux.u3.kit_folder, true).clicked() {
+                                self.ux.u3.kit_folder = !self.ux.u3.kit_folder;
+                            }
+                            paint::text(ui, t(Key::KitAsFolder), Type::Body, c(C::Ink));
+                        });
+                        hint(ui, t(Key::KitAsFolderNote));
                         paint::rule(ui, 0.0);
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing.y = tk::S2;
@@ -310,7 +317,13 @@ impl Win {
             // digest.
             let pick = crate::kitx::Pick::parse_ids(&self.typed.pick_from, &self.typed.pick_to, &self.typed.pick_ids).unwrap_or_default();
             let stem = crate::kitx::landing_stem(&rows, &pick);
-            let chosen = crate::home::choose(&crate::home::Kind::Bundle { stem: stem.clone() }, std::path::Path::new(self.typed.kit_out.trim()));
+            // One `.zkit` file unless a folder was asked for.
+            let kind = if self.ux.u3.kit_folder {
+                crate::home::Kind::Bundle { stem: stem.clone() }
+            } else {
+                crate::home::Kind::File { stem: stem.clone(), ext: zikaron_glue::container::EXT_KIT.to_string() }
+            };
+            let chosen = crate::home::choose(&kind, std::path::Path::new(self.typed.kit_out.trim()));
             self.remember_landing(Out::Kit, &chosen);
             let out = chosen.at.display().to_string();
             // Originals still on disk and not removed come first, then dropped items, one per line.
@@ -330,6 +343,7 @@ impl Win {
                 attach: attach.join("\n"),
                 note: self.typed.kit_note.clone(),
                 out,
+                form: if self.ux.u3.kit_folder { zikaron_glue::pack::Form::Folder } else { zikaron_glue::pack::Form::File }.word().to_string(),
             };
             self.act(a, now);
         }

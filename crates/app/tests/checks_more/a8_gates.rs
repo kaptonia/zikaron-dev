@@ -209,7 +209,7 @@ fn every(ids: &Ids) -> Vec<Action> {
         Action::SendBatch { count: 1 },
         Action::BumpFee { tx: format!("0x{}", "ef".repeat(32)), cap: 1 },
         Action::PickKit { from: s(), to: s(), ids: s() },
-        Action::ExportKit { from: s(), to: s(), ids: s(), attach: s(), note: s(), out: s() },
+        Action::ExportKit { from: s(), to: s(), ids: s(), attach: s(), note: s(), out: s(), form: "folder".into() },
         Action::VetAttachments { paths: Vec::new() },
         Action::ReadDepth { work: s() },
         Action::DraftGrant { draft: Box::new(ids.draft.clone()), exclusive: false, terms_file: None },

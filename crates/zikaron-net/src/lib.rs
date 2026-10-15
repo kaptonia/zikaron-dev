@@ -331,6 +331,9 @@ pub enum Fail {
     Overlong(usize),
     /// The stream broke, or the response is not valid HTTP.
     Stream(String),
+    /// The leg to a proxy failed (not reached, refused the tunnel or its credentials, broke off), the proxy
+    /// named: the node itself was never reached.
+    Proxy(String),
     /// The transport is shutting down (the app is quitting): the exchange was cut or never began.
     Closed,
 }
@@ -599,13 +602,21 @@ fn open(t: &Target, ways: &[Way], clock: &Clock) -> Result<keep::Live, Fail> {
                 break;
             }
             Err(f @ (Fail::Late(_) | Fail::Closed)) => return Err(f),
-            Err(f) => failed.push(f),
+            Err(f) => {
+                failed.push(f);
+                // The deadline spent on this way (a proxy that never answered): no other way is tried.
+                if clock.left().is_err() {
+                    break;
+                }
+            }
         }
     }
     let Some((way, (sock, ticket))) = opened else {
         return Err(match failed.len() {
             0 => Fail::Connect("no way to the node".into()),
             1 => failed.remove(0),
+            // Every way tried was a proxy and each failed: the proxies' failure, not the node's.
+            _ if failed.iter().all(|f| matches!(f, Fail::Proxy(_))) => Fail::Proxy(failed.iter().map(fail_said).collect::<Vec<_>>().join("; then ")),
             _ => Fail::Connect(failed.iter().map(fail_said).collect::<Vec<_>>().join("; then ")),
         });
     };
@@ -619,7 +630,7 @@ fn open(t: &Target, ways: &[Way], clock: &Clock) -> Result<keep::Live, Fail> {
 /// A leg's failure as one clause, for the sentence naming every way tried.
 fn fail_said(f: &Fail) -> String {
     match f {
-        Fail::Name(x) | Fail::Connect(x) | Fail::Handshake(x) | Fail::Certificate(x) | Fail::Stream(x) => x.clone(),
+        Fail::Name(x) | Fail::Connect(x) | Fail::Handshake(x) | Fail::Certificate(x) | Fail::Stream(x) | Fail::Proxy(x) => x.clone(),
         Fail::Late(d) => format!("the deadline passed ({d:?})"),
         Fail::Overlong(n) => format!("an answer passed {n} bytes"),
         Fail::Closed => "closed".into(),
