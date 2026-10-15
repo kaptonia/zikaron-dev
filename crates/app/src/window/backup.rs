@@ -61,7 +61,7 @@ impl Win {
         let trouble = self.ux.bk_trouble.clone().or(failed);
         let show_trouble = |ui: &mut egui::Ui| {
             if let Some(f) = &trouble {
-                states::err_box(ui, "bk-trouble", f.human(), f.next(), t(Key::U3RawError), &f.raw());
+                states::err_box(ui, "bk-trouble", f.human(), &f.next(), t(Key::U3RawError), &f.raw());
             }
         };
         let (mut close, mut first_pin) = (false, false);

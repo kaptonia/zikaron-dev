@@ -97,6 +97,9 @@ pub fn partial(reason: Reason, members: Vec<(Key, Value)>) -> Answer {
 /// `zikaron_anchor::rpc::proxy_credentials`) is named here, for every verb at once: the line says how `--proxy`
 /// carries credentials, and an `E_UNREACHABLE` answer carries `token` `PROXY_CREDENTIALS_MISSING` (none given) or
 /// `PROXY_CREDENTIALS_REFUSED` (the ones given refused); a reason with a `token` of its own (`E_SCAN`) keeps it.
+///
+/// An endpoint unreached after the connection went without the system's configuration script
+/// (`zikaron_anchor::rpc::script_trouble_last`) says the script's trouble and the way out on the line.
 pub fn unanswered(reason: Reason, members: Vec<(Key, Value)>) -> Answer {
     let asked = members.iter().find_map(|(k, v)| match (k, v) {
         (Key::Detail, Value::Str(d)) => zikaron_anchor::rpc::proxy_credentials_of(d),
@@ -111,7 +114,20 @@ pub fn unanswered(reason: Reason, members: Vec<(Key, Value)>) -> Answer {
             }
             at(Exit::Unanswered, reason, ms).telling(said.text().to_string())
         }
-        None => at(Exit::Unanswered, reason, members),
+        None => match zikaron_anchor::rpc::script_trouble_last().filter(|_| reason == Reason::Unreachable) {
+            Some(x) => at(Exit::Unanswered, reason, members).telling(script_line(x)),
+            None => at(Exit::Unanswered, reason, members),
+        },
+    }
+}
+
+/// The line for a connection that went without the system's configuration script (`x`, its trouble) and was not
+/// made.
+fn script_line(x: zikaron_anchor::rpc::PacTrouble) -> String {
+    match x {
+        zikaron_anchor::rpc::PacTrouble::RemoteHttp => Said::PacRemoteHttp.text().to_string(),
+        zikaron_anchor::rpc::PacTrouble::Unfetched => Said::PacUnfetched.text().to_string(),
+        other => Said::PacFailed.text().replace("{0}", other.code()),
     }
 }
 
@@ -366,10 +382,13 @@ pub enum Said {
     OnChain,
     ProxyCredentialsMissing,
     ProxyCredentialsRefused,
+    PacRemoteHttp,
+    PacUnfetched,
+    PacFailed,
 }
 
 impl Said {
-    pub const ALL: [Said; 67] = [
+    pub const ALL: [Said; 70] = [
         Said::Usage,
         Said::NotAVerb,
         Said::NotAFlag,
@@ -437,6 +456,9 @@ impl Said {
         Said::OnChain,
         Said::ProxyCredentialsMissing,
         Said::ProxyCredentialsRefused,
+        Said::PacRemoteHttp,
+        Said::PacUnfetched,
+        Said::PacFailed,
     ];
 
     /// The words, one table: Chinese and English.
@@ -513,6 +535,9 @@ impl Said {
                 "代理不收所给的用户名与密码:请核对 --proxy 里写的(其中的 @、: 写成 %40、%3A)",
                 "The proxy refused the user name and password given: check the ones written in --proxy (an @ or : in them as %40, %3A)",
             ),
+            Said::PacRemoteHttp => ("代理脚本在远程 http 上,未用:请用 --proxy 指定代理", "Proxy script is on remote http, not used: give a proxy with --proxy"),
+            Said::PacUnfetched => ("取不到代理脚本:请开启代理软件,或用 --proxy 指定代理", "Can't fetch the proxy script: start your proxy app, or give a proxy with --proxy"),
+            Said::PacFailed => ("代理脚本出错({0}):请用 --proxy 指定代理", "Proxy script failed ({0}): give a proxy with --proxy"),
             Said::OnChain => ("链上已有这一条(别处已上链),没有再发", "The chain already holds this anchor (put on chain elsewhere); nothing was sent"),
             Said::RecordsNotAll => ("不是每一条记录都成立:看各条的 original 与 anchored", "Not every record holds: see each one's original and anchored"),
         }

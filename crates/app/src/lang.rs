@@ -1699,6 +1699,9 @@ pub enum Key {
     ProxyNowScriptPending,
     ProxyScriptTrouble,
     ProxyScriptRemoteHttp,
+    PacNextRemoteHttp,
+    PacNextUnfetched,
+    PacNextFailed,
     ProxyPasswordSet,
     ProxyCellHost,
     ProxyCellPort,
@@ -2034,7 +2037,7 @@ pub enum Key {
 
 impl Key {
     /// All keys, in [`TABLE`] order.
-    pub const ALL: [Key; 1968] = [
+    pub const ALL: [Key; 1971] = [
         Key::PageRevoke,
         Key::PageAdopt,
         Key::PageSucceed,
@@ -3672,6 +3675,9 @@ impl Key {
         Key::ProxyNowScriptPending,
         Key::ProxyScriptTrouble,
         Key::ProxyScriptRemoteHttp,
+        Key::PacNextRemoteHttp,
+        Key::PacNextUnfetched,
+        Key::PacNextFailed,
         Key::ProxyPasswordSet,
         Key::ProxyCellHost,
         Key::ProxyCellPort,
@@ -4007,7 +4013,7 @@ impl Key {
 }
 
 /// Every UI string: `(key, Chinese, English)`. One row per key, both languages in each row.
-pub const TABLE: [(Key, &str, &str); 1968] = [
+pub const TABLE: [(Key, &str, &str); 1971] = [
     (Key::PageRevoke, "撤销授权", "Revoke grant"),
     (Key::PageAdopt, "导入上链存证", "Import anchor proofs"),
     (Key::PageSucceed, "移交账本", "Hand over ledger"),
@@ -5662,6 +5668,9 @@ pub const TABLE: [(Key, &str, &str); 1968] = [
     (Key::ProxyNowScriptPending, "此刻新连接:按系统自动配置脚本", "New connections now: by the system's automatic configuration script"),
     (Key::ProxyScriptTrouble, "{0}(自动配置脚本未用上:{1})", "{0} (automatic configuration script not used: {1})"),
     (Key::ProxyScriptRemoteHttp, "{0}(系统的自动配置脚本在别的机器上、走 http,不取:{1}。请让它改用 https 地址,或在「自定义代理」里填代理)", "{0} (the system's automatic configuration script is on another machine over http and is not fetched: {1}. Have it served over https, or enter the proxy under \"Custom proxy\")"),
+    (Key::PacNextRemoteHttp, "代理脚本在远程 http 上,未用。请填自定义代理。", "Proxy script is on remote http; not used. Set a custom proxy."),
+    (Key::PacNextUnfetched, "取不到代理脚本。请开启代理软件,或填自定义代理。", "Can't fetch the proxy script. Start your proxy app, or set a custom proxy."),
+    (Key::PacNextFailed, "代理脚本出错({0})。请填自定义代理。", "Proxy script failed ({0}). Set a custom proxy."),
     (Key::ProxyPasswordSet, "已设密码", "Password set"),
     (Key::ProxyCellHost, "主机", "Host"),
     (Key::ProxyCellPort, "端口", "Port"),

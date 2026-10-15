@@ -337,6 +337,10 @@ pub use zikaron_net::{env, Limits};
 /// so the callers of this crate keep one path.
 pub use zikaron_net::{follow_the_terminal, proxy_of, read_address, set_choice, Choice, NotAProxy, NotAnAddress, SystemProxies};
 
+/// Why the latest connection went without the system's configuration script and was not made (the transport's
+/// note); the command line says it with the failure.
+pub use zikaron_net::{script_trouble_last, PacTrouble};
+
 /// Why an endpoint spelling does not read. Closed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NotAnEndpoint {

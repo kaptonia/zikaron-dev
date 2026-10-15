@@ -313,7 +313,14 @@ pub fn said_fault(url: &str, t: &rpc::Trouble) -> Fault {
             Wire::Other(_) => Known::Unreachable,
         },
     };
-    Fault::known(k, tail)
+    // A connection that went without the system's configuration script and could not be made says the script's
+    // trouble as its next step (the transport keeps none once the node is reached); a proxy asking for
+    // credentials says what to give it instead.
+    let credentials = matches!(k, Known::ProxyCredentialsMissing | Known::ProxyCredentialsRefused);
+    match zikaron_net::script_trouble_for(url).filter(|_| !credentials) {
+        Some(x) => Fault::known(k, tail).without_script(x),
+        None => Fault::known(k, tail),
+    }
 }
 
 /// The only place an endpoint is opened from a URL. The address is parsed by the transport's parser
@@ -465,8 +472,10 @@ impl rpc::Endpoint for Https {
 /// nodes' own word that they have none, and the reading could not be had (`UNREACHABLE`). Addresses that do not read at all are refused before this
 /// ([`no_address_reads`]). The evidence tail is every endpoint's original message joined by ` · `, unchanged.
 fn none_answered(first: Option<Fault>, shapeless: bool, refused: &[String]) -> Fault {
-    let k = first.and_then(|f| f.which()).unwrap_or(if shapeless { Known::ChainShape } else { Known::Unreachable });
-    Fault::known(k, refused.join(" · "))
+    match first.filter(|f| f.which().is_some()) {
+        Some(f) => f.retold(refused.join(" · ")),
+        None => Fault::known(if shapeless { Known::ChainShape } else { Known::Unreachable }, refused.join(" · ")),
+    }
 }
 
 /// A node passed over for an answer the judging table could not read, that is no word of the node's own: any

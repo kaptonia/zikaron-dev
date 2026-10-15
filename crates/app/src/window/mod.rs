@@ -965,8 +965,10 @@ impl Win {
     }
 
     fn say_fault(&mut self, f: &crate::fault::Fault, now: f64) {
-        let (what, next) = self.import_face(f).unwrap_or((f.human(), f.next()));
-        let (what, mut next) = (what.to_string(), next.to_string());
+        let (what, mut next) = match self.import_face(f) {
+            Some((what, next)) => (what.to_string(), next.to_string()),
+            None => (f.human().to_string(), f.next()),
+        };
         if f.then_key() == Some(Key::ExitBehindSay) {
             next = fill1(Key::ExitBehindSay, f.tail());
         }

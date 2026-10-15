@@ -217,7 +217,7 @@ impl Win {
                     }
                 });
                 if let Some(f) = &trouble {
-                    states::err_box(ui, "cli-trouble", f.human(), f.next(), t(Key::U3RawError), &f.raw());
+                    states::err_box(ui, "cli-trouble", f.human(), &f.next(), t(Key::U3RawError), &f.raw());
                 }
             },
             |ui, _me| {

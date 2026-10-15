@@ -39,7 +39,7 @@ impl Win {
         let trouble = self.ux.id_trouble.clone();
         let show_trouble = |ui: &mut egui::Ui| {
             if let Some(f) = &trouble {
-                states::err_box(ui, "id-trouble", f.human(), f.next(), t(Key::U3RawError), &f.raw());
+                states::err_box(ui, "id-trouble", f.human(), &f.next(), t(Key::U3RawError), &f.raw());
             }
         };
         // While a passcode task runs in the background, the sheet says it is verifying and its keys wait.

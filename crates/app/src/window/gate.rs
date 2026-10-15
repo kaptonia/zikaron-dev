@@ -26,7 +26,7 @@ impl Win {
                         paint::text(ui, t(Key::VaultDamagedTitle), Type::Page, c(C::Ink));
                         ui.add_space(18.0);
                     });
-                    states::err_box(ui, "gate-damaged", f.human(), f.next(), t(Key::U3RawError), &f.raw());
+                    states::err_box(ui, "gate-damaged", f.human(), &f.next(), t(Key::U3RawError), &f.raw());
                 });
             });
             return;

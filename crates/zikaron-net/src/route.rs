@@ -751,7 +751,55 @@ pub fn way_for(t: &Target, wait: Duration) -> Reading {
         Some(s) if s.automatic() => crate::pac::auto_for(t, s, until.saturating_duration_since(Instant::now())),
         _ => crate::pac::Auto::None,
     };
-    way_under(t, &choice, sys.as_ref(), &auto)
+    let r = way_under(t, &choice, sys.as_ref(), &auto);
+    note_script(t, &r);
+    r
+}
+
+/// What the system's configuration script did for the latest connections, by the node's place (scheme, host,
+/// port): its trouble when a connection following the system went without it and did not reach the node; nothing
+/// when it was used, none is named, the system is not followed, or the connection was made ([`note_reached`]).
+/// The latest connection's comes first.
+static SCRIPT_SEEN: Mutex<Vec<(String, Option<crate::pac::PacTrouble>)>> = Mutex::new(Vec::new());
+
+fn place_of(t: &Target) -> String {
+    format!("{}://{}:{}", t.scheme.as_str(), t.host, t.port)
+}
+
+fn note_script(t: &Target, r: &Reading) {
+    let trouble = match (&r.choice, r.script) {
+        (Choice::System, Script::Trouble(x)) => Some(x),
+        _ => None,
+    };
+    let place = place_of(t);
+    let mut seen = SCRIPT_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    seen.retain(|(p, _)| *p != place);
+    seen.insert(0, (place, trouble));
+    seen.truncate(64);
+}
+
+/// A connection to this target was made: whatever its script did, there is nothing to say about it.
+pub(crate) fn note_reached(t: &Target) {
+    let place = place_of(t);
+    let mut seen = SCRIPT_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(e) = seen.iter_mut().find(|(p, _)| *p == place) {
+        e.1 = None;
+    }
+}
+
+/// The configuration script's trouble the latest connection to `url` went without the script for and then could
+/// not be made (`None` when the script was used, none is named, the system is not followed, the connection was
+/// made, or none was tried).
+pub fn script_trouble_for(url: &str) -> Option<crate::pac::PacTrouble> {
+    let t = crate::parse(url)?;
+    let place = place_of(&t);
+    SCRIPT_SEEN.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(p, _)| *p == place).and_then(|(_, x)| *x)
+}
+
+/// The same for the latest connection of this process, to any node (a command line makes its few connections and
+/// says how the last one failed).
+pub fn script_trouble_last() -> Option<crate::pac::PacTrouble> {
+    SCRIPT_SEEN.lock().unwrap_or_else(|e| e.into_inner()).first().and_then(|(_, x)| *x)
 }
 
 /// How a new connection to this target would go, for display: never waits, fetches or runs a script (the last

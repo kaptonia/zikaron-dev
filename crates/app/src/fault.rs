@@ -1338,6 +1338,9 @@ pub struct Fault {
     place: Option<String>,
     /// For a remote answer refused by its status, that status number (the tail says it in words).
     status: Option<u16>,
+    /// For a connection that failed after going without the system's configuration script, that script's trouble:
+    /// the next-step sentence then says it and the way out ([`Fault::without_script`]).
+    script: Option<zikaron_net::PacTrouble>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1367,6 +1370,7 @@ impl Fault {
             landing: None,
             place: None,
             status: None,
+            script: None,
         }
     }
 
@@ -1404,6 +1408,20 @@ impl Fault {
     }
 
     /// The same fault, carrying the remote status number it was refused for.
+    /// A connection that failed after it went without the system's configuration script (`x`, its trouble): the
+    /// next-step sentence says the script's trouble and the way out instead of the network's.
+    pub fn without_script(mut self, x: zikaron_net::PacTrouble) -> Fault {
+        self.script = Some(x);
+        self
+    }
+
+    /// The same known refusal with another evidence tail (every node's words for one attempt): what it says and its
+    /// next step stay this one's.
+    pub fn retold(mut self, tail: impl Into<String>) -> Fault {
+        self.tail = tail.into();
+        self
+    }
+
     pub fn with_status(mut self, status: u16) -> Fault {
         self.status = Some(status);
         self
@@ -1452,7 +1470,7 @@ impl Fault {
     /// Unknown: passed through unchanged; the sentence on screen is the underlying one.
     pub fn unknown(tail: impl Into<String>) -> Fault {
         let tail = tail.into();
-        Fault { class: Class::Unknown, said: tail.clone(), tail, say: None, then: None, landing: None, place: None, status: None }
+        Fault { class: Class::Unknown, said: tail.clone(), tail, say: None, then: None, landing: None, place: None, status: None, script: None }
     }
 
     pub fn class(&self) -> Class {
@@ -1497,11 +1515,19 @@ impl Fault {
 
     /// What to do next (the second sentence). The unknown branch has no table sentence and points to the raw
     /// error.
-    pub fn next(&self) -> &'static str {
+    pub fn next(&self) -> String {
+        use crate::lang::{fill1, t, Key};
+        if let Some(x) = self.script {
+            return match x {
+                zikaron_net::PacTrouble::RemoteHttp => t(Key::PacNextRemoteHttp).to_string(),
+                zikaron_net::PacTrouble::Unfetched => t(Key::PacNextUnfetched).to_string(),
+                other => fill1(Key::PacNextFailed, other.code()),
+            };
+        }
         match self.which() {
-            Some(_) if self.then.is_some() => crate::lang::t(self.then.unwrap_or(crate::lang::Key::FaultNextUnknown)),
-            Some(k) => k.next().map(crate::lang::t).unwrap_or(""),
-            None => crate::lang::t(crate::lang::Key::FaultNextUnknown),
+            Some(_) if self.then.is_some() => t(self.then.unwrap_or(Key::FaultNextUnknown)).to_string(),
+            Some(k) => k.next().map(t).unwrap_or("").to_string(),
+            None => t(Key::FaultNextUnknown).to_string(),
         }
     }
 

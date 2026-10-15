@@ -34,7 +34,7 @@ mod route;
 pub use dial::{CONNECT_CAP, STAGGER};
 pub use keep::{close_down, cuts, open_up, IDLE_KEEP, PER_PLACE};
 pub use pac::{Auto, PacTrouble};
-pub use route::{excepted, follow_the_terminal, is_local, is_loopback, proxy_of, proxy_text_shown, read_choice, read_system_with, set_choice, way_for, way_shown, way_shown_under, way_under, Auth, Choice, Kind, NotAProxy, Proxy, Reading, Script, Secret, SystemProxies, Way, SYSTEM_FRESH, SYSTEM_READ_CAP};
+pub use route::{excepted, follow_the_terminal, script_trouble_for, script_trouble_last, is_local, is_loopback, proxy_of, proxy_text_shown, read_choice, read_system_with, set_choice, way_for, way_shown, way_shown_under, way_under, Auth, Choice, Kind, NotAProxy, Proxy, Reading, Script, Secret, SystemProxies, Way, SYSTEM_FRESH, SYSTEM_READ_CAP};
 
 // ───────────────────────── The request head ─────────────────────────
 
@@ -740,6 +740,7 @@ fn carry(t: &Target, request: &[u8], limits: &Limits, how: Ask) -> Result<answer
             },
             Ask::Once => open(t, &ways, &clock)?,
         };
+        route::note_reached(t);
         match round(&mut live.conn.stream, request, limits, &clock) {
             Ok(reader) => {
                 if how == Ask::Read && reader.keeps() {
@@ -762,6 +763,7 @@ pub fn exchange(t: &Target, request: &[u8], limits: &Limits) -> Result<Vec<u8>, 
     let clock = Clock::start(limits.deadline);
     let ways = route::way_for(t, clock.system_wait()?).ways();
     let mut live = open(t, &ways, &clock)?;
+    route::note_reached(t);
     match round(&mut live.conn.stream, request, limits, &clock) {
         Ok(reader) => Ok(reader.raw().to_vec()),
         Err(Round::Broke(why)) => Err(Fail::Stream(why)),
