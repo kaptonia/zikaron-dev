@@ -50,6 +50,7 @@ This version lets the command line write the data the desktop keeps sealed even 
 - **The pending queue follows the ledger and the chain**: entries a self-audit finds on chain that still wait in the queue unsent (the command line anchored them itself, say) leave it, recorded as anchored, and are never sent again; entries the chain does not hold that are not queued (an adopted ledger's, say) join it after the next self-audit.
 - The message after a record names the sequence number actually written (no longer one short when the command line wrote meanwhile).
 - While writing alone is on, a command with `--home` answers `E_DESKTOP` with `detail` `ALONE` (write without `--home`), no longer that the desktop is locked or not open.
+- A release carries no path of the machine that built it: the proxy script engine's C sources (QuickJS) are built without assertions, as its own release builds are, so on Linux they no longer embed the build directory's full path.
 
 ## 0.1.2
 
