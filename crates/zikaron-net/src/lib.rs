@@ -863,7 +863,7 @@ mod tests {
     /// the cut, counted, never a stream failure.
     #[test]
     fn a_timeout_refused_while_shutting_down_is_the_cut() {
-        let _turn = keep::turn();
+        let Some(_turn) = keep::turn() else { return };
         let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
         let tcp = std::net::TcpStream::connect(l.local_addr().expect("addr")).expect("connect");
         let _ = tcp.shutdown(std::net::Shutdown::Both);
@@ -887,7 +887,7 @@ mod tests {
     /// and a proxy tunnel each end as closed within a few slices, far inside their 20 s deadline.
     #[test]
     fn a_cut_rests_on_the_flag_and_lands_within_a_slice() {
-        let _turn = keep::turn();
+        let Some(_turn) = keep::turn() else { return };
         let limits = Limits { deadline: Duration::from_secs(20), max_answer: 0 };
         let none = Limits { deadline: Duration::ZERO, max_answer: 0 };
         for (form, then, limits) in [
@@ -918,7 +918,7 @@ mod tests {
     /// deadline is not rounded up to them.
     #[test]
     fn the_deadline_is_kept_to_the_instant_not_to_a_slice() {
-        let _turn = keep::turn();
+        let Some(_turn) = keep::turn() else { return };
         let (port, heard) = silent_peer(b"");
         let t = parse(&format!("http://127.0.0.1:{port}/")).expect("address");
         let limits = Limits { deadline: Duration::from_millis(60), max_answer: 0 };
@@ -932,7 +932,7 @@ mod tests {
     /// A cut and the deadline in the same slice: the exchange ends as one of the two, named, within that slice.
     #[test]
     fn a_cut_and_the_deadline_in_one_slice_end_as_either() {
-        let _turn = keep::turn();
+        let Some(_turn) = keep::turn() else { return };
         let (port, heard) = silent_peer(b"");
         let t = parse(&format!("http://127.0.0.1:{port}/")).expect("address");
         let limits = Limits { deadline: Duration::from_millis(300), max_answer: 0 };

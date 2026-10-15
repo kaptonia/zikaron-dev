@@ -4,7 +4,7 @@
 //! shell use (`vault_open`); each test runs alone in its own process.
 
 use super::vault_open;
-use app::action::{apply, Action, Applied};
+use app::action::{apply, apply_settled, Action, Applied};
 
 fn settled(shell: &mut app::shell::Shell, k: app::task::Kind) {
     let until = std::time::Instant::now() + std::time::Duration::from_secs(60);
@@ -15,15 +15,14 @@ fn settled(shell: &mut app::shell::Shell, k: app::task::Kind) {
     shell.drain();
 }
 
-/// One import, landed: the code it was refused with (empty when it landed).
+/// One import, landed: the code it was refused with (empty when it landed). Read from the import's own answer
+/// (`apply_settled` waits for it), never from the trouble list, where other work the landing starts (the home it
+/// enters) puts what it finds.
 fn import(shell: &mut app::shell::Shell, form: app::action::ImportForm, label: &str) -> String {
-    let before = shell.faults.len();
-    let started = apply(shell, Action::ImportIdentity { form, seat: app::roles::Role::Author, label: label.into(), network: app::deploy::CUSTOM.into() });
-    if let Applied::Trouble(f) = started {
-        return f.which().map(|k| k.as_str().to_string()).unwrap_or_default();
+    match apply_settled(shell, Action::ImportIdentity { form, seat: app::roles::Role::Author, label: label.into(), network: app::deploy::CUSTOM.into() }) {
+        Applied::Trouble(f) => f.which().map(|k| k.as_str().to_string()).unwrap_or_default(),
+        _ => String::new(),
     }
-    settled(shell, app::task::Kind::Vault);
-    shell.faults[before.min(shell.faults.len())..].last().and_then(|f| f.which()).map(|k| k.as_str().to_string()).unwrap_or_default()
 }
 
 fn rows() -> Vec<(String, String)> {

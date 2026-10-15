@@ -229,15 +229,22 @@ fn socks5(to: u16, need: Option<(&'static str, &'static str)>) -> (u16, Seen) {
         let _ = s.write_all(&[5, want]);
         seen.lock().unwrap().push(format!("method {want}"));
         if let Some((u, p)) = need {
-            let mut v = [0u8; 2];
-            let _ = s.read_exact(&mut v);
-            let mut user = vec![0u8; v[1] as usize];
-            let _ = s.read_exact(&mut user);
-            let mut pl = [0u8; 1];
-            let _ = s.read_exact(&mut pl);
-            let mut pass = vec![0u8; pl[0] as usize];
-            let _ = s.read_exact(&mut pass);
-            let (user, pass) = (String::from_utf8_lossy(&user).to_string(), String::from_utf8_lossy(&pass).to_string());
+            // Only what arrived is recorded: a client that sends no credentials and closes leaves "no user".
+            let got = (|| {
+                let mut v = [0u8; 2];
+                s.read_exact(&mut v).ok()?;
+                let mut user = vec![0u8; v[1] as usize];
+                s.read_exact(&mut user).ok()?;
+                let mut pl = [0u8; 1];
+                s.read_exact(&mut pl).ok()?;
+                let mut pass = vec![0u8; pl[0] as usize];
+                s.read_exact(&mut pass).ok()?;
+                Some((String::from_utf8_lossy(&user).to_string(), String::from_utf8_lossy(&pass).to_string()))
+            })();
+            let Some((user, pass)) = got else {
+                seen.lock().unwrap().push("no user".to_string());
+                return;
+            };
             seen.lock().unwrap().push(format!("user {user} pass {pass}"));
             let ok = user == u && pass == p;
             let _ = s.write_all(&[1, if ok { 0 } else { 1 }]);
@@ -403,7 +410,15 @@ fn credentials_longer_than_socks5_carries_are_refused_by_name() {
         Err(Fail::Proxy(why)) => assert!(why.contains("longer than SOCKS5 carries"), "{why}"),
         other => panic!("{other:?}"),
     }
-    assert!(seen.lock().unwrap().iter().all(|x| !x.starts_with("user ")), "nothing cut was sent");
+    // The proxy's side of that exchange is read to its end (credentials, or none and the connection closed)
+    // before it is judged.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !seen.lock().unwrap().iter().any(|x| x.starts_with("user ") || x == "no user") && std::time::Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let seen = seen.lock().unwrap().clone();
+    assert!(seen.iter().any(|x| x == "no user"), "the proxy saw the exchange end: {seen:?}");
+    assert!(seen.iter().all(|x| !x.starts_with("user ")), "nothing cut was sent: {seen:?}");
 }
 
 /// Discovery: a script found there decides; none found (no answer, not found) passes on to the explicit

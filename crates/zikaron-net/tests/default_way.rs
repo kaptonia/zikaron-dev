@@ -12,7 +12,19 @@ fn a_process_that_sets_nothing_follows_the_system() {
     // settings, the answer just found for this node).
     let platform = zikaron_os::system_proxies().map(|p| SystemProxies::from_platform(&p));
     match platform.as_ref() {
-        Some(s) if s.automatic() => assert_eq!(r, way_shown(&t)),
+        Some(s) if s.automatic() => {
+            // Automatic settings are answered on this machine's network (discovery, a script to fetch and run),
+            // which may take longer than one read waits: a read that ran out first goes on without it this once,
+            // while the display says it is pending. Asked again until the answer is known, the route is the one
+            // shown.
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            let mut r = r;
+            while r != way_shown(&t) && std::time::Instant::now() < until {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                r = way_for(&t, SYSTEM_READ_CAP);
+            }
+            assert_eq!(r, way_shown(&t));
+        }
         p => assert_eq!(r, way_under(&t, &Choice::System, p, &Auto::None)),
     }
 }
