@@ -163,7 +163,7 @@ pub(super) fn open_home_at(shell: &mut Shell, root: &str, pointer: bool) -> Resu
     let lock = if crate::lock::holds_writer(shell.lock.as_ref(), &home) { None } else { Some(crate::lock::take_as(&home, shell.machine.cli_alone.is_some())?) };
     let mode = lock.as_ref().map(|l| l.mode()).unwrap_or(crate::lock::Mode::Writer);
     // Check the label (local data format, version 2) against the identity and seat it is opened as; a writer
-    // gives a home laid without one its label now.
+    // gives a home without one its label now.
     crate::local::check_label(home.root(), opened_as(home.root()).as_ref().map(|(i, s)| (i.as_str(), *s)), mode.writable())?;
     // Steps that can fail come before the shell is touched, so unreadable settings or an unwritable pointer
     // leave it unchanged. Loading the new settings before writing the pointer would, if the pointer write

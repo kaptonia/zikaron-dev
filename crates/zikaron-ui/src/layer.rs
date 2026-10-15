@@ -243,9 +243,8 @@ pub fn body(ui: &mut egui::Ui, card: Rect) {
 /// room under it and has room above; with room on neither side, on the side with more, kept 8 inside the window.
 /// `bounds` is the room the anchor is drawn in (its ui's clip, `ui.clip_rect()`: a page's content area, so the
 /// card never lies over the rail beside it); up and down a card may reach past that room (out of a sheet's body,
-/// say) to the window's edges. `origin`
-/// is the corner it grows from, `moved` the offset it enters from (down from above when under the anchor, up
-/// from below when above it).
+/// say) to the window's edges. `origin` is the corner it grows from, `moved` the offset it enters from (down
+/// from above when under the anchor, up from below when above it).
 pub struct Drop {
     pub rect: Rect,
     pub origin: Pos2,

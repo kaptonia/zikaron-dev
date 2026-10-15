@@ -67,14 +67,14 @@ pub fn estimate_call(from: &[u8; 20], to: &[u8; 20], data: &[u8]) -> Value {
     ])
 }
 
-/// One gas estimate, the one rule the app and the command line both take; each brings its own way of asking
-/// (the app its endpoints, whose estimates the judging table reads by the largest: an estimate is a quantity
-/// each node works out, not a fact, `judge::rule_of`; the command line its one node). The estimate is asked at one pinned
-/// block, `head` (the app's smallest head every endpoint has reached): asked at `latest`, two endpoints a block
-/// apart estimate over two different states and disagree over a call neither refuses. A failure the caller
-/// judges of the network kind says nothing about the call; any other refusal means the call would revert. The
-/// answer is read as a quantity of at most 128 bits, and one above [`GAS_LIMIT`] is refused by the node's own
-/// number before anything is shown or sent.
+/// One gas estimate, the one rule the app and the command line both take; each brings its own way of asking (the app
+/// its endpoints, whose estimates the judging table reads by the largest: an estimate is a quantity each node works
+/// out, not a fact, `judge::rule_of`; the command line its one node). The estimate is asked at one pinned block,
+/// `head` (the app's smallest head every endpoint has reached): asked at `latest`, two endpoints a block apart
+/// estimate over two different states and disagree over a call neither refuses. A failure the caller judges of the
+/// network kind says nothing about the call; any other refusal means the call would revert. The answer is read as a
+/// quantity of at most 128 bits, and one above [`GAS_LIMIT`] is refused by the node's own number before anything is
+/// shown or sent.
 pub fn estimate_gas<E>(
     head: impl FnOnce() -> Result<u64, E>,
     ask: impl FnOnce(&Value) -> Result<Value, E>,
@@ -737,17 +737,16 @@ pub const RECEIPT_BACKOFF: [std::time::Duration; 4] = [
 ];
 
 /// Ask each endpoint for the same receipt, round after round until the caller's deadline. A receipt counts when
-/// every endpoint that answered gives it, alike (block and status, `judge::RECEIPT_FACTS`); an endpoint that
-/// does not answer is passed over. When some give it and others say "not yet" (nodes a block or two apart), it
-/// is asked again round after round like "not yet", and still split at the deadline it is [`Confirm::Split`],
-/// naming both sides: one node's word alone does not anchor anything, and a split is no outcome while the wait
-/// lasts. With no wait (one round) it is asked again after each of the judging table's pauses
-/// (`judge::not_yet_pauses`) instead. A round in which
-/// every endpoint fails (rate limited, down for a moment) is not an answer: the transaction is already out, and
-/// a node that refuses one round may give the receipt the next, so the rounds go on, paused by `backoff` (the
-/// product's is [`RECEIPT_BACKOFF`]; a test gives its own so no wall clock is waited; an empty list does not
-/// pause). At the deadline it is "not yet" when any endpoint ever answered (it did not know the receipt), and
-/// "out of sight" (with the last sentence) when none ever did. Asking only the endpoint that took the broadcast
+/// every endpoint that answered gives it, alike (block and status, `judge::RECEIPT_FACTS`); an endpoint that does
+/// not answer is passed over. When some give it and others say "not yet" (nodes a block or two apart), it is asked
+/// again round after round like "not yet", and still split at the deadline it is [`Confirm::Split`], naming both
+/// sides: one node's word alone does not anchor anything, and a split is no outcome while the wait lasts. With no
+/// wait (one round) it is asked again after each of the judging table's pauses (`judge::not_yet_pauses`) instead. A
+/// round in which every endpoint fails (rate limited, down for a moment) is not an answer: the transaction is
+/// already out, and a node that refuses one round may give the receipt the next, so the rounds go on, paused by
+/// `backoff` (the product's is [`RECEIPT_BACKOFF`]; a test gives its own so no wall clock is waited; an empty list
+/// does not pause). At the deadline it is "not yet" when any endpoint ever answered (it did not know the receipt),
+/// and "out of sight" (with the last sentence) when none ever did. Asking only the endpoint that took the broadcast
 /// would wait forever once that endpoint went down.
 ///
 /// The wait is one deadline over every question: each question is given only the wait left

@@ -59,7 +59,7 @@ fn boot() -> Shell {
     shell
 }
 
-/// A home with its first entry, signed by the identity's key (the identity made once), the seat's own.
+/// A home with its first entry, signed by the current identity's key (made once); the home is its seat's own.
 fn home_with_genesis(shell: &mut Shell, at: &Path) -> PathBuf {
     super::seated(shell, at);
     let opened = apply(shell, Action::OpenHome { root: at.display().to_string() });
@@ -190,7 +190,7 @@ fn a_request_is_done_by_the_action_layer_as_a_click_is() {
     let Applied::Annotated(pressed_id) = pressed else { panic!("{pressed:?}") };
     let pressed_bytes = entry_bytes(&shell, &pressed_id);
     assert_ne!(twin, first);
-    // Through the door, in the first home (the seat's home again).
+    // Through the command-line channel, in the first home (the seat's home again).
     super::seat_home(&first);
     let _ = apply(&mut shell, Action::OpenHome { root: first.display().to_string() });
     settle(&mut shell);
@@ -242,8 +242,8 @@ fn each_writing_verb_lands_its_entry() {
     assert!(matches!(r, Reply::Wrote { seq: 3, .. }), "revoke: {r:?}");
     let r = ask(&mut shell, b.ask("retract", &[("subject", &work_entry), ("note", "gone")]));
     assert!(matches!(r, Reply::Wrote { seq: 4, .. }), "retract: {r:?}");
-    // Handing the ledger to another key is done on the desktop by hand only: not a door verb, refused by name,
-    // nothing written.
+    // Handing the ledger to another key is done only by hand on the desktop: not a command-line verb, refused
+    // by name, nothing written.
     let before = head(&shell);
     let r = ask(&mut shell, b.ask("succeed", &[("to", &format!("0x{}", "12".repeat(20))), ("kind", "handover"), ("effective", "5"), ("statement", "s")]));
     assert!(matches!(&r, Reply::Refused { code, network: false, .. } if code == "DOOR_UNREAD"), "succeed: {r:?}");

@@ -141,16 +141,16 @@ pub enum Reason {
     Queued,
     /// `--home`: the desktop's action layer refused (its code in `token`, its evidence in `detail`).
     DesktopRefused,
-    /// Writing a sealed home: the command line's credential has expired (it was removed on the way out).
+    /// Opening a sealed home: the command line's credential has expired (it was removed on the way out).
     CredentialExpired,
-    /// Writing a sealed home: this machine has no command-line credential (writing alone is off).
+    /// Opening a sealed home: this machine has no command-line credential (writing alone is off).
     CredentialMissing,
-    /// Writing a sealed home: the credential is not in its shape, does not open, or holds another master key
+    /// Opening a sealed home: the credential is not in its shape, does not open, or holds another master key
     /// than this machine's vault's.
     CredentialShape,
     /// Writing a sealed home: the desktop (or another writer) holds the home's writer lock.
     HomeHeld,
-    /// Writing a sealed home: the home's writer mark names another machine, or does not read.
+    /// Opening a sealed home: the home's writer mark names another machine, or does not read.
     HomeOtherMachine,
     /// Writing a plain ledger that ZIKARON Desk has adopted (its root is on the desktop's adopted list): written
     /// from now on through the desktop's sealed copy, never here.
@@ -162,8 +162,8 @@ pub enum Reason {
     /// not written here (`handoff` names the handoff).
     HandedOff,
     /// `take-over`: the handoff is not taken (its `token` says why: the file does not read as a handoff, it is not
-    /// this place's own handoff coming back, this place holds an entry it lacks, or its ledger is not one line);
-    /// nothing is written.
+    /// this place's own handoff coming back, this place holds an entry the handoff lacks, or its ledger is not one
+    /// line); nothing is written.
     Handoff,
     /// `anchor`: the chain already holds an anchor of a hash given, from this key through this registry (anchored
     /// on another side, the desktop or another place): nothing is sent; `names` are those hashes, `tx` and
@@ -492,7 +492,7 @@ pub enum Door {
     /// This machine's folder could not be found (the system says no home directory, or its pointer does not
     /// read).
     NoMachine,
-    /// This machine writes alone: the desktop keeps its door shut while that switch is on (write without
+    /// This machine writes alone: the desktop keeps its endpoint closed while that switch is on (write without
     /// `--home`).
     Alone,
 }

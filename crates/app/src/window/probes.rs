@@ -910,8 +910,8 @@ pub fn probe_proxy_typed(ctx: &egui::Context, shell: Shell, cells: crate::proxyc
     (win.shell, steps, after)
 }
 
-/// The window over `place`, then the shell's page set from outside the window (`Action::Show`, as a link or the
-/// command-line door sets it) and a few frames drawn: the route drawn before and after, and the shell's page
+/// The window over `place`, then the shell's page set from outside the window (`Action::Show`, as a link or a
+/// command-line request sets it) and a few frames drawn: the route drawn before and after, and the shell's page
 /// after (the window's following never moves it back).
 pub fn probe_show_follow(ctx: &egui::Context, shell: Shell, place: Place, page: Page, width: f32, height: f32) -> (Shell, String, String, String) {
     let role = shell.settings.role;

@@ -42,7 +42,7 @@ impl Win {
             self.u3_form_open([U3Form::Adopt, U3Form::Succeed, U3Form::Annotate, U3Form::Attest][i]);
         }
         // "Unconfirmed": every entry the chain has not confirmed yet (`Lamp::confirmed`), a wider set than the
-        // queue the Records page counts as "Pending"; one word, one judgement.
+        // queue the Records page counts as "Pending".
         let cells = [seg::Cell::from(t(Key::U3FilterAll)), seg::Cell::from(t(Key::LedgerUnconfirmed)), seg::Cell::from(t(Key::KindGrant))];
         if let Some(i) = seg::seg(ui, "ledger-filter", &cells, self.ux.u3.led_filter) {
             self.ux.u3.led_filter = i;

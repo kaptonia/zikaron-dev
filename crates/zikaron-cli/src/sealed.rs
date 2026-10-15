@@ -1,4 +1,4 @@
-//! Writing a home ZIKARON Desk keeps sealed, with the command line's credential: the desktop's switch "the
+//! Reading and writing a home ZIKARON Desk keeps sealed, with the command line's credential: the desktop's switch "the
 //! command line writes alone" issued it (`zikaron_seal::credential`), and it is the one thing this path is
 //! given. No passcode, no `--key`: the signing key is the one the desktop keeps for the home's identity and seat.
 //!
@@ -39,8 +39,9 @@ pub struct Opened {
     _lock: zikaron_os::LockFile,
 }
 
-/// The sealed layer's refusal as this command line's answer: the credential's three by their own reasons, the
-/// desktop's lock by its own, anything else unreadable with the code and its evidence.
+/// The sealed layer's refusal as this command line's answer: the credential's three refusals, the writer lock,
+/// another machine's mark and a handed-off ledger by their own reasons; anything else as unreadable, with the code
+/// and its evidence.
 pub fn refused(t: &Trouble) -> Answer {
     let members = vec![(Key::Token, s(&word(t.code))), (Key::Detail, s(&t.tail))];
     match t.code {

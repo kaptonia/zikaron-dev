@@ -759,10 +759,10 @@ impl Shell {
         }
     }
 
-    /// Take the home's writer lock for a write while the command line writes alone (C4): with it off, or as a
-    /// reader, or already holding it, nothing to do. Taken, the ledger is counted first: if the command line wrote
-    /// meanwhile, the copies of the ledger, the queue and the settings are read again before this write. Not
-    /// taken, the write is not done and the person is told the command line is writing (`CLI_WRITING`).
+    /// Take the home's writer lock for a write while the command line writes alone: with that off, as a reader,
+    /// or already holding the lock, nothing to do. Once taken, the ledger is counted first: if the command line
+    /// wrote meanwhile, the ledger, queue and settings are read again before this write. If it cannot be taken,
+    /// the write is not done and the person is told the command line is writing (`CLI_WRITING`).
     pub fn take_turn(&mut self) -> Result<(), Fault> {
         if self.machine.cli_alone.is_none() {
             return Ok(());

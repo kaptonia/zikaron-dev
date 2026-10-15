@@ -22,8 +22,8 @@ use std::path::{Path, PathBuf};
 /// `zikaron_glue::grantfile`).
 pub use zikaron_glue::grantfile::TERMS_ROOM as ROOM;
 
-/// A grant's issuance record, its form and where it lies: the sealed layer's (`zikaron_seal::terms`), where the
-/// command line reads it from a home too.
+/// A grant's issuance record, its byte form and its file name, defined in the sealed layer (`zikaron_seal::terms`)
+/// so the command line reads it from a home the same way.
 pub use zikaron_seal::terms::{record_bytes, record_of, Record, RECORD_PREFIX, RECORD_SUFFIX};
 
 /// The document's relative path, assembled only here: `terms/<digest without 0x>/<kit name>`. `None` when it
@@ -117,7 +117,7 @@ pub fn doc_bytes(home: &Home, r: &Record) -> Result<Option<(String, Vec<u8>)>, c
     Ok(crate::local::read(&doc_path(home, &r.terms)?, crate::local::Doc::TermsDoc)?.map(|b| (rel, b)))
 }
 
-/// Whether a grant is exclusive: recorded so at signing, or not. Closed.
+/// Whether a grant is exclusive: recorded as exclusive at signing, or not.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Exclusive {
     No,

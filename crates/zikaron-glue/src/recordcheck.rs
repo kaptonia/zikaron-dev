@@ -1,6 +1,6 @@
 //! Verifying a record package record by record: is each record there, is it anchored and when first, is its
-//! original the one it records. One judge, the desktop's verification and the command line's `kit-verify` both
-//! call it; every fact it states comes from the core (the entry, the audit outcome), the kit crate (the bounds of
+//! original the one it records. One check, called by both the desktop's verification and the command line's
+//! `kit-verify`; every fact it states comes from the core (the entry, the audit outcome), the kit crate (the bounds of
 //! first anchoring) or the package's own manifest and files.
 
 use std::path::Path;

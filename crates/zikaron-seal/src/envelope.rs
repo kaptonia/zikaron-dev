@@ -65,10 +65,10 @@ pub use zikaron_glue::sealed::{MAGIC, MAGIC_V2};
 pub const NONCE: usize = 24;
 /// Length of the identity digest in the envelope head.
 pub const DIGEST: usize = 16;
-/// Algorithm 2, the one read and written (an earlier version's algorithm 1, unkeyed, is refused as not sealed): XChaCha20-Poly1305 with the place half of the identity digest keyed (HMAC
-/// under a key derived from the local data key, [`PLACE_KEY_INFO`]), so the heads on a locked disk cannot be
-/// matched against public logical names (entry and grant ids). Future algorithms take new numbers under the
-/// same magic.
+/// Algorithm 2, the one read and written (an earlier version's algorithm 1, unkeyed, is refused as not
+/// sealed): XChaCha20-Poly1305 with the place half of the identity digest keyed (HMAC under a key derived from
+/// the local data key, [`PLACE_KEY_INFO`]), so the heads on a locked disk cannot be matched against public
+/// logical names (entry and grant ids). Future algorithms take new numbers under the same magic.
 pub const ALG_KEYED: u8 = 2;
 /// HKDF info for the key that keys the place half (derived from the local data key).
 pub const PLACE_KEY_INFO: &str = "zikaron-local/place-key";

@@ -381,9 +381,9 @@ impl Layer {
 }
 
 /// Where the machine directory is and which level it came from. Reads only. Order: set through `places`,
-/// then the pointer, then the default. A pointer that is not
-/// one absolute path line is refused with `MACHINE_SHAPE`, never silently replaced by the default (which
-/// would leave the key vault and registry behind).
+/// then the pointer, then the default. A pointer that is not one absolute path line is refused with
+/// `MACHINE_SHAPE`, never silently replaced by the default (which would leave the key vault and registry
+/// behind).
 pub fn machine_at() -> Result<(PathBuf, Layer), Fault> {
     if let Some(p) = crate::places::get().machine_dir.clone() {
         return Ok((p, Layer::Placed));
@@ -409,7 +409,8 @@ pub fn machine_dir() -> Result<PathBuf, Fault> {
 }
 
 /// Where this machine's home is: named by the environment, then the choice recorded in the machine directory
-/// ([`PICKED`]), then the default home under the machine directory. An unreadable record is refused by name; no path is ever guessed.
+/// ([`PICKED`]), then the default home under the machine directory. An unreadable record is refused by name;
+/// no path is ever guessed.
 pub fn where_is() -> Result<PathBuf, Fault> {
     if let Some(p) = std::env::var_os(HOME_ENV) {
         let p = PathBuf::from(p);

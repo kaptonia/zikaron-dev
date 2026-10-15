@@ -10,7 +10,7 @@
 //! `--stop-at open|tmp|link` exits the process between append stages (exit code 70, nothing printed), so tests
 //! can simulate a real process death before, during and after a write.
 
-// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+// `unsafe` code belongs only in the platform crate (`zikaron-os`); it is forbidden here.
 #![forbid(unsafe_code)]
 
 use std::process::ExitCode;

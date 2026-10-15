@@ -2,24 +2,23 @@
 //! names, run as browsers run it. Automatic discovery (WPAD, a script looked for by the name `wpad` on whatever
 //! network the machine is on) is not followed: only a script at an address the person set runs here.
 //!
-//! The script is fetched directly (never through a proxy), within [`FETCH_LIMIT`] and up to [`SCRIPT_MAX`]
-//! bytes, following up to [`REDIRECTS`] redirects (each `Location` resolved against the address it came from,
-//! RFC 3986 §5.2). It is fetched only from this machine over `http` or from anywhere over `https`
-//! ([`script_source`], the address and every redirect judged alike): someone else on the network can hand no
-//! script in. A `file:` script is not read, as browsers do not. Each fetch has its whole limit on a thread of its own, whatever the
-//! exchange that wanted it has left (it waits within its own deadline); what the fetch found, a script or none,
-//! is kept by the address for [`SCRIPT_FRESH`]. It runs in QuickJS (through `rquickjs`) in a sandbox that holds
-//! the language's own objects and the standard PAC functions ([`PAC_FUNCTIONS`]) and nothing else: no network,
-//! no files, no modules, no timers. Each run gets a fresh engine with a memory limit ([`MEMORY_LIMIT`]), a stack
-//! limit ([`STACK_LIMIT`]) and one time limit for the whole run ([`RUN_LIMIT`], the engine's own interrupt);
-//! the name lookups a script asks for (`dnsResolve`, `isResolvable`, `myIpAddress` and their `Ex` forms) are
-//! answered outside the sandbox by the transport's resolver, each within [`DNS_LIMIT`] and the run's time left.
+//! The script is fetched directly (never through a proxy), within [`FETCH_LIMIT`] and up to [`SCRIPT_MAX`] bytes,
+//! following up to [`REDIRECTS`] redirects (each `Location` resolved against the address it came from, RFC 3986
+//! §5.2). It is fetched only from this machine over `http` or from anywhere over `https` ([`script_source`], the
+//! address and every redirect judged alike): someone else on the network can hand no script in. A `file:` script is
+//! not read, as browsers do not. Each fetch has its whole limit on a thread of its own, whatever the exchange that
+//! wanted it has left (it waits within its own deadline); what the fetch found, a script or none, is kept by the
+//! address for [`SCRIPT_FRESH`]. It runs in QuickJS (through `rquickjs`) in a sandbox that holds the language's own
+//! objects and the standard PAC functions ([`PAC_FUNCTIONS`]) and nothing else: no network, no files, no modules, no
+//! timers. Each run gets a fresh engine with a memory limit ([`MEMORY_LIMIT`]), a stack limit ([`STACK_LIMIT`]) and
+//! one time limit for the whole run ([`RUN_LIMIT`], the engine's own interrupt); the name lookups a script asks for
+//! (`dnsResolve`, `isResolvable`, `myIpAddress` and their `Ex` forms) are answered outside the sandbox by the
+//! transport's resolver, each within [`DNS_LIMIT`] and the run's time left.
 //!
 //! The script is asked once per node address and script (each run with its whole limit on a thread of its own,
-//! its answer kept for [`ANSWER_FRESH`]), with the
-//! node's scheme, host and port only (`https://node.example/`), never its path or query, where a key may
-//! live. A script that cannot be used is named by [`PacTrouble`]; the connection then goes as if the system
-//! named no script.
+//! its answer kept for [`ANSWER_FRESH`]), with the node's scheme, host and port only (`https://node.example/`),
+//! never its path or query, where a key may live. A script that cannot be used is named by [`PacTrouble`]; the
+//! connection then goes as if the system named no script.
 
 use crate::route::{proxy_of, Kind, SystemProxies, Way};
 use crate::{keep, Target};

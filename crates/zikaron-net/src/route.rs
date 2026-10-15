@@ -787,9 +787,9 @@ pub(crate) fn note_reached(t: &Target) {
     }
 }
 
-/// The configuration script's trouble the latest connection to `url` went without the script for and then could
-/// not be made (`None` when the script was used, none is named, the system is not followed, the connection was
-/// made, or none was tried).
+/// Why the latest connection to `url` went without the configuration script, when it then could not be made
+/// (`None` when the script was used, none is named, the system is not followed, the connection was made, or none
+/// was tried).
 pub fn script_trouble_for(url: &str) -> Option<crate::pac::PacTrouble> {
     let t = crate::parse(url)?;
     let place = place_of(&t);

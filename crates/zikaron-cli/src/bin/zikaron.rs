@@ -4,7 +4,7 @@
 //! decision is made here: verbs live in `zikaron_cli::verbs`, exit codes in `zikaron_cli::codes`, printing in
 //! `zikaron_cli::out`.
 
-// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+// `unsafe` code belongs only in the platform crate (`zikaron-os`); it is forbidden here.
 #![forbid(unsafe_code)]
 
 use zikaron_cli::args::Args;

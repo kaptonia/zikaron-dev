@@ -494,9 +494,10 @@ fn gas_text(ui: &egui::Ui, s: &str, t: Type, colour: egui::Color32, wrap: Option
 }
 
 /// The key's address (two equal lines) and balance on the left; the code a wallet scans to pay (`code`, the
-/// payment request; none while the chain is not known) on the right with its caption under it. Both groups are centered on one middle line, each key on its value's first
-/// baseline. When the column is too narrow for both side by side (`side`, decided by the caller from the
-/// window), the code goes under the words (nothing overlaps or is cut).
+/// payment request; none while the chain is not known) on the right with its caption under it. Both groups are
+/// centered on one middle line, each key on its value's first baseline. When the column is too narrow for both
+/// side by side (`side`, decided by the caller from the window), the code goes under the words (nothing overlaps
+/// or is cut).
 fn gas_face(ui: &mut egui::Ui, addr: Option<&str>, code: Option<&str>, gas: &str, side: bool) {
     let addr_said = match addr {
         Some(a) => a.to_string(),

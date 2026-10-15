@@ -159,7 +159,7 @@ fn month_len(y: i64, m: u32) -> u32 {
 /// Seconds east of UTC at the moment `t` (Unix seconds) under `zone` as a system gives it: a zone file by its
 /// transitions and then its footer rule, a POSIX rule as it is, a by-year table by the rule of the moment's
 /// year. `None` when the zone does not read (not a zone file, a rule that does not parse, an empty table, a
-/// year whose rule does not parse). The one reading the system zone gets when it is chosen ([`set`]).
+/// year whose rule does not parse). The system zone is read the same way when it is chosen ([`set`]).
 pub fn offset_under(zone: &crate::platform::Zone, t: i64) -> Option<i64> {
     Rules::of(zone).map(|r| r.offset(t))
 }
@@ -340,8 +340,8 @@ impl Posix {
 }
 
 impl Date {
-    /// The switch moment in that year, as seconds since the epoch in local time; held at the ends of the
-    /// seconds a moment can be (a year near the last one an `i64` second reaches), never wrapped.
+    /// The switch moment in that year, as seconds since the epoch in local time; saturates at the ends of the
+    /// `i64` range (a year near the last one an `i64` second reaches) instead of wrapping.
     fn local(self, y: i64) -> i64 {
         let (days, at) = match self {
             Date::Month(m, w, d, at) => {

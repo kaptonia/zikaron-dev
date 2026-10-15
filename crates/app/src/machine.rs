@@ -607,10 +607,10 @@ fn without_password(c: zikaron_net::Choice) -> zikaron_net::Choice {
 }
 
 /// The current proxy choice, read when a new connection opens. Unlocked: the sealed settings as they are now
-/// (an unreadable value, or settings that do not read, follow the system, as the default does). Locked, the sealed part is not in hand: the
-/// route last read in this process, without its password (a proxy that asks for one is then refused by name
-/// until unlocking); following the system only when none was read yet (nothing connects before the first
-/// unlock).
+/// (an unreadable value, or settings that do not read, follow the system, as the default does). Locked, with
+/// the sealed part not in hand: the route last read in this process, without its password (a proxy that asks
+/// for one is then refused by name until unlocking); the system's settings when none was read yet (nothing
+/// connects before the first unlock).
 pub fn proxy_now() -> zikaron_net::Choice {
     match read_face() {
         Ok(m) if m.held => proxy_choice(&m),

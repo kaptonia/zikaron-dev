@@ -1031,8 +1031,8 @@ fn a_disk_failure_says_the_systems_words_in_detail() {
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).ok();
 }
 
-/// The line for people when the law refuses an entry's body speaks the system's language whole, the flags that
-/// give the member too: an English system reads no Chinese in it, a Chinese one reads the Chinese words.
+/// The line for people when the core refuses an entry's body is in the system's language throughout, the flags
+/// that give the member included: an English system shows no Chinese in it, a Chinese one shows the Chinese words.
 #[test]
 fn a_refused_body_is_said_in_the_systems_language_flags_and_all() {
     let w = scratch("bodyline");

@@ -3,9 +3,9 @@
 
 use super::*;
 
-/// The language switch the first-run wizard and the passcode gate carry (drawn before any home is open): the
-/// same choice as the settings page's; the language picked, when it is another one (the caller takes it through
-/// `Action::SetLang`, kept on this machine).
+/// The language switch the first-run wizard and the passcode gate carry (drawn before any home is open), the
+/// same choice as the settings page's. Returns the language picked when it differs from the current one; the
+/// caller applies it through `Action::SetLang`, which keeps it on this machine.
 pub(super) fn lang_pick(ui: &mut egui::Ui, id_salt: &str) -> Option<crate::lang::Lang> {
     let langs = crate::lang::Lang::ALL;
     let cur = langs.iter().position(|l| *l == crate::lang::lang()).unwrap_or(0);

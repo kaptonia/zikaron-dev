@@ -7,7 +7,7 @@
 //! option repeated. Any other token sequence (a repeated option, `--now=<int>`, an option before a
 //! positional, extra tokens) is misuse.
 
-// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+// `unsafe` code belongs only in the platform crate (`zikaron-os`); it is forbidden here.
 #![forbid(unsafe_code)]
 
 use std::ffi::{OsStr, OsString};

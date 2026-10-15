@@ -1,9 +1,9 @@
 //! Windows: the file dialog is `rfd` over the system dialog; everything else uses Win32 APIs declared here.
-//! The lock is `zikaron-os`'s byte-range lock (`LockFileEx`); the home and application data folders are known folders
-//! (read in `zikaron-os`, shared with the command line); the time zone is `TZ` or the current system zone,
-//! its rule for each year (`GetDynamicTimeZoneInformation`, `GetTimeZoneInformationForYear`) converted to a
-//! POSIX rule; the temporary directory is the per-user one
-//! (`GetTempPath2W`, or `GetTempPathW` on systems without it).
+//! The lock is `zikaron-os`'s byte-range lock (`LockFileEx`); the home and application data folders are known
+//! folders (read in `zikaron-os`, shared with the command line); the time zone is `TZ` or the current system
+//! zone, its rule for each year (`GetDynamicTimeZoneInformation`, `GetTimeZoneInformationForYear`) converted to
+//! a POSIX rule; the temporary directory is the per-user one (`GetTempPath2W`, or `GetTempPathW` on systems
+//! without it).
 
 use std::ffi::c_void;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};

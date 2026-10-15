@@ -9,6 +9,10 @@
 //! Someone else's directory may contain a README or other programs' files. Detection uses the store crate's
 //! lenient read: entries are checked one by one by the core, and anything that cannot be read as an entry is
 //! reported with its reason, never treated as absent.
+//!
+//! A ledger mirror (a folder with the mirror manifest, as "Export ledger mirror…" writes it, this version's or
+//! an earlier one's) is adopted too: its entries are read through the mirror's own check ([`mirrored`]), and
+//! one entry that fails it refuses the whole mirror.
 
 use crate::auditx;
 use crate::fault::{Fault, Known};
@@ -36,8 +40,21 @@ impl Sighting {
     }
 }
 
+/// The entries of a ledger mirror, when `dir` is one (it holds the mirror manifest): each checked against the
+/// manifest's size and digest, by the core, and against its own name (`mirror::verify`); one that fails refuses
+/// the whole mirror, named. `None` when `dir` is not a mirror.
+pub fn mirrored(dir: &std::path::Path) -> Result<Option<Vec<Vec<u8>>>, Fault> {
+    if !dir.join(zikaron_glue::mirror::MANIFEST).is_file() {
+        return Ok(None);
+    }
+    Ok(Some(crate::mirror::verify(dir)?.into_iter().map(|(_, b)| b).collect()))
+}
+
 /// Inspects a directory and re-verifies it entry by entry. Not one byte of that directory changes.
 pub fn look(dir: &std::path::Path) -> Result<Sighting, Fault> {
+    if let Some(items) = mirrored(dir)? {
+        return Ok(Sighting { entries: items.len(), checked: items.len(), skipped: Vec::new(), refused: Vec::new() });
+    }
     let ledger = LedgerDir::open(dir).map_err(|t| Fault::known(Known::Ledger, format!("{t:?}")))?;
     let survey = ledger
         .survey()
@@ -95,18 +112,21 @@ pub fn adopt(dir: &std::path::Path, into: &Home) -> Result<Adopted, Fault> {
             crate::lang::filln(crate::lang::Key::Tail111, &[&(seen.entries).to_string(), &(seen.checked).to_string(), &(seen.refused.len()).to_string()]),
         ));
     }
-    let ledger = LedgerDir::open(dir).map_err(|t| Fault::known(Known::Ledger, format!("{t:?}")))?;
-    let survey = ledger
-        .survey()
-        .map_err(|t| Fault::known(Known::Ledger, format!("{t:?}")))?;
+    let items = match mirrored(dir)? {
+        Some(items) => items,
+        None => {
+            let ledger = LedgerDir::open(dir).map_err(|t| Fault::known(Known::Ledger, format!("{t:?}")))?;
+            ledger.survey().map_err(|t| Fault::known(Known::Ledger, format!("{t:?}")))?.items
+        }
+    };
     // A ledger handed off to another place is not written here, adopted entries included (`zikaron_seal::pens`).
-    let root = survey.items.iter().filter_map(|b| zikaron::entry::check(b).ok()).find(|e| e.seq == 0).map(|e| e.id);
+    let root = items.iter().filter_map(|b| zikaron::entry::check(b).ok()).find(|e| e.seq == 0).map(|e| e.id);
     if let Some(root) = root {
         zikaron_seal::pens::may_write(&crate::home::machine_dir()?, &root)?;
     }
     let book = into.ledger()?;
     let mut linked = 0;
-    for b in &survey.items {
+    for b in &items {
         let name = bare_id(b);
         let entry = EntryName::parse(&name)
             .ok_or_else(|| Fault::known(Known::Ledger, crate::lang::filln(crate::lang::Key::Tail012, &[&(name).to_string()])))?;

@@ -517,8 +517,8 @@ fn write_index(at: u64, held: &[(Doc, String)]) -> Result<(), Fault> {
 }
 
 /// The index of the backup made at `at`: `None` when there is none, it belongs to another backup, or it cannot
-/// be read (sealed under another key, altered, truncated, another file); the plain count is then used. While locked this is `LOCKED` (the index cannot
-/// be opened, and its contents are not guessed).
+/// be read (sealed under another key, altered, truncated, another file); the plain count is then used. While
+/// locked this is `LOCKED` (the index cannot be opened, and its contents are not guessed).
 fn read_index(at: u64) -> Result<Option<Vec<(Doc, String)>>, Fault> {
     let Ok(at_path) = index_path() else { return Ok(None) };
     let bytes = match crate::local::read(&at_path, Doc::BackupIndex) {

@@ -24,9 +24,9 @@
 //!
 //! [`MAGIC_V2`] · algorithm (1 byte, [`ALG_KEYED`]) · kind length (1 byte) · kind · format version (2 bytes,
 //! big-endian) · identity digest (16 bytes: 8 from the owner, 8 from the place's logical name keyed under the
-//! local data key; [`Ident::digest_keyed`]) · nonce (24 bytes) · ciphertext and tag. The whole head, nonce included, is the AEAD
-//! additional data, so a changed head byte, or a file moved to another place or home, does not open. The
-//! owner and place are repeated as text inside the ciphertext and checked after opening.
+//! local data key; [`Ident::digest_keyed`]) · nonce (24 bytes) · ciphertext and tag. The whole head, nonce
+//! included, is the AEAD additional data, so a changed head byte, or a file moved to another place or home,
+//! does not open. The owner and place are repeated as text inside the ciphertext and checked after opening.
 //!
 //! Reading accepts only this envelope under the algorithm written ([`ALG_KEYED`]): anything an earlier version
 //! wrote (the first envelope, [`MAGIC`], or the unkeyed algorithm 1) is not sealed by this version's terms and is

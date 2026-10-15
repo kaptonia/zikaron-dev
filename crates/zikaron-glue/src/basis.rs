@@ -1,6 +1,5 @@
 //! A ledger's basis declaration (law §9.4): which chain, which registry contract, which blocks and which senders a
-//! scan asks about. Laid out here only; the desktop's self-audit and the command line's `scan` of a home both
-//! declare by it.
+//! scan asks about. Built only here; both the desktop's self-audit and the command line's `scan` of a home use it.
 
 use zikaron::json::Value;
 
@@ -34,7 +33,8 @@ pub struct Window<'a> {
     pub senders: &'a [String],
 }
 
-/// Lays out a basis of one window (three tables, member order set by the canonical byte rules).
+/// Lays out a basis of one window: `chains` holds that window, `adoptionChains` and `bareTx` are empty; members
+/// in canonical byte order.
 pub fn basis_of(w: &Window) -> Value {
     let window = Value::Obj(vec![
         ("chainId".to_string(), Value::Int(w.chain)),

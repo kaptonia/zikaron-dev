@@ -65,7 +65,7 @@ pub(super) fn gas_ask(shell: &Shell, count: usize) -> Result<GasAsk, crate::faul
 
 /// Estimates gas once on the task's thread, using the same rule as the command line
 /// (`zikaron_anchor::send::estimate_gas`) through this side's endpoints. Endpoints that estimate different
-/// amounts do not disagree: the largest is taken (the judging table reads an estimate as a quantity), and it
+/// amounts do not disagree: the largest is taken (an estimate is compared as a quantity), and it
 /// meets the ceiling like any estimate. If gas cannot be estimated the transaction would revert, so it is
 /// refused by name and not sent.
 pub(super) fn estimate_on(a: GasAsk) -> Result<crate::task::Done, crate::fault::Fault> {

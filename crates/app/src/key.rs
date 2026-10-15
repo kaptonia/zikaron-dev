@@ -283,8 +283,7 @@ pub(crate) fn load_at(acct: &str) -> Result<Option<Secret>, Fault> {
         .map(Some)
 }
 
-/// Reads bytes as a key and computes its address. `None` for the
-/// wrong shape.
+/// Reads bytes as a key and computes its address. `None` for the wrong shape.
 pub(crate) fn address_of(raw: &[u8]) -> Option<Address> {
     if raw.len() != 32 {
         return None;

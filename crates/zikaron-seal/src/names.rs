@@ -1,7 +1,7 @@
 //! On-disk names for anything that could be linked to on-chain data.
 //!
 //! While locked, nothing on this machine may lead to an on-chain identity: not file contents (sealed, see
-//! `local`) and not file names. Every name derived from an address, identity id, entry id, grant id or terms
+//! `envelope`) and not file names. Every name derived from an address, identity id, entry id, grant id or terms
 //! digest is an HMAC under the names key NK (`keybox::name_key`, derived from the master key). The same master
 //! key always gives the same name for the same thing (so a deleted identity imported again finds its homes),
 //! and a new master key renames everything. Only fixed directory and file names stay plain.

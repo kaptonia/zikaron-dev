@@ -16,7 +16,8 @@
 //! the file's password).
 //!
 //! So after a forgotten passcode, or five failures that lock the vault, a person with the primary's recovery
-//! words or one of its key files can still open it; opening that way reseals the passcode seal and resets the failure count.
+//! words or one of its key files can still open it; opening that way reseals the passcode seal and resets the
+//! failure count.
 //!
 //! The lock is real: once opened, the master key lives only in memory (one `Mutex` in this file) and is wiped
 //! on lock, exit or idle timeout. While locked, [`get`] refuses with `LOCKED`: the action layer's table stops
@@ -27,7 +28,7 @@
 //! are refused and change neither the counter nor the vault: recovery must not become another way to be
 //! locked out.
 //!
-//! No plain private key or seed is in the vault file: bytes go through `cryptx::aes128_ctr` with a keccak MAC
+//! No plain private key or seed is in the vault file: bytes go through `crypto::aes128_ctr` with a keccak MAC
 //! (the keystore V3 construction, [`crate::kdf::mac_of`]). Only the app's existing cryptographic
 //! primitives are used.
 //!
@@ -546,7 +547,7 @@ fn read_book(v: &Vault) -> Result<Option<Book>, Trouble> {
     };
     let mut book = Book { wrong, ..Book::default() };
     // The vault states its own derivation parameters. All three are read and checked against bounds
-    // (`keystore::in_range`, the same gate as keystore V3 files): out of bounds is refused by name, so a file
+    // (`kdf::in_range`, the same gate as keystore V3 files): out of bounds is refused by name, so a file
     // cannot make derivation use terabytes of memory. A vault without this section is refused by name: this
     // version writes it into every vault it makes.
     let Some(k) = v.member(member::KDF) else {
@@ -710,7 +711,7 @@ fn write_book_as(v: &Vault, b: &Book, name: &str) -> Result<(), Trouble> {
 /// (the tests scan for this), so the shipped app always runs the standard parameters.
 static KDF: std::sync::OnceLock<Params> = std::sync::OnceLock::new();
 
-/// The lightest parameters, for tests: within bounds (`keystore::in_range`) at nearly no cost. Passcode
+/// The lightest parameters, for tests: within bounds (`kdf::in_range`) at nearly no cost. Passcode
 /// strength is carried by the shipped parameters; tests exercise passcode behavior, not derivation time.
 pub const PROBE_KDF: Params = Params { n: 2, r: 8, p: 1 };
 
@@ -1271,10 +1272,10 @@ pub fn change_pin(v: &Vault, old: &str, new: &str) -> Result<(), Trouble> {
 ///
 /// The secret is a recovery-word identity's 16 bytes of entropy or one of its seat keys, or an existing-key
 /// identity's 32-byte private key; its member mark finds the one primary's seal it opens. A secret of another
-/// identity on this machine is refused by name with `RECOVERY_NOT_PRIMARY`; one
-/// that matches nothing with `RECOVERY_NO_MATCH`. Either way neither the vault nor the count changes (wrong
-/// words must not lock the person in further). With recorded parameters below the floor, it opens at the
-/// floor and writes the floor back (the recovery reseal path).
+/// identity on this machine is refused by name with `RECOVERY_NOT_PRIMARY`; one that matches nothing with
+/// `RECOVERY_NO_MATCH`. Either way neither the vault nor the count changes (wrong words must not lock the
+/// person in further). With recorded parameters below the floor, it opens at the floor and writes the floor
+/// back (the recovery reseal path).
 pub fn recover(v: &Vault, secret: &[u8], new_pin: &str) -> Result<(), Trouble> {
     if let Some(t) = pin_trouble(new_pin) {
         return Err(Trouble::new(Code::PinShape, t.as_str().to_string()));
@@ -1332,11 +1333,11 @@ pub fn primary_kind(v: &Vault) -> Result<Option<PrimaryKind>, Trouble> {
 }
 
 /// Record the recovery seals of the primary identity (one per secret, [`labels`]; `secrets` in that order, the
-/// primary's own first). The vault has one primary
-/// identity and only its seals open the vault: when there is none yet (the first identity built on this
-/// machine), this identity becomes primary, its seals are written and the header records it; when this
-/// identity is already primary its seals are replaced (refilling a machine). Any other identity is secondary
-/// and gets no seal (answers false). Only while open (the master key is in hand).
+/// primary's own first). The vault has one primary identity and only its seals open the vault: when there is
+/// none yet (the first identity built on this machine), this identity becomes primary, its seals are written
+/// and the header records it; when this identity is already primary its seals are replaced (refilling a
+/// machine). Any other identity is secondary and gets no seal (answers false). Only while open (the master key
+/// is in hand).
 pub fn add_recovery(v: &Vault, id: &str, kind: PrimaryKind, secrets: &[Plain]) -> Result<bool, Trouble> {
     let mk = master_now()?;
     let held = lock_book(v)?;
@@ -1507,7 +1508,8 @@ pub enum PinFor<'a> {
 }
 
 /// Build a vault in memory: `pin` seals the master key; `primary` (id, kind, every secret it recovers with in
-/// [`labels`] order) gets its recovery seals; every `slots` entry is sealed under the master key. The count starts at zero. Nothing is written.
+/// [`labels`] order) gets its recovery seals; every `slots` entry is sealed under the master key. The count
+/// starts at zero. Nothing is written.
 pub fn build_new(v: &Vault, pin: PinFor, primary: Option<(&str, PrimaryKind, &[Plain])>, slots: &[(String, Vec<u8>)]) -> Result<NewBook, Trouble> {
     if let PinFor::New(p) = pin {
         if let Some(t) = pin_trouble(p) {

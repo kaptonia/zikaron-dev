@@ -6,18 +6,18 @@
 //! handshake, certificate, deadline, cap, stream, shutdown). The certificate chain and host name are always
 //! verified; there is no way to skip them.
 //!
-//! Each exchange has one deadline, fixed when it starts: resolving, connecting, the handshake, writing and
-//! every read get only the time left, and running out anywhere is a deadline failure. No wait for the peer (to
-//! resolve, connect, answer or finish a handshake or tunnel) lasts longer than one [`SLICE`] before it looks
-//! whether the transport is shutting down, so shutting down cuts an exchange in flight within a slice on every
-//! system, without relying on the system waking a blocked read. Over TLS the same holds per socket operation,
-//! not per record: the handshake and every read take one socket step at a time (`Tls`), so a peer that
-//! trickles a record a byte at a time meets the deadline and the shutdown as a silent one does. A write the peer does not take is bounded by
-//! the time left only, not sliced (a sliced write would break a request the peer is slow to take); shutting
-//! down shuts its socket, and that is what ends it. Every resolved address is tried (`dial`). A connection
-//! whose response ended cleanly and whose peer left it open is kept for the next request to the same place
-//! (`keep`); an idempotent request ([`Ask::Read`]) is retried once on a new connection if the connection breaks
-//! before any response byte arrives.
+//! Each exchange has one deadline, fixed when it starts: resolving, connecting, the handshake, writing and every
+//! read get only the time left, and running out anywhere is a deadline failure. No wait for the peer (to resolve,
+//! connect, answer or finish a handshake or tunnel) lasts longer than one [`SLICE`] before it looks whether the
+//! transport is shutting down, so shutting down cuts an exchange in flight within a slice on every system, without
+//! relying on the system waking a blocked read. Over TLS the same holds per socket operation, not per record: the
+//! handshake and every read take one socket step at a time (`Tls`), so a peer that trickles a record a byte at a
+//! time meets the deadline and the shutdown as a silent one does. A write the peer does not take is bounded by the
+//! time left only, not sliced (a sliced write would break a request the peer is slow to take); shutting down shuts
+//! its socket, and that is what ends it. Every resolved address is tried (`dial`). A connection whose response ended
+//! cleanly and whose peer left it open is kept for the next request to the same place (`keep`); an idempotent
+//! request ([`Ask::Read`]) is retried once on a new connection if the connection breaks before any response byte
+//! arrives.
 
 // `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
 #![forbid(unsafe_code)]

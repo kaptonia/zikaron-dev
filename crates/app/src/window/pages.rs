@@ -181,7 +181,7 @@ impl Win {
     }
 
     /// The shell's page is followed: a change to it made from outside the window (`Action::Show` from a link, a
-    /// test, the command-line door) is gone to the next frame; the window's own moves record the page they set
+    /// test, a command-line request) is gone to the next frame; the window's own moves record the page they set
     /// (`entered`), so this never answers them. The first frame only takes note: the window starts where it was
     /// put (from the shell's page itself when nothing else put it).
     pub(super) fn follow_page(&mut self, now: f64) {

@@ -93,13 +93,14 @@ pub fn partial(reason: Reason, members: Vec<(Key, Value)>) -> Answer {
 
 /// No answer: unreachable endpoint, disagreeing readings, declined scan. Exit 4 (law §9.4).
 ///
-/// An endpoint unreached because its proxy asked who is calling (`detail` is the transport's sentence for it,
-/// `zikaron_anchor::rpc::proxy_credentials`) is named here, for every verb at once: the line says how `--proxy`
-/// carries credentials, and an `E_UNREACHABLE` answer carries `token` `PROXY_CREDENTIALS_MISSING` (none given) or
-/// `PROXY_CREDENTIALS_REFUSED` (the ones given refused); a reason with a `token` of its own (`E_SCAN`) keeps it.
+/// An endpoint not reached because its proxy required authentication (`detail` carries the transport's message,
+/// `zikaron_anchor::rpc::proxy_credentials`) is handled here for every verb: the stderr line says how `--proxy`
+/// carries credentials, and an `E_UNREACHABLE` answer gains `token` `PROXY_CREDENTIALS_MISSING` (none given) or
+/// `PROXY_CREDENTIALS_REFUSED` (the ones given were refused); a reason with a `token` of its own (`E_SCAN`) keeps it.
 ///
-/// An endpoint unreached after the connection went without the system's configuration script
-/// (`zikaron_anchor::rpc::script_trouble_last`) says the script's trouble and the way out on the line.
+/// An endpoint not reached after the connection went ahead without the system's proxy auto-configuration (PAC)
+/// script (`zikaron_anchor::rpc::script_trouble_last`) gets a stderr line naming the script's problem and the way
+/// out.
 pub fn unanswered(reason: Reason, members: Vec<(Key, Value)>) -> Answer {
     let asked = members.iter().find_map(|(k, v)| match (k, v) {
         (Key::Detail, Value::Str(d)) => zikaron_anchor::rpc::proxy_credentials_of(d),
@@ -121,8 +122,8 @@ pub fn unanswered(reason: Reason, members: Vec<(Key, Value)>) -> Answer {
     }
 }
 
-/// The line for a connection that went without the system's configuration script (`x`, its trouble) and was not
-/// made.
+/// The stderr line for a connection that went ahead without the system's PAC script (`x`, what went wrong with
+/// it) and failed.
 fn script_line(x: zikaron_anchor::rpc::PacTrouble) -> String {
     match x {
         zikaron_anchor::rpc::PacTrouble::RemoteHttp => Said::PacRemoteHttp.text().to_string(),

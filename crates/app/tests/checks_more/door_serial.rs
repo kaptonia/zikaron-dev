@@ -1,8 +1,9 @@
-//! The command-line door answers a request from the outcome of the task that request started, by its serial,
-//! never by its kind: what else of the kind lands meanwhile does not answer it, and each landing of its own has
-//! a reply by name (a broadcast whose receipt wait did not start is "not yet included" with its transaction; a
-//! landing for a home no longer open is the door closing; an estimate made stale is refused by name). Read by
-//! handing the shell's door turn the landings it would drain, with no node and no clock.
+//! The command-line channel answers a request from the outcome of the task that request started, by its
+//! serial, never by its kind: another task of the same kind landing meanwhile does not answer it, and each of
+//! its own landings has a named reply (a broadcast whose receipt wait did not start is "not yet included" with
+//! its transaction; a landing for a home no longer open closes the channel; an estimate made stale is refused
+//! by name). Tested by handing the shell's channel turn (`door_turn`) the landings it would drain, with no node
+//! and no clock.
 
 use app::door::Doing;
 use app::task::{Done, Kind, Outcome};
@@ -54,7 +55,7 @@ fn each_landing_of_a_request_has_its_own_reply() {
     s.door_doing = Some(Doing::Send { answer: tx, serial: 3 });
     s.door_turn(&[landed(Kind::Anchor, 3, Err(fault()))]);
     assert!(matches!(replied(&rx), Some(Reply::Refused { code, network: true, .. }) if code == "UNREACHABLE"));
-    // A record batch whose answer is not there (it landed for a home no longer open): the door closing.
+    // A record batch whose answer is not there (it landed for a home no longer open): the channel closing.
     let (tx, rx) = channel();
     s.door_doing = Some(Doing::Record { answer: tx, serial: 4 });
     s.door_turn(&[landed(Kind::Record, 9, Err(fault()))]);

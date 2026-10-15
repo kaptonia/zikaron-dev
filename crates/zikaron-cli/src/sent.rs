@@ -86,9 +86,9 @@ fn files(dir: &Path) -> Result<Files, String> {
         let item = item.map_err(|e| format!("{}: {e}", dir.display()))?;
         let at = item.path();
         let name = item.file_name().to_string_lossy().into_owned();
-        // A landing's temporary sibling is not a record (it starts with `.`, as every hidden file does: this record
-        // never writes one; a file browser or a sync tool does, `.DS_Store`). Any other name that does not read as a
-        // record still refuses the whole reading.
+        // A name starting with `.` is not a record: a landing's temporary sibling, or a hidden file a file browser
+        // or sync tool leaves (`.DS_Store`). Any other name that does not read as a record still refuses the whole
+        // reading.
         if name.starts_with('.') {
             continue;
         }

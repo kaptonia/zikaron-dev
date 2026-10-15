@@ -4,7 +4,7 @@
 //! answer) exits 0; harness misuse (an unreadable path, wrong arguments) exits 2; there is no other exit
 //! code.
 
-// `unsafe` lives in the platform piece (`zikaron-os`) alone: here it does not compile.
+// `unsafe` code belongs only in the platform crate (`zikaron-os`); it is forbidden here.
 #![forbid(unsafe_code)]
 
 use std::ffi::{OsStr, OsString};

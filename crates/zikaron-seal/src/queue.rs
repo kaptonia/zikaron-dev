@@ -9,9 +9,9 @@
 //! ([`Queue::push`]) and three ways out, each with its reason: a successful chain receipt goes through
 //! [`Queue::anchored_out`] (removed and recorded as anchored; [`Queue::included_out`] also records the block),
 //! called by the receipt path and by [`Queue::seen_out`] (an entry a self-audit read on chain while it still
-//! waited here, another writer having anchored it); a deleted entry goes
-//! through [`Queue::drop_ids`] (removed, nothing recorded). Anything that failed to send stays queued for retry
-//! because no other removal path exists.
+//! waited here, another writer having anchored it); a deleted entry goes through [`Queue::drop_ids`] (removed,
+//! nothing recorded). Anything that failed to send stays queued for retry because no other removal path
+//! exists.
 //!
 //! ─── Only the receipt path records "anchored" ───
 //!

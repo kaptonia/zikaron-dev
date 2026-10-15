@@ -286,7 +286,7 @@ pub fn outcome_of(items: &[Vec<u8>], fragment: &Value) -> Result<zikaron::audit:
         .ok_or_else(|| Fault::known(Known::AuditInput, crate::lang::t(crate::lang::Key::Tail081).to_string()))
 }
 
-/// The earliest counted anchor that reaches a ledger entry, in full (the shared record judge's,
+/// The earliest counted anchor that reaches a ledger entry, in full (the shared record check,
 /// `zikaron_glue::recordcheck`).
 pub use zikaron_glue::recordcheck::FirstAnchor;
 

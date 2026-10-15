@@ -57,9 +57,9 @@ fn failed(subject: &Path, what: &str, at: &Path, e: &std::io::Error) -> Trouble 
     Trouble::Io(say(subject), format!("{what} {}: {e}", at.display()))
 }
 
-/// The temporary sibling of `out`, in this product's one temporary shape (`zikaron_store::layout::tmp_file_name`:
-/// a fixed prefix and sixteen random hex digits), so whoever reads a directory knows a leftover one by the one
-/// reading of that shape (`zikaron_store::layout::tmp_shaped`), whichever write left it.
+/// The temporary sibling of `out`, named in the product's single temporary-file form
+/// (`zikaron_store::layout::tmp_file_name`: a fixed prefix and sixteen random hex digits), so any reader of a
+/// directory recognises a leftover one with `zikaron_store::layout::tmp_shaped`, whichever write left it.
 fn beside(out: &Path) -> Result<PathBuf, Trouble> {
     let parent = out.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
     let nonce = nonce().map_err(|e| failed(Path::new(zikaron_os::ENTROPY_SOURCE), "read", Path::new(zikaron_os::ENTROPY_SOURCE), &e))?;

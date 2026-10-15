@@ -1,7 +1,7 @@
 //! `--proxy` on the verbs that contact nodes, on the real binary against an in-process node, HTTP CONNECT stub
 //! and SOCKS5 stub (no network: only the stubs resolve the node's name). Cases: a proxy address is used, its
-//! credentials too; `none` resolves locally; `system` and no flag follow the system settings; anything else is misuse
-//! (exit 2, nothing on stdout, the flag named).
+//! credentials too; `none` resolves locally; `system` and no flag follow the terminal's proxy variables; anything
+//! else is misuse (exit 2, nothing on stdout, the flag named).
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -156,7 +156,7 @@ fn scratch(tag: &str) -> std::path::PathBuf {
     p
 }
 
-/// A proxy address is used, credentials written with it too; the proxy resolves the node's name.
+/// A proxy address is used, with credentials written into it too; the proxy resolves the node's name.
 #[test]
 fn a_proxy_address_is_gone_through() {
     let dir = scratch("through");
@@ -185,8 +185,8 @@ fn none_goes_straight() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// `system` and no flag follow the terminal's proxy variables when one is set, on every system (as programs in a
-/// terminal do; the system's own settings are read only when none is).
+/// `system` and no flag follow the terminal's proxy variables when one is set, on every system, as terminal
+/// programs do; the system's own settings are read only when none is set.
 #[test]
 fn system_and_no_flag_follow_the_system() {
     let dir = scratch("system");

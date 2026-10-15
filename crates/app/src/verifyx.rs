@@ -328,11 +328,11 @@ fn facts(v: zikaron_kit::kitdir::KitVerdict) -> KitFacts {
     }
 }
 
-/// The original file of a record in the package, and whether the record is anchored: the shared record judge's
-/// (`zikaron_glue::recordcheck`, the command line's `kit-verify` judges by it too).
+/// The original file of a record in the package, and whether the record is anchored, as decided by the shared
+/// record check (`zikaron_glue::recordcheck`, which the command line's `kit-verify` uses too).
 pub use zikaron_glue::recordcheck::{contents_of, originals_in_dir, originals_in_pairs, OnChain, Original};
 
-/// One row of record package verification: one record (`history`), as the shared judge states it, with the
+/// One row of record package verification: one record (`history`), as the shared check reports it, plus the
 /// record's name for the page.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordRow {

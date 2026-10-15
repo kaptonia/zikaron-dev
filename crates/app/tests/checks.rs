@@ -5135,3 +5135,5 @@ mod handed_off;
 mod proxy_locked;
 #[path = "checks_more/door_serial.rs"]
 mod door_serial;
+#[path = "checks_more/mirror_adopt.rs"]
+mod mirror_adopt;

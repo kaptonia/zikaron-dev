@@ -84,7 +84,7 @@ fn a_ledger_goes_to_the_other_place_and_back_one_writer_at_a_time() {
     assert_eq!(code, 0, "{out}");
     let h2 = member(&out, "handoff");
     assert_ne!(h1, h2);
-    // A takes back only the handoff after its own: its own fed back is not it.
+    // a takes back only the handoff made after its own; its own handoff fed back is refused.
     let (code, out, _) = run(&w.0, &ha, &["take-over", "--ledger", "a", "--handoff", "h1.zkhand"]);
     assert_eq!((code, member(&out, "reason"), member(&out, "token"), member(&out, "handoff")), (1, "E_HANDOFF".into(), "NOT_BACK".into(), h1.clone()));
     let before = std::fs::read_dir(w.0.join("a")).expect("a").count();
@@ -116,7 +116,7 @@ fn a_file_that_is_no_handoff_or_not_one_line_is_refused_by_name() {
     assert_eq!(code, 0);
     let (code, out, _) = run(&w.0, &h, &["take-over", "--ledger", "a", "--handoff", "kit.zkit"]);
     assert_eq!((code, member(&out, "token")), (1, "E_HANDOFF_NOTE".into()));
-    // Two entries at one place: written into two folders by hand, laid into one handoff file.
+    // Two entries at the same position: written into two folders by hand, laid into one handoff file.
     std::fs::create_dir_all(w.0.join("y")).expect("y");
     let pile = |d: &str| -> Vec<Vec<u8>> {
         let mut v: Vec<Vec<u8>> = std::fs::read_dir(w.0.join(d)).expect("dir").filter_map(|e| e.ok()).map(|e| std::fs::read(e.path()).expect("entry")).collect();

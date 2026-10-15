@@ -103,11 +103,11 @@ impl Win {
     }
 
     /// The command line's two ways to write this machine's sealed data, one group: "writes through the desktop"
-    /// (the door; no passcode) and "writes alone" (a credential; the passcode and a validity each time it is
-    /// turned on, on its sheet). The higher outranks the lower: while writing alone is on, the desktop switch is
-    /// greyed and the door stays closed (`machine::Machine::cli_path`).
+    /// (requests to the running app; no passcode) and "writes alone" (a credential; the passcode and a validity
+    /// each time it is turned on, on its sheet). Writing alone outranks the desktop path: while it is on, the
+    /// desktop switch is greyed out and the desktop accepts no command-line requests (`machine::Machine::cli_path`).
     fn set_cli_writes(&mut self, ui: &mut egui::Ui, now: f64) {
-        // The four states are judged in one place (`cli_path`); the page only draws them.
+        // The two switches' four states are resolved in one place (`cli_path`); the page only draws them.
         let path = self.shell.machine.cli_path();
         let alone = path == crate::machine::CliPath::Alone;
         let desktop = path == crate::machine::CliPath::Desktop;
@@ -667,10 +667,11 @@ impl Win {
     }
 
     /// The proxy (machine-wide): follow the system, none, or a custom proxy in cells (kind, host, port, user name,
-    /// password: `proxycells`, judged there). A wrong cell is framed red with its reason under the cells, and saving
-    /// waits for every cell to read. A whole address pasted into the host cell, or left there, is split into the cells. A saved
-    /// password is never shown again: its cell stays empty, and the page says one is set only while saving the cells
-    /// as they are would keep it (`proxycells::password_stays`: the same proxy and user name).
+    /// password; checked in `proxycells`). A wrong cell is framed red with its reason under the cells, and saving
+    /// waits until every cell is valid. A whole address pasted into the host cell, or left there, is split into
+    /// the cells. A saved password is never shown again: its cell stays empty, and the page says one is set only
+    /// while saving the cells as they are would keep it (`proxycells::password_stays`: the same proxy and user
+    /// name).
     fn set_proxy(&mut self, ui: &mut egui::Ui, now: f64) {
         use crate::machine::proxy::{NONE, SYSTEM};
         use crate::proxycells::{self as pc, Bad};
@@ -766,7 +767,7 @@ impl Win {
             states::okline(ui, Mark::Bad, t(*k));
         }
         let typed_pass = !c.pass.is_empty() && pc::takes_password(c.kind);
-        // "Password set" only when saving these cells now would keep the saved password: one judge with saving.
+        // "Password set" only when saving these cells now would keep the saved password (the same check saving uses).
         let saved_proxy = written.as_deref().and_then(|w| zikaron_net::proxy_of(w).ok());
         let typed_proxy = pc::check(c).ok().and_then(|a| zikaron_net::proxy_of(&a).ok());
         if let (Some(s), Some(t_)) = (&saved_proxy, &typed_proxy) {

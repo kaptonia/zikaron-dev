@@ -377,10 +377,10 @@ pub(super) fn set_appearance(shell: &mut Shell, appearance: &str) -> Result<Stri
 
 /// Writes this machine's proxy choice: `system`, `none`, or a proxy address parsed by the transport's own
 /// parser (`zikaron_net::proxy_of`), kept with its credentials in the sealed machine settings; an address it
-/// rejects is refused by name before anything is written. An address given without a password keeps the one saved
-/// only for the very proxy it was given to under the same user name (`proxycells::password_stays`; the settings
-/// page never shows a saved password back, and says one is set by the same judge); another kind, host, port or user
-/// name, and the password does not go with it. Returns the choice as it may be shown: never the password.
+/// rejects is refused by name before anything is written. An address given without a password keeps the saved
+/// password only when its kind, host, port and user name match the saved proxy (`proxycells::password_stays`,
+/// the same check the settings page uses to say a password is set, since it never shows one back). Returns the
+/// choice as it may be shown, never with the password.
 pub(super) fn set_proxy(shell: &mut Shell, choice: &str) -> Result<String, crate::fault::Fault> {
     use crate::fault::{Fault, Known};
     let c = choice.trim();

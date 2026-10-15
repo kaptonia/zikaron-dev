@@ -401,12 +401,13 @@ pub enum Action {
     /// Choose how the command line's `anchor` is handled when it goes through the desktop app (machine-wide,
     /// `machine.json`): sent as the send button would, or left in the queue for the user. Takes effect at once.
     SetCliAnchor { to: crate::machine::CliAnchor },
-    /// "Command line writes through the desktop" (machine-wide, sealed machine settings): whether the desktop's
-    /// door opens to the command line while unlocked. Refused by name while writing alone is on (`CLI_ALONE_ON`):
-    /// the higher switch decides, so only one command-line path exists at any time.
+    /// "Command line writes through the desktop" (machine-wide, sealed machine settings): whether the desktop
+    /// accepts command-line requests while unlocked. Refused by name while writing alone is on (`CLI_ALONE_ON`):
+    /// that switch outranks this one, so only one command-line path exists at any time.
     SetCliDesktop { on: bool },
     /// "Command line writes alone", on: after the passcode (the gate), issue the command line's credential
-    /// lasting `lasts` (`zikaron_seal::credential`) and record the switch; the desktop's door closes.
+    /// lasting `lasts` (`zikaron_seal::credential`) and record the switch; the desktop stops accepting
+    /// command-line requests.
     SetCliAlone { lasts: crate::machine::Lasts, pin: crate::secret::Secret },
     /// "Command line writes alone", off: remove the credential and record the switch.
     CliAloneOff,
@@ -1318,9 +1319,8 @@ pub fn apply(shell: &mut Shell, a: Action) -> Applied {
     //
     // Key derivation runs in the background: the check runs in a `Kind::Vault` task, and only on success does
     // the action body run where the result lands (`vault_landed`, then `body`, after the same entry check as
-    // here); the passcode field is wiped
-    // before the action is handed on. The passcode is moved out of the action into the task (`hand_pin`), never
-    // copied: the action handed on carries none.
+    // here); the passcode field is wiped before the action is handed on. The passcode is moved out of the
+    // action into the task (`hand_pin`), never copied: the action handed on carries none.
     if a.pin_asked().is_some() {
         let mut rest = a;
         let pin = rest.hand_pin().unwrap_or_default();
@@ -2312,8 +2312,8 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             None => shell.trouble(crate::fault::Fault::known(crate::fault::Known::CliPathUnsupported, String::new())),
         },
         Action::SetCliDesktop { on } => {
-            // While writing alone is on, the desktop switch is greyed (the higher outranks the lower): asked of
-            // the one judgement of the four states.
+            // While writing alone is on, the desktop switch is greyed out, since writing alone outranks it
+            // (`Machine::cli_path` decides).
             if shell.machine.cli_path() == crate::machine::CliPath::Alone {
                 return shell.trouble(crate::fault::Fault::known(crate::fault::Known::CliAloneOn, String::new()));
             }

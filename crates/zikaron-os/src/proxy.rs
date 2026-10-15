@@ -3,9 +3,9 @@
 //! - macOS: the network configuration's proxies for the primary service, as `scutil --proxy` prints them
 //!   (explicit proxies and the automatic configuration script).
 //! - Windows: the current user's settings as the system answers them (`WinHttpGetIEProxyConfigForCurrentUser`:
-//!   the configuration script, the proxy list and its bypass list); under the machine-wide
-//!   policy `ProxySettingsPerUser = 0`, the machine's settings instead; the user's registry values when the call
-//!   answers nothing.
+//!   the configuration script, the proxy list and its bypass list); under the machine-wide policy
+//!   `ProxySettingsPerUser = 0`, the machine's settings instead; the user's registry values when the call answers
+//!   nothing.
 //! - Linux and other unix: the desktop's settings where they are stored on disk (KDE's `kioslaverc`; GNOME,
 //!   Cinnamon and MATE's GSettings, from the dconf database file or the keyfile backend; no program is run),
 //!   else the environment (`https_proxy`, `http_proxy`, `all_proxy`, `no_proxy`, lower or upper case).
@@ -249,8 +249,9 @@ fn kde_place(v: &str) -> Option<Place> {
 
 /// Settings from KDE's `kioslaverc` (group `[Proxy Settings]`): `ProxyType` 0 none, 1 manual (`httpProxy`,
 /// `httpsProxy`, `socksProxy`, `NoProxyFor`), 2 the configuration script (`Proxy Config Script`), 3 automatic
-/// discovery (not followed: read as nothing set). The SOCKS value is a SOCKS5 proxy whatever scheme it is written with (KDE writes `http://IP:PORT`
-/// there). `None` when the file names no type, type 4 (the environment), or another.
+/// discovery (not followed: read as nothing set). The SOCKS value is a SOCKS5 proxy whatever scheme it is
+/// written with (KDE writes `http://IP:PORT` there). `None` when the file names no type, type 4 (the
+/// environment), or another.
 pub fn from_kioslaverc(text: &str) -> Option<Proxies> {
     let mut group = String::new();
     let mut vals: Vec<(String, String)> = Vec::new();
@@ -295,8 +296,8 @@ pub enum GValue {
 /// Settings from GSettings (`org.gnome.system.proxy`, also read by Cinnamon and MATE), keyed by dconf path
 /// (`/system/proxy/mode`, `/system/proxy/http/host` …): mode `none`; `manual` (each kind's host and port, the
 /// http proxy's credentials when `use-authentication` is on, `use-same-proxy`, `ignore-hosts`); `auto` (the
-/// script's address; none means automatic discovery, not followed: read as nothing set). `None` when no mode is stored (never set: the
-/// environment is read instead).
+/// script's address; none means automatic discovery, not followed: read as nothing set). `None` when no mode is
+/// stored (never set: the environment is read instead).
 pub fn from_gsettings(get: impl Fn(&str) -> Option<GValue>) -> Option<Proxies> {
     let s = |k: &str| match get(k) {
         Some(GValue::Str(v)) => Some(v),
@@ -772,7 +773,8 @@ mod tests {
     }
 
     /// GNOME: the dconf database read back key by key; manual with credentials and the same proxy for https;
-    /// the script; discovery (`auto` without a script address, read as nothing set); nothing stored; the keyfile backend.
+    /// the script; discovery (`auto` without a script address, read as nothing set); nothing stored; the keyfile
+    /// backend.
     #[test]
     fn gnome_settings_are_read_from_the_dconf_database_and_the_keyfile() {
         let db = gvdb(&[

@@ -4,8 +4,8 @@
 //! follow-on is taken); here is the ledger's form and its file.
 //!
 //! - **The form** ([`Zk`]): an entry is its canonical bytes, identified by the core's entry id; entries make one
-//!   line when they have one root and the core's offline audit of them finds no second entry at one place and no
-//!   link to the wrong entry (no `EQUIVOCATION`, no `PREV_MISMATCH`).
+//!   line when they have one root and the core's offline audit of them finds no two entries at the same position and
+//!   no link to the wrong entry (no `EQUIVOCATION`, no `PREV_MISMATCH`).
 //! - **The file**: a record package in one file (`zikaron_glue::container`, `.zkhand`): every entry of the ledger,
 //!   and the handoff's note ([`NOTE_FILE`] under the files room). Its kit is checked by the kit law before
 //!   anything in it is read.
@@ -134,8 +134,8 @@ pub fn hand_over(a: &Args) -> Answer {
         Err(_) => return out::unanswered(Reason::Random, vec![]),
     };
     let (note, after) = handover::give(&before, fresh);
-    // The pen leaves first: a file that then fails to land leaves no pen anywhere (and the same handoff is made
-    // again by the next `hand-over`), never two.
+    // The pen leaves first, so two places never hold it: if the file then fails to land the pen is put back below,
+    // and if even that fails no place holds it until the next `hand-over` makes the same handoff again.
     pens.set(&key, after);
     if let Err(t) = zikaron_seal::pens::write(&machine, &pens) {
         return crate::sealed::refused(&t);
@@ -240,7 +240,8 @@ pub fn take_over(a: &Args) -> Answer {
             Err(answer) => return answer,
         }
     }
-    // The pen comes here last: an entry written and the pen not yet taken is taken by the same handoff again.
+    // The pen is taken last: if writing stops partway, the pen stays where it was and the same handoff can be taken
+    // again.
     pens.set(&key, pen);
     if let Err(t) = zikaron_seal::pens::write(&machine, &pens) {
         return crate::sealed::refused(&t);

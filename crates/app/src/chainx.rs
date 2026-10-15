@@ -467,10 +467,10 @@ impl rpc::Endpoint for Https {
 
 /// The refusal when no endpoint gave a reading: the first failure that actually reached a node is classified by
 /// [`said_fault`] (refusals, TLS and timeouts each named). When no node failed, every node reached answered:
-/// if any answered something that does not read as an answer to that question (`shapeless`), the refusal is
-/// the chain's shape (`CHAIN_SHAPE`); answers that are all `null` to a question about the chain's state are the
-/// nodes' own word that they have none, and the reading could not be had (`UNREACHABLE`). Addresses that do not read at all are refused before this
-/// ([`no_address_reads`]). The evidence tail is every endpoint's original message joined by ` · `, unchanged.
+/// if any answer does not parse as an answer to the question (`shapeless`), the refusal is `CHAIN_SHAPE`; if
+/// all answers to a chain-state question are `null`, the nodes report having no value and the refusal is
+/// `UNREACHABLE`. Unparseable addresses are refused before this ([`no_address_reads`]). The evidence tail is
+/// every endpoint's original message joined by ` · `, unchanged.
 fn none_answered(first: Option<Fault>, shapeless: bool, refused: &[String]) -> Fault {
     match first.filter(|f| f.which().is_some()) {
         Some(f) => f.retold(refused.join(" · ")),
@@ -478,9 +478,9 @@ fn none_answered(first: Option<Fault>, shapeless: bool, refused: &[String]) -> F
     }
 }
 
-/// A node passed over for an answer the judging table could not read, that is no word of the node's own: any
-/// such answer to a call (`call`: the node runs it, and a call has an outcome or a refusal, never "none"), and
-/// one that is not `null` to a question about the chain's state (where `null` is the node saying it has none).
+/// Whether a node was skipped for an answer the judging table could not read and that is not the node saying it
+/// has no value: any such answer to a call (`call`: a call has an outcome or a refusal, never "none"), and any
+/// such answer other than `null` to a chain-state question (where `null` means the node has no value).
 fn shapeless(m: &zikaron_anchor::judge::Missing, call: bool) -> bool {
     matches!(m, zikaron_anchor::judge::Missing::Unreadable(text) if call || text != "null")
 }

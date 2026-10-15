@@ -1,16 +1,17 @@
 {
  "schema": 1,
  "product": "ZIKARON",
- "release": "0.1.2",
+ "release": "0.1.3",
  "components": [
   {
    "id": "transport",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
+    "crates/app/src/proxycells.rs",
     "crates/app/src/task.rs",
     "crates/zikaron-net/src/answer.rs",
     "crates/zikaron-net/src/dial.rs",
@@ -367,16 +368,40 @@
     {
      "path": "crates/zikaron-net/tests/auto_proxy.rs",
      "name": "credentials_longer_than_socks5_carries_are_refused_by_name"
+    },
+    {
+     "path": "crates/app/src/proxycells.rs",
+     "name": "the_cells_are_judged_one_by_one"
+    },
+    {
+     "path": "crates/app/src/proxycells.rs",
+     "name": "the_cells_make_the_address_the_transport_reads"
+    },
+    {
+     "path": "crates/app/src/proxycells.rs",
+     "name": "a_pasted_address_is_split_into_the_cells"
+    },
+    {
+     "path": "crates/app/src/proxycells.rs",
+     "name": "the_host_cell_is_split_on_a_whole_paste_or_on_leaving"
+    },
+    {
+     "path": "crates/app/src/proxycells.rs",
+     "name": "a_saved_password_stays_only_with_its_own_proxy"
+    },
+    {
+     "path": "crates/zikaron-net/src/pac.rs",
+     "name": "a_script_comes_from_this_machine_or_over_https"
     }
    ],
    "nameZh": "传输件"
   },
   {
    "id": "node-answer",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/src/chainx.rs",
@@ -630,10 +655,10 @@
   },
   {
    "id": "log-scan",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/zikaron-anchor/src/scan.rs"
@@ -697,10 +722,10 @@
   },
   {
    "id": "tx-send",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/src/action/mod.rs",
@@ -960,10 +985,10 @@
   },
   {
    "id": "node-agreement",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/src/auditx.rs",
@@ -1071,10 +1096,10 @@
   },
   {
    "id": "os-platform",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/zikaron-os/src/lib.rs",
@@ -1162,16 +1187,20 @@
     {
      "path": "crates/app/tests/checks.rs",
      "name": "the_shipped_app_starts_no_child_process_at_all"
+    },
+    {
+     "path": "crates/zikaron-os/src/proxy.rs",
+     "name": "the_terminal_comes_before_the_system_for_the_command_line"
     }
    ],
    "nameZh": "平台件"
   },
   {
    "id": "durable-write",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/src/home.rs",
@@ -1390,10 +1419,10 @@
   },
   {
    "id": "single-writer",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/src/action/home.rs",
@@ -1467,10 +1496,10 @@
   },
   {
    "id": "local-seal",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
-    "by": "ERAVON",
-    "previous": 1
+    "by": "ZIKARON",
+    "previous": 2
    },
    "home": [
     "crates/app/local-data-standard.md",
@@ -1556,10 +1585,10 @@
   },
   {
    "id": "passcode-gate",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/src/action/mod.rs",
@@ -1628,10 +1657,10 @@
   },
   {
    "id": "key-file",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/src/action/identity.rs",
@@ -1718,10 +1747,10 @@
   },
   {
    "id": "machine-backup",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/src/action/identity.rs",
@@ -1820,10 +1849,10 @@
   },
   {
    "id": "ui-kit",
-   "familyVersion": 3,
+   "familyVersion": 4,
    "origin": {
     "by": "ZIKARON",
-    "previous": 2
+    "previous": 3
    },
    "home": [
     "crates/app/assets/icon-256.rgba",
@@ -2233,10 +2262,10 @@
   },
   {
    "id": "bilingual-table",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/src/lang.rs",
@@ -2269,10 +2298,10 @@
   },
   {
    "id": "app-skeleton",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     ".cargo/config.toml",
@@ -2413,10 +2442,10 @@
   },
   {
    "id": "cli-skeleton",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "CLI-SCHEMA.md",
@@ -2801,10 +2830,10 @@
   },
   {
    "id": "ci-toolchain",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     ".github/workflows/package-windows.yml",
@@ -2828,10 +2857,10 @@
   },
   {
    "id": "family-literals",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/family-literals.json",
@@ -2856,10 +2885,10 @@
   },
   {
    "id": "structure-pins",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/tests/checks.rs"
@@ -2974,10 +3003,10 @@
   },
   {
    "id": "cli-desktop",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "CLI-SCHEMA.md",
@@ -3358,6 +3387,10 @@
     {
      "path": "crates/zikaron-seal/src/ground.rs",
      "name": "the_three_read_as_set_or_not_set"
+    },
+    {
+     "path": "crates/zikaron-seal/src/queue.rs",
+     "name": "an_entry_seen_on_chain_leaves_unless_its_transaction_is_out"
     }
    ],
    "nameZh": "封存层(桌面与命令行同一实现)"
@@ -3370,7 +3403,8 @@
     "previous": null
    },
    "home": [
-    "crates/zikaron-glue/src/onefile.rs"
+    "crates/zikaron-glue/src/onefile.rs",
+    "crates/zikaron-glue/src/read.rs"
    ],
    "tests": [
     {

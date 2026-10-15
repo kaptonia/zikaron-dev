@@ -147,14 +147,14 @@ happened on the shell's side".
 | token | Meaning | Usual code |
 |---|---|---|
 | `E_ARGS` | Malformed arguments | 2 |
-| `E_UNREADABLE` | A file could not be read, or the ledger is ZIKARON Desk's sealed local data (section 3) | 2 |
+| `E_UNREADABLE` | A file could not be read, or the ledger is ZIKARON Desk's sealed local data (section 3); exit 1 when, opening a home the desktop keeps or reading this machine's lists (section 12), the sealed layer refuses for a cause that has no reason of its own in this table (a sealed file that does not open, a list or a register that does not read): `token` is its code in capitals, `detail` its evidence | 2 / 1 |
 | `E_KEY` | The private key is not a scalar in [1, n−1] | 2 |
 | `E_RANDOM` | The machine could not provide randomness | 4 |
 | `E_LEDGER` | The storage layer (`zikaron-store`) refused (with its code and details) | 1 |
 | `E_ENTRY` | The core (`zikaron`) refused this entry (with its token) | 1 |
 | `E_TIP_ABSENT` | This lineage has no entries at all | 1 |
 | `E_ENTRY_ABSENT` | A named entry was not found in the store (not the same as "the lineage is empty") | 1 |
-| `E_TIP_FORKED` | More than one entry at the highest seq: the ledger has forked, and the command line does not pick one; on the `init` side, more than one distinct identity at seq 0 (several roots already exist); on any writing verb, a ledger that holds two roots (or would, with this entry) and no `--root` naming the one to write under, `--seq` / `--prev` given by hand included | 1 |
+| `E_TIP_FORKED` | More than one entry at the highest seq: the ledger has forked, and the command line does not pick one; on the `init` side, more than one distinct identity at seq 0 (several roots already exist); on any writing verb, a ledger that holds two roots (or would, with this entry) and no `--root` naming the one to write under, `--seq` / `--prev` given by hand included; on `hand-over`, a ledger without a single root or whose entries are not one line | 1 |
 | `E_SCAN` | The anchoring layer (`zikaron-anchor`) refused to answer the scan (with its code) | 4 |
 | `E_ENDPOINTS_DISAGREE` | Several endpoints returned readings that disagree | 4 |
 | `E_UNREACHABLE` | The endpoint was unreachable, the send failed, or the wait timed out; for `anchor`, also every failure before the broadcast that is not a refused estimate (section 6). When the endpoint went unreached because its proxy asked who is calling, `token` says how: `PROXY_CREDENTIALS_MISSING` (no credentials were given with it) or `PROXY_CREDENTIALS_REFUSED` (the ones given were refused); the line on stderr says how `--proxy` carries them (that line also comes with every other exit-4 answer for the same cause, such as `E_SCAN`, whose `token` stays its own). When the connection followed the system, went without its automatic configuration script and was not made, the line on stderr says the script's trouble and the way out instead: remote http, `Proxy script is on remote http, not used: give a proxy with --proxy`; not fetched, `Can't fetch the proxy script: start your proxy app, or give a proxy with --proxy`; any other, `Proxy script failed (<code>): give a proxy with --proxy` with its `PAC_*` code (in Chinese per section 3); stdout is the same with or without it | 4 |
@@ -162,7 +162,7 @@ happened on the shell's side".
 | `E_TX_NOT_YET` | The wait ran out and the transaction is not in a block yet | 4 |
 | `E_TX_VOID` | What was sent will never be included: no node holds it and its nonce was used by another transaction; nothing new was sent by this answer (`tx` names it) | 1 |
 | `E_DOC` | The kit layer (`zikaron-kit`) refused this document, or the pairing did not match | 1 |
-| `E_KIT` | The kit layer judged this kit invalid (with the kit law verdict) | 1 |
+| `E_KIT` | The kit layer judged this kit invalid (with the kit law verdict), or a record package in one file does not read as one (`state` the layout's code) | 1 |
 | `E_BADGE` | The kit layer refused to encode or decode the badge | 1 |
 | `E_FRAGMENT` | The fragment lacks one of anchors / basis / evidence and cannot be assembled into an audit input | 1 |
 | `E_ALREADY_ROOTED` | `init`: this ledger already has a root (the core recognises exactly one seq 0) | 1 |
@@ -172,19 +172,19 @@ happened on the shell's side".
 | `E_GRANT_FILE` | `check-grant`: `--grant` is a grant file (the app's single-file bundle) that does not open by the reading the app uses, with the refusing layer's `token` (the bundle shape's code, the kit law verdict, `E_GRANT_FILE_CODE` no grant code in it, a badge token, or `E_GRANT_FILE_CHAIN` with `entryId` for a hop the code names that the bundle does not carry) and `detail?`; nothing is checked | 1 |
 | `E_GAS_REFUSED` | `anchor`: the endpoint refused the gas estimate for a reason about the call itself (by one table, `said::refuses_the_call`: a member about the call, or the node's JSON-RPC error with a numeric `code` the table does not name; taken as "the call would revert", the node's words in `detail`), or estimated it above the ceiling of 200,000 (it would run out of gas with the fee paid); a refusal for the endpoint's own reasons (a rate limit, a missing method, credentials, a wrong chain, an error without a numeric `code`, a page at an HTTP status) says nothing about the call and is `E_UNREACHABLE` (exit 4) instead; nothing is broadcast either way | 1 |
 | `E_DESKTOP` | `--home` (section 11): the desktop gave no answer for that home; `detail` says why, one of `NOT_OPEN` (no door for that home: the desktop is locked, does not have that home open as its writer, or is not running), `CLOSED` (it locked, closed the home or quit before it answered), `PATH_TOO_LONG` (the door's place is longer than this system's local channel takes), `NOT_YOU` (the door is kept by another user), `BROKEN` (it broke off, or answered in a form this version does not read), `NO_MACHINE` (this user's machine folder cannot be found), `ALONE` (no door because this machine writes alone, section 12: the desktop keeps its door shut while that switch is on; write without `--home`) | 4 |
-| `E_ON_DESKTOP` | `--home`: the action asks for the passcode, so it is done on the desktop and never through its door; nothing was done | 1 |
+| `E_ON_DESKTOP` | `--home`: the action is done on the desktop alone, never through its door (`attest` asks for the passcode; `succeed` is done there by hand, and the desktop is not asked); nothing was done | 1 |
 | `E_QUEUED` | `--home` `anchor` with the desktop set to leave sending to the user: nothing was sent; `count` entries wait in its queue for the user to send them from the desktop | 3 |
 | `E_DESKTOP_REFUSED` | `--home`: the desktop's action layer refused; `token` is its code (the desktop's closed table of refusals) and `detail` its evidence; exit 4 when the refusal is a network one (no answer), 1 otherwise | 1 / 4 |
-| `E_CREDENTIAL_EXPIRED` | Writing a sealed home (section 3): the command line's credential has expired; it was removed, and nothing was written | 1 |
-| `E_CREDENTIAL_MISSING` | Writing a sealed home: this machine has no command-line credential ("the command line writes alone" is off on the desktop); nothing was written | 1 |
-| `E_CREDENTIAL_SHAPE` | Writing a sealed home: the credential is not in its shape, does not open, or holds another master key than this machine's vault (issued before a new master key); nothing was written | 1 |
-| `E_HOME_HELD` | Writing a sealed home (section 12): the desktop is writing it at this moment (it holds the home's writer lock for its own write); nothing was written; try again shortly | 1 |
-| `E_HOME_OTHER_MACHINE` | Writing a sealed home: the home's writer mark names another machine, or does not read; nothing was written | 1 |
-| `E_ADOPTED` | Writing a plain ledger folder that ZIKARON Desk on this machine has adopted (section 12): it is written through the desktop's sealed copy from then on; nothing was written | 1 |
+| `E_CREDENTIAL_EXPIRED` | Opening a sealed home to write or read it (sections 3 and 12): the command line's credential has expired; it was removed, and nothing was written | 1 |
+| `E_CREDENTIAL_MISSING` | Opening a sealed home: this machine has no command-line credential ("the command line writes alone" is off on the desktop); nothing was written | 1 |
+| `E_CREDENTIAL_SHAPE` | Opening a sealed home: the credential is not in its shape, does not open, or holds another master key than this machine's vault (issued before a new master key); nothing was written | 1 |
+| `E_HOME_HELD` | Writing a sealed home (section 12): the desktop is writing it at this moment (it, or another writer on this machine, holds the home's writer lock); nothing was written; try again shortly | 1 |
+| `E_HOME_OTHER_MACHINE` | Opening a sealed home: the home's writer mark names another machine, or does not read; nothing was written | 1 |
+| `E_ADOPTED` | Writing, handing over or taking a handoff into a plain ledger folder that ZIKARON Desk on this machine has adopted (section 12): it is written through the desktop's sealed copy from then on; nothing was written | 1 |
 | `E_RECORDS` | `kit-verify`: not every record of the package holds; `records` says each one's `original` and `anchored`: an original that is not the one recorded is exit 1, otherwise (a record not anchored, the chain not read, an original missing) exit 3 | 1 / 3 |
-| `E_HANDED_OFF` | Writing a ledger this machine handed off to another place and has not taken back (section 12); `handoff` names the handoff; nothing was written | 1 |
-| `E_ON_CHAIN` | `anchor`: the chain already holds an anchor of a hash given, from this key through this registry (anchored on another side); `names` the hashes, `tx` and `blockNumber` the earliest of those anchors; nothing is sent (section 6) | 1 |
+| `E_HANDED_OFF` | Writing a ledger (a plain folder or a home) this machine handed off to another place and has not taken back (section 12); `handoff` names the handoff; nothing was written | 1 |
 | `E_HANDOFF` | `take-over`: the handoff is not taken (section 12); `token` says why: the layout's or the kit law's code (the file does not read as a handoff), `E_HANDOFF_NOTE` (it carries no handoff note), `NOT_BACK` (this place handed the ledger off and this is not the handoff after its own; `handoff` names its own), `AHEAD` (this place holds an entry the handoff lacks, `entryId`), `NOT_ONE_LINE` (the handoff's ledger has no single root, or two entries at one place, or a link to the wrong entry); nothing was written | 1 |
+| `E_ON_CHAIN` | `anchor`: the chain already holds an anchor of a hash given, from this key through this registry (anchored on another side); `names` the hashes, `tx` and `blockNumber` the earliest of those anchors; nothing is sent (section 6) | 1 |
 
 ## 5 · The two families of answers
 
@@ -214,25 +214,25 @@ addition, `scan` passes through the core's no-label answer when the basis is mal
 | `init` | 0 | shell | `entryId`, `ledger`, `seq`, `written` |
 | | 1 | shell | `E_ENTRY` + `token`; or `E_LEDGER` + `detail`, `names?`, `count?`; or `E_ALREADY_ROOTED` + `author`, `count`; or `E_TIP_FORKED` + `count`; or `E_NOT_EMPTY` + `count`, `names?`; or `E_WOULD_BREAK` + `entryId`, `names` |
 | `history` | 0 | shell | `entryId`, `ledger`, `seq`, `written` |
-| | 1 | shell | `E_ENTRY` + `token`; or `E_LEDGER` + `detail`, `names?`, `count?`; or `E_WOULD_BREAK` + `entryId`, `names`; or `E_TIP_ABSENT`, `E_TIP_FORKED` |
+| | 1 | shell | `E_ENTRY` + `token`; or `E_LEDGER` + `detail`, `names?`, `count?`; or `E_WOULD_BREAK` + `entryId`, `names`; or `E_TIP_ABSENT`, `E_TIP_FORKED`; or `E_HANDED_OFF` + `handoff`; on a plain folder, `E_ADOPTED`; on a home, the refusals of section 12 |
 | `grant` | same as `history` | | |
 | `revoke` | same as `history` | | |
 | `adopt` | same as `history` | | |
 | `succeed` | same as `history` | | |
 | `annotate` | same as `history` | | |
 | `retract` | 0 | shell | `entryId`, `ledger`, `seq`, `written` |
-| | 1 | shell | `E_RETRACTION` + `token`; or `E_ENTRY` + `token`; or `E_LEDGER` + `detail`, `names?`, `count?`; or `E_WOULD_BREAK` + `entryId`, `names`; or `E_TIP_ABSENT`, `E_TIP_FORKED` |
+| | 1 | shell | `E_RETRACTION` + `token`; or `E_ENTRY` + `token`; or `E_LEDGER` + `detail`, `names?`, `count?`; or `E_WOULD_BREAK` + `entryId`, `names`; or `E_TIP_ABSENT`, `E_TIP_FORKED`; or the refusals `history` gives for a handed-off ledger, an adopted folder and a home |
 | `attest` | 0 | shell | `attestation`, `attestor` |
 | | 1 | shell | `E_ENTRY` + `token` |
 | `anchor` | 0 | shell | `blockNumber`, `tx` |
 | | 1 | shell | `E_TX_STATUS` + `state` (the on-chain status), `tx`; or `E_TX_VOID` + `tx` (on a rerun: what was sent will never be included; nothing sent); or `E_ON_CHAIN` + `names` (the hashes the chain already holds from this key), `tx`, `blockNumber` (the earliest of those anchors), nothing sent; or `E_GAS_REFUSED` + `detail` (the endpoint's refusal in its debug form, e.g. `Node("…")`, or `<estimate> > 200000`), nothing broadcast |
-| | 4 | shell | `E_TX_NOT_YET` + `count` (seconds waited), `tx`; or `E_UNREACHABLE` + `detail`, `tx` (broadcast, and the endpoint never answered the receipt question within the wait); or `E_UNREACHABLE` + `detail` only, nothing broadcast: the head or the estimate went unanswered or came back in another shape, the nonce could not be read, the endpoint refused the broadcast, or its echo was not the hash signed |
+| | 4 | shell | `E_TX_NOT_YET` + `count` (seconds waited), `tx`; or `E_UNREACHABLE` + `detail`, `tx` (signed and its hash kept: the broadcast failed, the endpoint refused it or its echo was not the hash signed, or the endpoint never answered the receipt question within the wait, or, on a rerun, where an earlier one stands could not be read); or `E_UNREACHABLE` + `detail` only, nothing broadcast: the record of earlier sends could not be placed or read, the chain's earlier anchors (`E_ON_CHAIN`'s question), the head or the estimate went unanswered or came back in another shape, the nonce could not be read, or the hash could not be kept |
 | `scan` | 0 | shell | `fragment`, `singleSource`, `singleSourceChains`, `sources` |
 | | 1 | base | the core's no-label answer (malformed basis) |
-| | 1 | shell | with `--ledger`, the credential's refusals (section 12) |
+| | 1 | shell | with `--ledger`, the refusals of reading a home (section 12) |
 | | 4 | shell | `E_ENDPOINTS_DISAGREE` + `detail`, `sources`; or `E_SCAN` + `detail`, `token` (`E_NO_BASIS`: the home's settings name no chain or no registry); or, with `--ledger`, `E_UNREACHABLE` + `detail` when no endpoint of the home's chain answers its head |
 | `audit` | 0 / 3 / 1 | base | the core's fifteen-item, sixteen-member report, or no label |
-| | 1 | shell | what `--ledger` names does not read: `E_LEDGER` + `detail`, `names?`, `count?` (a ledger folder the storage layer refuses, or a mirror bundle whose manifest is not `desk-mirror` version 1, `detail` its `kind/version`); `E_KIT` + `state`, `detail?` (a record package the kit law judges invalid); without `--root`, `E_TIP_ABSENT` (no root in what was read) or `E_TIP_FORKED` (more than one root); `E_FRAGMENT` (the fragment cannot be assembled into an audit input); with `--out`, `E_LEDGER` + `detail` (`E_OCCUPIED` / `E_IO`), `path` when the input cannot land |
+| | 1 | shell | what `--ledger` names does not read: `E_LEDGER` + `detail`, `names?`, `count?` (a ledger folder the storage layer refuses, or a mirror bundle whose manifest is not `desk-mirror` version 1, `detail` its `kind/version`); `E_KIT` + `state`, `detail?` (a record package the kit law judges invalid, or one in one file that does not read as one, `state` the layout's code); a home's ledger, the refusals of reading a home (section 12); without `--root`, `E_TIP_ABSENT` (no root in what was read) or `E_TIP_FORKED` (more than one root); `E_FRAGMENT` (the fragment cannot be assembled into an audit input); with `--out`, `E_LEDGER` + `detail` (`E_OCCUPIED` / `E_IO`), `path` when the input cannot land |
 | `check-grant` | 0 / 3 / 1 | base | the kit layer's six-check verdict (`verdict`, `checks`, `failed`, `basis`) |
 | | 1 | shell | `E_GRANT_FILE` + `token`, `detail?`, `entryId?` (a grant file that does not open); with `--ledger` or `--input`, the shell refusals of `audit` before `--out` |
 | `chain-check` | 0 / 3 / 1 | base | the kit layer's chain check (`verdict`, `hops`, `links`, `token`, `failing`) |
@@ -246,13 +246,14 @@ addition, `scan` passes through the core's no-label answer when the basis is mal
 | `badge` | 0 | shell | encode: `payload`, `state=BADGE_OK`; decode: `count`, `entries`, `state=BADGE_OK` |
 | | 1 | shell | `E_BADGE` + `token`, `index` |
 | `kit-export` | 0 | shell | `dropped` (platform junk that was dropped, each named), `entries`, `files`, `kitId`, `path`, `proofs`, `state=KIT_OK`; from a home the desktop keeps also `originals` (the package paths of the originals taken) and `leftOut` (the places of the chosen records' originals not taken: gone, or no longer the bytes recorded) |
-| | 1 | shell | `E_KIT` + `state` (the kit law verdict), `detail` (its subject, or null when it has none); `E_LEDGER` + `detail`, `names?`, `count?` (the ledger folder does not open or read); `E_LEDGER` + `path` (the subject of a kit output failure: the `--out` path already exists, a disk operation failed, or a `--file` / `--proof` kit path is malformed or given twice); `E_ENTRY_ABSENT` + `names` (the named entries that were not found); or, from a home, the credential's refusals (section 12) |
+| | 1 | shell | `E_KIT` + `state` (the kit law verdict), `detail` (its subject, or null when it has none); `E_LEDGER` + `detail`, `names?`, `count?` (the ledger folder does not open or read); `E_LEDGER` + `path` (the subject of a kit output failure: the `--out` path already exists, a disk operation failed, or a `--file` / `--proof` kit path is malformed or given twice); `E_ENTRY_ABSENT` + `names` (the named entries that were not found); or, from a home, the refusals of reading a home (section 12) |
 | `kit-verify` | 0 | shell | `entries` (how many the package carries), `kitId`, `records` (one per record: `entryId`, `content`, `original` one of `match` / `mismatch` / `missing`, `anchored` one of `anchored` / `notAnchored` / `unread`, `firstAt?` the first anchoring's block time when anchored) |
 | | 1 / 3 | shell | `E_RECORDS` + the members of exit 0; or `E_KIT` + `state`, `detail?` (the package fails the kit law, or does not read as one file: `state` its code) |
 | `hand-over` | 0 | shell | `entries`, `handoff` (the handoff's id), `path` |
-| | 1 | shell | `E_TIP_ABSENT` (no entry), `E_TIP_FORKED` (no single root, or not one line); `E_ADOPTED`; the credential's refusals (a home); `E_LEDGER` + `detail`, `path` (the file does not land: `E_OCCUPIED`, `E_IO`) |
+| | 1 | shell | `E_TIP_ABSENT` (no entry), `E_TIP_FORKED` (no single root, or not one line); `E_ADOPTED`; the refusals of section 12 (a home); `E_LEDGER` + `detail`, `names?`, `count?` (the folder does not open or read); `E_LEDGER` + `detail`, `path` (the file does not land: `E_OCCUPIED`, `E_IO`) |
+| | 4 | shell | `E_RANDOM` (no randomness for the handoff's id) |
 | `take-over` | 0 | shell | `count` (entries written here), `entries` (how many the handoff carries), `handoff`, `ledger` |
-| | 1 | shell | `E_HANDOFF` + `token`, `handoff?`, `entryId?`, `detail?`; `E_ADOPTED`; the credential's refusals (a home); `E_LEDGER` + `detail` (the folder does not open or take an entry) |
+| | 1 | shell | `E_HANDOFF` + `token`, `handoff?`, `entryId?`, `detail?`; `E_ADOPTED`; the refusals of section 12 (a home); `E_LEDGER` + `detail`, `names?`, `count?` (the folder does not open or take an entry) |
 | `show` | 0 | shell | `author`, `entryId`, `entryType`, `prev`, `seq`, `value` |
 | | 1 | shell | `E_ENTRY` + `token`; with `--entry` on a ledger folder, `E_LEDGER` + `detail`, `names?`, `count?` when the folder or the named entry file does not read; with `--entry` on a mirror bundle or record package, `E_ENTRY_ABSENT` + `entryId` when no entry there has that id, or the `--ledger` refusals of `audit` |
 | `contract` | 0 | shell | `exits`, `ok`, `reasons`, `standsFor`, `verbs` (section 10) |
@@ -294,7 +295,7 @@ bytes, the manifest first, the rest in path order; the same layout a grant file 
 it `.zkit`), or as a folder (`--as folder`). From a home the desktop keeps, the package takes what the desktop's
 export takes: each chosen record's original from this machine's index of signed files, while the file at its place
 still has the bytes recorded (named into the package as the desktop names it, the renamed ones listed in
-`files/zikaron-names.json`), and the home's anchoring point as the note's last line.
+`files/zikaron-names.json`), the terms documents kept when its chosen grants were signed, and the home's anchoring point as the note's last line.
 
 **`kit-verify` judges each record as the desktop's verification does** (`zikaron_glue::recordcheck`, the one
 judge both call): given a package (`--kit`, a folder or one file) that passes the kit law, each record (`history`
@@ -331,7 +332,7 @@ element is an object with `chainId` (an integer) and `tx` (hex32), the adoption 
 evidence for. An element without both is misuse.
 
 **`scan --fixture` reads the recording's own basis and adoptions.** A recording carries the basis and the
-adoptions it was made with, and the fixture path uses those. `--basis`, `--adoptions` or `--proxy` given
+adoptions it was made with, and the fixture path uses those. `--basis`, `--adoptions`, `--proxy` or `--ledger` given
 together with `--fixture` (once or more) is misuse (`E_ARGS`, the flag named); they are read only on the
 `--endpoint` path.
 
@@ -339,11 +340,11 @@ together with `--fixture` (once or more) is misuse (`E_ARGS`, the flag named); t
 to case (`HTTPS://Node.Example` is `https://node.example`); https verifies the certificate chain and
 host name with the roots compiled into the binary, the same transport the app uses. `anchor` waits for
 the receipt round after round until `--wait-secs`, pausing between rounds; a round in which the
-endpoint refuses is not an answer, and after the broadcast `E_UNREACHABLE` (with `tx`) comes only when the
-endpoint never answered within the wait. Before the broadcast, `E_UNREACHABLE` (without `tx`, nothing
-broadcast) covers every failure that is not a refused estimate: the head or the estimate unanswered or in
-another shape, a nonce that does not read, a broadcast the endpoint refuses, and an echo that is not the hash
-signed. `--form registry` without `--registry`, and `--registry` with `--form bare`, are misuse (`E_ARGS
+endpoint refuses is not an answer, and once the transaction is signed and its hash kept, `E_UNREACHABLE` carries `tx`: a broadcast that fails, that the
+endpoint refuses or whose echo is not the hash signed (the bytes may be in a pool, and a rerun asks about them
+first), and an endpoint that never answered the receipt question within the wait. Before that, `E_UNREACHABLE`
+(without `tx`, nothing broadcast) covers every failure that is not a refused estimate: the head or the estimate
+unanswered or in another shape, a nonce that does not read, and a hash that could not be kept. `--form registry` without `--registry`, and `--registry` with `--form bare`, are misuse (`E_ARGS
 --registry`), judged before any node is asked.
 
 **What `anchor` sends.** With `--calldata` the transaction's data is that calldata as given, and `--hash`
@@ -401,7 +402,7 @@ transactions stand, by their hashes, by the rule the app's queue takes (`zikaron
 - none is held and their nonce is used by another transaction: `E_TX_VOID` (exit 1) with `tx`, nothing is sent, and
   the record marks them void so the next run sends the anchoring afresh;
 - the record cannot be read, or a question goes unanswered or comes back in another shape: `E_UNREACHABLE` (exit 4)
-  with `detail`, and nothing is signed.
+  with `detail` (and `tx`, the transaction asked about, when it was a question about one), and nothing is signed.
 
 The same command run after it succeeded therefore answers the earlier inclusion and broadcasts nothing.
 
@@ -495,7 +496,7 @@ cases apart: **"left to the law" is a refusal by the law, "misuse" is a refusal 
 | `--basis` | path to a law §9.4 basis file | needed when taking the `--endpoint` path unless `--ledger` names a home (neither is misuse, named `--basis --ledger`); with `--fixture`, misuse (the recording's basis is used) |
 | `--adoptions` | path to an adoptions file (`{"adoptions":[{"chainId":<int>,"tx":<hex32>},…]}`) | adoption evidence is not consulted; with `--fixture`, misuse (the recording's adoptions are used) |
 | `--input` | path to a ready-made audit input file (**the raw bytes are handed to the law unchanged**) | assembled from `--ledger` and `--fragment` |
-| `--fragment` | path to a scan fragment or reading file (both a fragment wrapped in `fragment` and a bare fragment are accepted) | an empty fragment is used (an offline reading of the lineage) |
+| `--fragment` | path to a scan fragment or reading file (both a fragment wrapped in `fragment` and a bare fragment are accepted) | an empty fragment is used (an offline reading of the lineage); for `kit-verify`, the chain is not read and every record is `unread` |
 | `--unavailable` | hex32, repeatable (the fourth member of the audit input) | empty |
 | `--now` | integer (the injected now) | not injected; only chain time is used (general rule 6) |
 | `--hop` | `<grant file>` or `<grant file>=<audit input file>`, repeatable | none at all is an empty chain, judged FAIL, exit 1 |
@@ -550,8 +551,11 @@ Each verb's closed list, as its row in `ACCEPTS` in `verbs.rs` names it. The fiv
 
 ## 9 · Environment variables
 
-The command line reads these four from its environment. With `--home` it also finds this user's machine folder
-the way the desktop does (section 11): on macOS and Linux under `HOME`, on Windows under the user's profile.
+The command line reads these four from its environment. It also finds this user's machine folder the way the desktop
+does (section 11), for `--home`, the credential, the lists of adopted and handed-off ledgers and `anchor`'s record of
+what it sent: on macOS and Linux under `HOME`, on Windows under the user's profile. Under `--proxy system` (the
+default) it follows the terminal's proxy variables (`https_proxy`, `http_proxy`, `all_proxy`, `no_proxy`, lower or
+upper case; section 8, `--proxy`), and the locale variables choose the language of the lines for people (section 3).
 
 | Variable | Effect | Default |
 |---|---|---|
@@ -609,7 +613,7 @@ locked or absent desktop. Once connected, each side asks the system who the othe
 no token. Locking, closing the data folder, switching it or quitting closes the door; a request still waiting is
 answered `E_DESKTOP` with `detail` `CLOSED`. The machine folder is found as the desktop finds it: the pointer
 `.zikaron-desk` in the folder the system keeps this app's data in (the home directory on macOS and Linux,
-`%LOCALAPPDATA%\ZIKARON` on Windows), then the older folder, then the default `.zikaron-desk.d`.
+`%LOCALAPPDATA%\ZIKARON` on Windows), then the default `.zikaron-desk.d` in that same folder; no other place is looked at.
 
 **Order.** The arguments are read and misuse is judged exactly as without `--home`, before the desktop is asked
 (exit 2, nothing on stdout): each verb takes `--home` and the flags of its row below, and nothing else (a flag
@@ -658,7 +662,7 @@ hand out a private key), or they do not touch a data folder.
 | `anchor` | none |
 | `kit-export` | `entry` `note` `out` `as` |
 
-`attest` always answers `E_ON_DESKTOP`. `succeed` takes `--home` and always answers `E_ON_DESKTOP` (exit 1) without asking the desktop: nothing is written, and its flags beside `--home` are judged as without it. `history` records the file by the record convention, as the desktop's own
+`attest` is always answered `E_ON_DESKTOP` by the desktop. `succeed` takes `--home` and always answers `E_ON_DESKTOP` (exit 1) without asking the desktop: nothing is written; its flags are closed by its own row (section 8, flags by verb), and their values are not read. `history` records the file by the record convention, as the desktop's own
 record does; `kit-export` takes the
 entries named (all of them without `--entry`), in the form `--as` names (one file without it), and attachments and
 proof bundles are chosen on the desktop.
@@ -706,7 +710,8 @@ A home on a synced disk names the machine that writes it; another machine's mark
 | `E_HOME_HELD` | 1 | the desktop is writing the home at this moment; try again shortly |
 | `E_HOME_OTHER_MACHINE` | 1 | the home's writer mark names another machine, or does not read |
 
-Nothing is written in any of these. The desktop, meeting the command line's turn, does not do its write either
+Each of these answers carries `token` (the sealed layer's code in capitals) and `detail` (its evidence). Nothing is
+written in any of these. The desktop, meeting the command line's turn, does not do its write either
 and says so, with a key to the switches.
 
 **Adopted ledgers.** A plain ledger folder the command line made, which the desktop has adopted ("import an
@@ -716,7 +721,7 @@ the ledger's root (its genesis entry id). The list alone names no ledger; only t
 Before writing a plain ledger folder, the command line looks its root up there: on the list, it answers
 `E_ADOPTED` (exit 1) and writes nothing, whether writing alone is on or off, and wherever the folder has been
 moved or renamed. The folder itself is never touched. A list or salt that does not read is refused by name
-(`E_UNREADABLE`), and nothing is written past it.
+(`E_UNREADABLE`, exit 1, with its `token` and `detail`), and nothing is written past it.
 
 **What is read.** The verbs that read a ledger (`audit`, `check-grant`, `chain-check`, `depth`, `show --entry`,
 `kit-export`, `scan --ledger`) read the ledger of a home the desktop keeps with the same credential and the same
@@ -724,7 +729,8 @@ opening as a write, and are refused by the same reasons: `E_CREDENTIAL_MISSING`,
 `E_CREDENTIAL_SHAPE`, and `E_HOME_OTHER_MACHINE` when the home's writer mark names another machine. A read takes
 no writer lock (it changes nothing; each file the desktop writes meanwhile lands whole), so the desktop writing at
 that moment is no refusal. What else a read takes from the home it takes the same way: `kit-export` the originals
-of the chosen records from this machine's index of signed files and the home's anchoring point from its settings,
+of the chosen records from this machine's index of signed files, the terms documents kept for the chosen grants and
+the home's anchoring point from its settings,
 `scan --ledger` the chain, the registry and the start block from its settings.
 
 ### Handing a ledger between two places

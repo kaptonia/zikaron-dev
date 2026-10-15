@@ -1453,13 +1453,13 @@ fn kit_export(a: &Args) -> Answer {
     }
 }
 
-/// What a record package from a home the desktop keeps takes beside its entries, as the desktop's export takes it:
-/// the originals of its chosen records from this machine's index of signed files (`zikaron_seal::records`), each a
-/// file still at its place whose bytes are the record's `content`, named into the package as the desktop names
-/// them (`zikaron_glue::kitnames`, the renamed ones in its name table); the terms documents of its chosen grants
+/// What a record package exported from a home takes besides its entries, as the desktop's export does: the
+/// originals of its chosen records from this machine's index of signed files (`zikaron_seal::records`), each a
+/// file still in place whose bytes match the record's `content`, named in the package as the desktop names them
+/// (`zikaron_glue::kitnames`, renamed ones listed in its name table); the terms documents of its chosen grants
 /// (`zikaron_seal::terms`); and the home's anchoring point as the note's last line (`zikaron_glue::anchoredon`,
-/// from the home's settings). Answers the package paths of the
-/// originals taken and the places of those left out (gone, or no longer the bytes recorded), each named.
+/// from the home's settings). Returns the package paths of the originals taken and the paths of those left out
+/// (gone, no longer the recorded bytes, or with a name that cannot be made kit-legal).
 fn from_home(r: &crate::sealed::Reading, root: &str, b: &mut kitout::Bundle) -> Result<(Vec<String>, Vec<String>), Answer> {
     let rows = r.records().map_err(|t| crate::sealed::refused(&t))?;
     let chosen: Vec<String> = b
@@ -1527,8 +1527,8 @@ pub(crate) fn kit_written(dropped: &[String], entries: u64, files: u64, kit_id: 
     ])
 }
 
-/// `kit-verify`: a record package, one file or a folder, record by record, by the one judge the desktop's
-/// verification takes (`zikaron_glue::recordcheck::records`): is each record's original the one it records
+/// `kit-verify`: a record package, one file or a folder, record by record, with the same check the desktop's
+/// verification uses (`zikaron_glue::recordcheck::records`): is each record's original the one it records
 /// (`original`: `match`, `mismatch`, `missing`), and is it anchored on the chain read (`anchored`: `anchored` with
 /// `firstAt`, `notAnchored`, or `unread` without `--fragment`). The package must pass the kit law first
 /// (`verify_kit`; refused `E_KIT`). Every record holding is exit 0; an original that is not the one recorded is
@@ -1831,7 +1831,8 @@ fn seal_and_append(
     root: Option<&str>,
 ) -> Answer {
     // A plain ledger the desktop adopted is written through its sealed copy from then on, never here: checked
-    // against this machine's blind list before anything is written (no passcode, no credential needed).
+    // against this machine's adopted list (`zikaron_seal::adopted`) before anything is written (no passcode, no
+    // credential needed).
     if let Landing::Dir(_) = landing {
         if let Some(refused) = adopted_here(items) {
             return refused;

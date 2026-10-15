@@ -13,7 +13,7 @@
 //!
 //! The input control edits this block through [`egui::TextBuffer`] without first copying into a `String`.
 //! Copies egui makes within a frame (undo stack, previous text) are outside this type: the undo stack is
-//! cleared every frame by the input control (`input::secret_edit`), and the previous-text copy is a temporary
+//! cleared every frame by the input control (`input::secret_field`), and the previous-text copy is a temporary
 //! inside egui's frame.
 
 /// Most bytes one secret holds. Eight passcode cells, twelve words (a whole phrase pasted into one cell is
