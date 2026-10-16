@@ -310,7 +310,12 @@ fn a_node_address_gives_its_written_form_to_nobody_outside() {
         }
     }
     let app_ok = ["archive.rs", "check.rs", "audit.rs", "deploy.rs"];
-    let mut stack = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/app-drive/src")];
+    // The product's sources always; the door's (`tools/app-drive`) where it is there: a public tree ships without it.
+    let mut stack = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src")];
+    let door = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/app-drive/src");
+    if door.is_dir() {
+        stack.push(door);
+    }
     while let Some(dir) = stack.pop() {
         for e in std::fs::read_dir(&dir).expect("a source folder").flatten() {
             let p = e.path();
