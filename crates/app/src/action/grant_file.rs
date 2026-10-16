@@ -162,7 +162,7 @@ impl FetchFrom {
             root: root.to_path_buf(),
             eps: self.eps.iter().filter(|e| e.chain == self.g.chain).cloned().collect(),
             chain: self.g.chain,
-            registry: self.g.registry,
+            registry: self.g.registry.0,
             from_block: self.g.from_block,
             own: self.g.senders.first().cloned(),
         }

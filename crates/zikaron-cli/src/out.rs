@@ -386,10 +386,15 @@ pub enum Said {
     PacRemoteHttp,
     PacUnfetched,
     PacFailed,
+    AnchorNotAHome,
+    HomeSettingsSay,
+    SendRefused,
+    ReadOnly,
+    ScanTooWide,
 }
 
 impl Said {
-    pub const ALL: [Said; 70] = [
+    pub const ALL: [Said; 75] = [
         Said::Usage,
         Said::NotAVerb,
         Said::NotAFlag,
@@ -460,6 +465,11 @@ impl Said {
         Said::PacRemoteHttp,
         Said::PacUnfetched,
         Said::PacFailed,
+        Said::AnchorNotAHome,
+        Said::HomeSettingsSay,
+        Said::SendRefused,
+        Said::ReadOnly,
+        Said::ScanTooWide,
     ];
 
     /// The words, one table: Chinese and English.
@@ -541,6 +551,14 @@ impl Said {
             Said::PacFailed => ("代理脚本出错({0}):请用 --proxy 指定代理", "Proxy script failed ({0}): give a proxy with --proxy"),
             Said::OnChain => ("链上已有这一条(别处已上链),没有再发", "The chain already holds this anchor (put on chain elsewhere); nothing was sent"),
             Said::RecordsNotAll => ("不是每一条记录都成立:看各条的 original 与 anchored", "Not every record holds: see each one's original and anchored"),
+            Said::AnchorNotAHome => ("--ledger 要桌面所管之家的账本;直发给 --key 与 --endpoint", "--ledger takes the ledger of a home the desktop keeps; to send directly give --key and --endpoint"),
+            Said::HomeSettingsSay => ("这处数据的链、合约、节点与代理由设置给,不收这一旗", "this home's chain, registry, nodes and proxy come from its settings; this flag is not taken"),
+            Said::SendRefused => ("什么也没发出:看 token 与 detail", "Nothing was sent: see token and detail"),
+            Said::ReadOnly => ("这一处数据只读,未写:看 token 与 detail", "This home is read-only; nothing was written: see token and detail"),
+            Said::ScanTooWide => (
+                "这一扇窗按节点收得下的跨度问不完:把起始区块往前挪,或换一处收得下更宽窗的节点",
+                "This window cannot be read at the span the node takes: move the start block forward, or use a node that takes wider windows",
+            ),
         }
     }
 

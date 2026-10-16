@@ -336,7 +336,7 @@ impl Win {
                         if others {
                             to_primary = key::key(ui, t(Key::PrimaryGoSet), Role::Secondary, true).clicked();
                         } else {
-                            to_new = key::key(ui, t(Key::IdDoNew), Role::Secondary, true).clicked();
+                            to_new = key::key(ui, t(Key::IdNewTitle), Role::Secondary, true).clicked();
                         }
                         close = key::key(ui, t(Key::IdDoClose), Role::Secondary, true).clicked();
                     },
@@ -397,7 +397,7 @@ impl Win {
                             go = Some(Action::SetPrimary { id: id.clone(), pin: std::mem::take(&mut me.ux.id_pin) });
                         }
                         if need_file {
-                            export = key::key(ui, t(Key::IdDoBackup), Role::Secondary, true).clicked();
+                            export = key::key(ui, t(Key::IdDoBackupGo), Role::Secondary, true).clicked();
                         }
                         close = key::key(ui, t(Key::CfBack), Role::Secondary, !rekeying).clicked();
                         busy_note(ui);

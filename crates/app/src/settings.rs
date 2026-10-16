@@ -161,16 +161,6 @@ impl Settings {
             Some(Value::Int(n)) if *n > 0 => *n,
             _ => CAP_DEFAULT,
         };
-        let endpoints = match field(&v, "endpoints") {
-            Some(Value::Arr(a)) => a
-                .iter()
-                .filter_map(|x| match x {
-                    Value::Str(s) => Some(s.clone()),
-                    _ => None,
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
         let mirror = match field(&v, "mirror") {
             Some(m) => {
                 let path = match field(m, "path") {
@@ -199,12 +189,13 @@ impl Settings {
             }
             None => None,
         };
-        // The three basis fields are read where the command line reads them too (`zikaron_seal::ground`).
+        // The three basis fields and the nodes are read where the command line reads them too
+        // (`zikaron_seal::ground`).
         let ground = zikaron_seal::ground::of_settings(&v);
         Ok(Settings {
             role,
             cap_bytes: cap,
-            endpoints,
+            endpoints: ground.endpoints,
             mirror,
             chain_id: ground.chain_id,
             registry: ground.registry.map(Address),

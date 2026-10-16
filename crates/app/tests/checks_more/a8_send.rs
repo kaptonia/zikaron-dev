@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 // ───────────────────────── Nodes ─────────────────────────
 
 /// How a node answers one question.
-enum Reply {
+pub(super) enum Reply {
     /// `result`, as JSON text.
     Result(String),
     /// `error`, a JSON-RPC error object as JSON text.
@@ -29,12 +29,12 @@ enum Reply {
 
 /// A JSON-RPC node on a local port answering with `answer(method, body)` and keeping every request body.
 #[derive(Clone)]
-struct Node {
-    url: String,
+pub(super) struct Node {
+    pub(super) url: String,
     log: Arc<Mutex<Vec<String>>>,
 }
 
-fn node(answer: impl Fn(&str, &str) -> Reply + Send + Sync + 'static) -> Node {
+pub(super) fn node(answer: impl Fn(&str, &str) -> Reply + Send + Sync + 'static) -> Node {
     let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
     let url = format!("http://{}", l.local_addr().expect("addr"));
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -74,39 +74,39 @@ fn node(answer: impl Fn(&str, &str) -> Reply + Send + Sync + 'static) -> Node {
     Node { url, log }
 }
 
-fn method_of(body: &str) -> String {
+pub(super) fn method_of(body: &str) -> String {
     body.split("\"method\":\"").nth(1).and_then(|r| r.split('"').next()).unwrap_or("").to_string()
 }
 
 /// The first string parameter of a request (the raw transaction, the hash asked about).
-fn first_param(body: &str) -> String {
+pub(super) fn first_param(body: &str) -> String {
     body.split("\"params\":[\"").nth(1).and_then(|r| r.split('"').next()).unwrap_or("").to_string()
 }
 
 /// The hash of a raw transaction (`0x` hex), as a node computes it.
-fn hash_of(raw_hex: &str) -> String {
+pub(super) fn hash_of(raw_hex: &str) -> String {
     zikaron::hexfmt::encode(&zikaron::cryptox::keccak256(&zikaron::hexfmt::decode(raw_hex).expect("raw hex")))
 }
 
 impl Node {
     /// The bodies of the requests asking `method`.
-    fn asked(&self, method: &str) -> Vec<String> {
+    pub(super) fn asked(&self, method: &str) -> Vec<String> {
         self.log.lock().expect("log").iter().filter(|b| method_of(b) == method).cloned().collect()
     }
 
     /// Every raw transaction handed to this node, as sent.
-    fn raws(&self) -> Vec<String> {
+    pub(super) fn raws(&self) -> Vec<String> {
         self.asked("eth_sendRawTransaction").iter().map(|b| first_param(b)).collect()
     }
 }
 
 /// A balance of one ether: more than any batch's fee cap times its gas limit.
-const PLENTY: &str = "\"0xde0b6b3a7640000\"";
+pub(super) const PLENTY: &str = "\"0xde0b6b3a7640000\"";
 
 /// Chain 31337 at height 64, with `balance` as the balance; the fee history has fractional `gasUsedRatio` as
 /// real nodes give it; a broadcast echoes the hash of the bytes it took; no transaction is known by hash and
 /// there is no receipt yet.
-fn chain(method: &str, body: &str, balance: &str) -> Reply {
+pub(super) fn chain(method: &str, body: &str, balance: &str) -> Reply {
     Reply::Result(match method {
         "eth_chainId" => "\"0x7a69\"".into(),
         "eth_blockNumber" => "\"0x40\"".into(),
@@ -129,19 +129,19 @@ fn known_tx(body: &str) -> Reply {
 // ───────────────────────── The bench ─────────────────────────
 
 /// Where this process's homes are made (removed at the end of each test, [`tidy`]).
-fn homes() -> std::path::PathBuf {
+pub(super) fn homes() -> std::path::PathBuf {
     std::env::temp_dir().join(format!("zk-a8-send-{}", std::process::id()))
 }
 
 /// Remove this process's homes. The shells that wrote them are kept to the end of the test, since a send
 /// leaves its receipt wait in flight on its shell.
-fn tidy() {
+pub(super) fn tidy() {
     let _ = std::fs::remove_dir_all(homes());
 }
 
 /// A new shell writing its own home with a genesis and one work queued, chain 31337, a registry and `nodes`
 /// as its endpoints, no pause between rounds; the batch of one is estimated, so it may be sent.
-fn bench(name: &str, nodes: &[&Node]) -> app::shell::Shell {
+pub(super) fn bench(name: &str, nodes: &[&Node]) -> app::shell::Shell {
     vault_open();
     zikaron_anchor::patience::set_waits(Some(Duration::ZERO));
     let dir = homes().join(name);
@@ -176,7 +176,7 @@ fn point(shell: &mut app::shell::Shell, name: &str, nodes: &[&Node]) {
 }
 
 /// Press send for the batch of one and return the send's own landing (the first `Anchor` outcome).
-fn send(shell: &mut app::shell::Shell) -> Result<Done, Fault> {
+pub(super) fn send(shell: &mut app::shell::Shell) -> Result<Done, Fault> {
     assert_eq!(apply(shell, Action::SendBatch { count: 1 }), Applied::Started(Kind::Anchor));
     let until = Instant::now() + Duration::from_secs(60);
     loop {
@@ -189,7 +189,7 @@ fn send(shell: &mut app::shell::Shell) -> Result<Done, Fault> {
 }
 
 /// Nothing was signed or broadcast at any of `nodes`: no nonce asked, no raw transaction handed over.
-fn nothing_broadcast(form: &str, nodes: &[&Node]) {
+pub(super) fn nothing_broadcast(form: &str, nodes: &[&Node]) {
     for n in nodes {
         assert!(n.asked("eth_sendRawTransaction").is_empty(), "{form}: nothing broadcast at {}", n.url);
         assert!(n.asked("eth_getTransactionCount").is_empty(), "{form}: no nonce asked at {}", n.url);

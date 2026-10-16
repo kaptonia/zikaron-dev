@@ -206,7 +206,7 @@ impl Win {
                 }
                 // The third way: restore from a whole-machine backup (new passcode, everything resealed).
                 ui.vertical_centered(|ui| {
-                    from_backup = key::key(ui, t(Key::DoRestoreBackup), Role::Plain, !busy).clicked();
+                    from_backup = key::key(ui, t(Key::BackupRestoreTitle), Role::Plain, !busy).clicked();
                 });
                 if !locked_out {
                     ui.vertical_centered(|ui| {

@@ -19,6 +19,8 @@ pub struct Refused {
     pub reason: Reason,
     pub code: String,
     pub detail: String,
+    /// The line for people, when this refusal has one of its own (a window too wide for the node's span).
+    pub line: Option<out::Said>,
 }
 
 /// `--endpoint <chain>=<url>`, several per chain allowed (the endpoint rule), each with its place among the
@@ -147,6 +149,7 @@ pub fn replay_fragment(path: &str) -> Result<Value, Refused> {
                     reason: Reason::Scan,
                     code: "E_RECORDING".to_string(),
                     detail: format!("{e:?}"),
+                    line: None,
                 })
             }
         }
@@ -218,6 +221,7 @@ fn finish(
             reason: Reason::Scan,
             code: refusal.code().to_string(),
             detail: refusal.detail(),
+            line: matches!(refusal, scan::Refusal::Unanswered { asked: scan::Asked::TooWide { .. }, .. }).then_some(out::Said::ScanTooWide),
         }),
         Ok(Err(no_label)) => Ok(no_label),
         Ok(Ok(s)) => Ok(scan::fragment(&s)),

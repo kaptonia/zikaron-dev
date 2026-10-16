@@ -1,4 +1,4 @@
-//! Settings: the home (one line per section: title, what it holds, a chevron) and the eight section pages.
+//! Settings: the home (one line per section: title, what it holds, a chevron) and the section pages.
 //! Technical values (addresses, nodes, contract, chain id, start block, paths, key file names, the instance
 //! lock) live under each section's details.
 
@@ -30,6 +30,7 @@ impl Win {
             Section::Network => self.set_network(ui, now),
             Section::Notify => self.set_notify(ui, now),
             Section::Data => self.set_data(ui, now),
+            Section::Cli => self.set_cli(ui, now),
             Section::About => self.set_about(ui, now),
         }
     }
@@ -68,10 +69,38 @@ impl Win {
         }
     }
 
-    /// "Enable command line": a switch the size of the one above, with a line under it only when there is
-    /// something to say (installed, taken by another install, provided by a package, or not supported here, with
-    /// the reason folded). Its state is reread whenever the row is shown again after a pause (by the action
-    /// layer, never the frame); when it cannot be installed, the switch does not flip.
+    /// The command line's page, three groups: the terminal command; the automation level (the two ways it may
+    /// write this machine's data); how its anchoring is handled, for both ways. Each switch keeps its behavior and
+    /// where it is stored; the page only gathers them.
+    fn set_cli(&mut self, ui: &mut egui::Ui, now: f64) {
+        self.set_cli_path(ui, now);
+        self.set_cli_writes(ui, now);
+        self.set_cli_anchor(ui, now);
+    }
+
+    /// "Putting on chain from the command line" (machine-wide): sent as the send key sends, or left queued for
+    /// the person; one judgement for both of the command line's ways (`zikaron_seal::machine::turn`).
+    fn set_cli_anchor(&mut self, ui: &mut egui::Ui, now: f64) {
+        let all = crate::machine::CliAnchor::ALL;
+        let cur = all.iter().position(|x| *x == self.shell.machine.cli_anchor).unwrap_or(0);
+        let cells: Vec<seg::Cell> = all.iter().map(|x| seg::Cell::from(t(cli_anchor_label(*x)))).collect();
+        let mut pick = None;
+        stagger(ui, 2, |ui| {
+            card::section(ui, t(Key::SetCliAnchoring), "", |ui| {
+                card::form(ui, |ui, f| {
+                    f.row_with(ui, None, t(Key::SetCliAnchor), t(Key::SetCliAnchorSay), card::Value::None, |ui| pick = seg::seg(ui, "set-cli-anchor", &cells, cur));
+                });
+            });
+        });
+        if let Some(i) = pick.filter(|i| *i != cur) {
+            self.act(Action::SetCliAnchor { to: all[i] }, now);
+        }
+    }
+
+    /// "Enable the zikaron command": a switch with a line under it only when there is something to say
+    /// (installed, taken by another install, provided by a package, or not supported here, with the reason
+    /// folded). Its state is reread whenever the row is shown again after a pause (by the action layer, never the
+    /// frame); when it cannot be installed, the switch does not flip.
     fn set_cli_path(&mut self, ui: &mut egui::Ui, now: f64) {
         use zikaron_os::cli_path::State;
         if now - self.ux.cli_path_seen > 1.0 || self.shell.cli_path.is_none() {
@@ -88,23 +117,25 @@ impl Win {
             State::Unsupported(_) => (false, false, t(Key::CliPathUnsupportedSay).to_string()),
         };
         let mut flip = false;
-        stagger(ui, 3, |ui| {
-            card::form(ui, |ui, f| {
-                f.row_with(ui, None, t(Key::SetCliPath), &say, card::Value::None, |ui| flip = toggle::switch(ui, on, can && !busy).clicked());
+        stagger(ui, 0, |ui| {
+            card::section(ui, t(Key::SetCliTerminal), "", |ui| {
+                card::form(ui, |ui, f| {
+                    f.row_with(ui, None, t(Key::SetCliPath), &say, card::Value::None, |ui| flip = toggle::switch(ui, on, can && !busy).clicked());
+                });
+                // Why it cannot be installed: the details, folded.
+                if let State::Unsupported(why) = &state {
+                    fold::fold(ui, "cli-path-why", t(Key::SetEvidence), |ui| hint(ui, why));
+                }
             });
-            // Why it cannot be installed: the details, folded.
-            if let State::Unsupported(why) = &state {
-                fold::fold(ui, "cli-path-why", t(Key::SetEvidence), |ui| hint(ui, why));
-            }
         });
         if flip {
             self.act(Action::SetCliPath { on: !on }, now);
         }
     }
 
-    /// The command line's two ways to write this machine's sealed data, one group: "writes through the desktop"
-    /// (requests to the running app; no passcode) and "writes alone" (a credential; the passcode and a validity
-    /// each time it is turned on, on its sheet). Writing alone outranks the desktop path: while it is on, the
+    /// The command line's two ways to write this machine's sealed data, one group ("automation level"): "through
+    /// the desktop app" (requests to the running app; no passcode) and "with a credential" (the passcode and a
+    /// validity each time it is turned on, on its sheet). Writing alone outranks the desktop path: while it is on, the
     /// desktop switch is greyed out and the desktop accepts no command-line requests (`machine::Machine::cli_path`).
     fn set_cli_writes(&mut self, ui: &mut egui::Ui, now: f64) {
         // The two switches' four states are resolved in one place (`cli_path`); the page only draws them.
@@ -118,8 +149,8 @@ impl Win {
         };
         let desktop_say = if alone { t(Key::SetCliDesktopGrey) } else { t(Key::SetCliDesktopSay) };
         let (mut flip_desktop, mut flip_alone) = (false, false);
-        stagger(ui, 3, |ui| {
-            card::section(ui, t(Key::SetCliGroup), "", |ui| {
+        stagger(ui, 1, |ui| {
+            card::section(ui, t(Key::SetCliLevel), "", |ui| {
                 card::form(ui, |ui, f| {
                     f.row_with(ui, None, t(Key::SetCliDesktop), desktop_say, card::Value::None, |ui| flip_desktop = toggle::switch(ui, desktop, unlocked && !alone).clicked());
                     f.row_with(ui, None, t(Key::SetCliAlone), &alone_say, card::Value::None, |ui| flip_alone = toggle::switch(ui, alone, unlocked).clicked());
@@ -138,9 +169,9 @@ impl Win {
         }
     }
 
-    /// Go to the command line's two switches (the local data page), from a toast's key.
+    /// Go to the command line's switches (its own settings page), from a toast's key.
     pub(super) fn go_cli_switches(&mut self, now: f64) {
-        self.go(Place::Settings(Section::Data), now);
+        self.go(Place::Settings(Section::Cli), now);
     }
 
     /// Open the "write alone" sheet (every other sheet closes); the validity starts empty.
@@ -183,6 +214,7 @@ impl Win {
             self,
             |ui, me| {
                 sheet::title(ui, t(Key::SetCliAlone), t(Key::SetCliAloneSay));
+                hint(ui, t(Key::SetCliAloneGas));
                 field(ui, t(Key::IdPinGate), None, |ui| {
                     pin::pin_row(ui, "cli-alone-pin", &mut me.ux.cli_pin, len, me.ux.pin_shake, !busy, true);
                 });
@@ -266,15 +298,13 @@ impl Win {
         let mut copy = false;
         stagger(ui, 0, |ui| {
             card::card(ui, |ui| {
-                width::then(
+                let lines = [(name.as_str(), Type::Page, c(C::Ink)), (kind.as_str(), Type::Note, c(C::Ink2))];
+                width::then_at(
                     ui,
+                    paint::lines_height(ui, &lines, 2.0).max(tk::INPUT_H),
                     |ui| copy = key::key(ui, t(Key::IdDoCopy), Role::Secondary, can_sign).clicked(),
                     |ui, room| {
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 2.0;
-                            paint::line(ui, &name, Type::Page, c(C::Ink), room);
-                            paint::line(ui, &kind, Type::Note, c(C::Ink2), room);
-                        });
+                        paint::lines(ui, &lines, 2.0, room);
                     },
                 );
             });
@@ -361,7 +391,7 @@ impl Win {
                         f.row(ui, t(Key::IdPrimaryTag), t(by), card::Value::Text(t(Key::IdPrimaryThis)));
                     } else {
                         f.row(ui, t(Key::IdPrimaryTag), "", card::Value::Text(&primary_name));
-                        set_primary = f.row(ui, t(Key::IdDoSetPrimary), "", if current.is_some() && !unseated { card::Value::Nav } else { card::Value::Off }).clicked();
+                        set_primary = f.row(ui, t(Key::PrimaryTitle), "", if current.is_some() && !unseated { card::Value::Nav } else { card::Value::Off }).clicked();
                     }
                 });
             });
@@ -393,7 +423,7 @@ impl Win {
                                 lock_pick = menu::menu_key(ui, "auto-lock", &lock_label, false, 150.0, &items);
                             });
                         }
-                        change = f.row(ui, t(Key::IdDoChangePin), "", card::Value::Nav).clicked();
+                        change = f.row(ui, t(Key::ChangePinTitle), "", card::Value::Nav).clicked();
                     } else {
                         f.row(ui, t(Key::IdPin), "", card::Value::Text(t(Key::IdPinNone)));
                         f.keys(ui, |ui| set_pin = key::key(ui, t(Key::IdDoSetPin), Role::Secondary, true).clicked());
@@ -408,8 +438,8 @@ impl Win {
         stagger(ui, 4, |ui| {
             card::section(ui, t(Key::IdExportGroup), if has_words || current.is_none() { "" } else { t(Key::IdNoWordsHint) }, |ui| {
                 card::form(ui, |ui, f| {
-                    backup = f.row(ui, t(Key::IdDoBackup), "", if can_sign { card::Value::Nav } else { card::Value::Off }).clicked();
-                    words = f.row(ui, t(Key::IdDoWords), "", if !unseated && has_words { card::Value::Nav } else { card::Value::Off }).clicked();
+                    backup = f.row(ui, t(Key::IdDoBackupGo), "", if can_sign { card::Value::Nav } else { card::Value::Off }).clicked();
+                    words = f.row(ui, t(Key::IdWordsTitle), "", if !unseated && has_words { card::Value::Nav } else { card::Value::Off }).clicked();
                 });
             });
         });
@@ -418,10 +448,10 @@ impl Win {
         stagger(ui, 5, |ui| {
             card::section(ui, t(Key::IdChangeFold), change_note, |ui| {
                 card::form(ui, |ui, f| {
-                    switch = f.row(ui, t(Key::IdDoSwitch), "", if reg.rows.len() > 1 { card::Value::Nav } else { card::Value::Off }).clicked();
-                    new = f.row(ui, t(Key::IdDoNew), "", card::Value::Nav).clicked();
-                    import = f.row(ui, t(Key::IdDoImport), "", card::Value::Nav).clicked();
-                    rename = f.row(ui, t(Key::IdDoRename), "", if current.is_some() { card::Value::Nav } else { card::Value::Off }).clicked();
+                    switch = f.row(ui, t(Key::IdSwitchTitle), "", if reg.rows.len() > 1 { card::Value::Nav } else { card::Value::Off }).clicked();
+                    new = f.row(ui, t(Key::IdNewTitle), "", card::Value::Nav).clicked();
+                    import = f.row(ui, t(Key::IdImportTitle), "", card::Value::Nav).clicked();
+                    rename = f.row(ui, t(Key::IdDoRenameGo), "", if current.is_some() { card::Value::Nav } else { card::Value::Off }).clicked();
                 });
             });
         });
@@ -455,7 +485,7 @@ impl Win {
         let mut delete = false;
         stagger(ui, 7, |ui| {
             if current.is_some() {
-                card::form(ui, |ui, f| delete = f.danger(ui, t(Key::IdDoDelete)).clicked());
+                card::form(ui, |ui, f| delete = f.danger(ui, t(Key::IdDoDeleteGo)).clicked());
             }
         });
         if copy {
@@ -573,19 +603,6 @@ impl Win {
         });
         if flip {
             self.act(Action::SetAutoAnchor { on: !s.auto_anchor }, now);
-        }
-        // How the command line puts records on chain through the desktop (machine-wide).
-        let all = crate::machine::CliAnchor::ALL;
-        let cur = all.iter().position(|x| *x == self.shell.machine.cli_anchor).unwrap_or(0);
-        let cells: Vec<seg::Cell> = all.iter().map(|x| seg::Cell::from(t(cli_anchor_label(*x)))).collect();
-        let mut pick = None;
-        stagger(ui, 1, |ui| {
-            card::form(ui, |ui, f| {
-                f.row_with(ui, None, t(Key::SetCliAnchor), "", card::Value::None, |ui| pick = seg::seg(ui, "set-cli-anchor", &cells, cur));
-            });
-        });
-        if let Some(i) = pick.filter(|i| *i != cur) {
-            self.act(Action::SetCliAnchor { to: all[i] }, now);
         }
         let (mut read_chain, mut save_nodes, mut save_basis) = (false, false, false);
         stagger(ui, 2, |ui| {
@@ -1127,8 +1144,8 @@ impl Win {
                             f.row(ui, t(Key::IdNotBacked), "", card::Value::Text("\u{2014}"));
                         }
                     }
-                    export = f.row(ui, t(Key::DoExportBackup), "", if self.shell.unlocked() { card::Value::Nav } else { card::Value::Off }).clicked();
-                    restore = f.row(ui, t(Key::DoRestoreBackup), "", card::Value::Nav).clicked();
+                    export = f.row(ui, t(Key::BackupExportTitle), "", if self.shell.unlocked() { card::Value::Nav } else { card::Value::Off }).clicked();
+                    restore = f.row(ui, t(Key::BackupRestoreTitle), "", card::Value::Nav).clicked();
                 });
             });
         });
@@ -1143,7 +1160,7 @@ impl Win {
             let mut mirror = false;
             stagger(ui, 2, |ui| {
                 card::section(ui, t(Key::PageMirror), "", |ui| {
-                    card::form(ui, |ui, f| mirror = f.row(ui, t(Key::DoExportMirror), "", card::Value::Nav).clicked());
+                    card::form(ui, |ui, f| mirror = f.row(ui, t(Key::MirrorTitle), "", card::Value::Nav).clicked());
                 });
             });
             if mirror {
@@ -1197,8 +1214,6 @@ impl Win {
                 self.act(Action::SetHideLocalDeletions { on: !on }, now);
             }
         }
-        self.set_cli_path(ui, now);
-        self.set_cli_writes(ui, now);
         if measure {
             self.act(Action::Measure, now);
         }
@@ -1413,7 +1428,7 @@ impl Win {
                     ui.scope(|ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         // Scroll both ways so a licence line is never cut short.
-                        egui::ScrollArea::both().id_salt("about-notices-text").max_height(320.0).auto_shrink([false, true]).show_rows(ui, row_h, lines.len(), |ui, range| {
+                        zikaron_ui::scroll::nested_rows(ui, egui::ScrollArea::both().id_salt("about-notices-text").max_height(320.0).auto_shrink([false, true]), row_h, lines.len(), |ui, range| {
                             for l in &lines[range] {
                                 ui.add(egui::Label::new(egui::RichText::new(*l).font(Type::MonoSmall.font()).color(c(C::Ink2)).line_height(Some(row_h))).wrap_mode(egui::TextWrapMode::Extend));
                             }

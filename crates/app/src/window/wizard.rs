@@ -25,7 +25,7 @@ impl Win {
         let dir = if was == at { dir } else if at > was { 1.0 } else { -1.0 };
         ctx.data_mut(|d| d.insert_temp(dir_id, (at, dir)));
         let (mut move_to, mut close, mut confirm, mut copied, mut open_import) = (None, false, false, false, false);
-        let (mut open_restore, mut open_export, mut exit) = (false, false, false);
+        let (mut open_restore, mut open_export, mut exit, mut open_adopt) = (false, false, false, false);
         let exit_shown = self.wizard_exit_shown();
         let mut act: Option<Action> = None;
         let fresh = self.shell.new_words.as_ref().map(|f| (f.words(), f.picks));
@@ -133,7 +133,7 @@ impl Win {
                                         act = Some(Action::NewIdentity);
                                     }
                                     open_import = key::key(ui, t(Key::IdDoImportExisting), Role::Secondary, true).clicked();
-                                    open_restore = key::key(ui, t(Key::DoRestoreBackup), Role::Secondary, !busy).clicked();
+                                    open_restore = key::key(ui, t(Key::BackupRestoreTitle), Role::Secondary, !busy).clicked();
                                 }
                                 (Some(_), false) => {
                                     copied = page::Page::new().primary_with(ui, t(Key::IdDoCopied), self.ux.id_words_seen).1.clicked();
@@ -158,7 +158,12 @@ impl Win {
                                     move_to = Some(at + 1);
                                 }
                             }
-                            Step::Genesis => confirm = page::Guide::key(ui, t(Key::WizGenesisTitle), self.shell.home.is_some()).clicked(),
+                            // Beside creating the ledger, adopting one that exists (the same adoption as Settings > Local
+                            // data): offered while this place has no ledger, which is while this step is not done.
+                            Step::Genesis => {
+                                confirm = page::Guide::key(ui, t(Key::WizGenesisTitle), self.shell.home.is_some()).clicked();
+                                open_adopt = key::key(ui, t(Key::AdoptGroup), Role::Secondary, self.shell.home.is_some()).clicked();
+                            }
                             Step::Gas => {
                                 if self.long_key(ui, t(Key::WizSent), Role::Primary, true, crate::task::Kind::Chain) {
                                     act = Some(Action::ReadChain);
@@ -167,7 +172,7 @@ impl Win {
                                     self.ux.wiz_gas_not_seen = false;
                                 }
                             }
-                            Step::Backup => open_export = page::Page::new().primary_with(ui, t(Key::DoExportBackup), self.shell.unlocked()).1.clicked(),
+                            Step::Backup => open_export = page::Page::new().primary_with(ui, t(Key::BackupExportTitle), self.shell.unlocked()).1.clicked(),
                         }
                     }
                     // "Back" and "later" share the row when the space left by the right keys fits them; otherwise
@@ -186,6 +191,9 @@ impl Win {
         });
         if confirm {
             self.ux.confirm_genesis = true;
+        }
+        if open_adopt {
+            self.ux.confirm_adopt = true;
         }
         if let Some(lang) = lang_to {
             let _ = self.act(Action::SetLang { lang }, now);
@@ -436,6 +444,37 @@ impl Win {
         } else if go {
             self.ux.confirm_genesis = false;
             self.act(Action::Genesis { statement: self.ux.wiz_statement.clone() }, now);
+        }
+    }
+
+    /// Adopt an existing ledger at the step that creates one: a ledger folder or a ledger mirror, through the same
+    /// adoption as Settings > Local data (`Action::Adopt`: its entries checked one by one and sealed into this data
+    /// folder; another ledger's, or entries that are not one whole ledger, refused by name). Adopted, this place has
+    /// its root and the step stands done, as after creating the ledger. Floats above the wizard.
+    pub(super) fn wizard_adopt_sheet(&mut self, ctx: &egui::Context, now: f64) {
+        if !self.ux.confirm_adopt {
+            return;
+        }
+        let (mut go, mut close) = (false, false);
+        let out = sheet::show(
+            ctx,
+            sheet::Spec::new("wizard-adopt", tk::SHEET_W),
+            self,
+            |ui, me| {
+                sheet::title(ui, t(Key::AdoptGroup), "");
+                states::note_box(ui, t(Key::WizAdoptNote));
+                field(ui, t(Key::WizAdoptFolder), None, |ui| pick_path(ui, &mut me.ux.wiz_adopt, crate::platform::Pick::Folder));
+            },
+            |ui, me| {
+                go = page::Pen::new().press(ui, t(Key::DoAdopt), !me.ux.wiz_adopt.trim().is_empty()).clicked();
+                close = key::key(ui, t(Key::CfBack), Role::Secondary, true).clicked();
+            },
+        );
+        if close || out.esc {
+            self.ux.confirm_adopt = false;
+        } else if go {
+            self.ux.confirm_adopt = false;
+            self.act(Action::Adopt { dir: self.ux.wiz_adopt.trim().to_string() }, now);
         }
     }
 }

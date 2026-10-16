@@ -300,7 +300,7 @@ fn a_key_in_a_node_address_is_in_no_sentence() {
 fn a_node_item_that_does_not_read_is_said_by_its_length() {
     const KEY: &str = "k3yInTheItem55";
     for item in [format!("31337=http://127.0.0.1:1/{KEY} x"), format!("http://127.0.0.1:1/{KEY}"), format!("chain=http://127.0.0.1:1/{KEY}")] {
-        let said = app::chainx::Endpoint::typed(&item).expect_err("refused");
+        let said = app::chainx::typed(&item).expect_err("refused");
         assert!(!said.contains(KEY), "{item}: the key is said: {said}");
         assert!(said.contains(&zikaron_net::sayable(&item)), "{item}: said as a node is said: {said}");
     }

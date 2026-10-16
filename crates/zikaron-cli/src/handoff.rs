@@ -102,14 +102,21 @@ fn open_place(at: &str, create: bool) -> Result<(Place, Vec<Vec<u8>>), Answer> {
 
 /// `hand-over --ledger <place> --out <file>`: the whole ledger, one line under one root, into one handoff file at
 /// `--out` (never over anything there); this place then stops writing it until a handoff after this one comes back
-/// (`take-over`). A place already handed makes the same handoff again (same id, same entries).
+/// (`take-over`). A place already handed makes the same handoff again (same id, same entries). A home the desktop
+/// keeps is handed only past its write gates (`sealedsend::hand_gates`: not under its read-only mark, not broken).
 pub fn hand_over(a: &Args) -> Answer {
     let at = a.need("ledger");
     let out_path = a.need("out");
-    let (_place, items) = match open_place(&at, false) {
+    let (place, items) = match open_place(&at, false) {
         Ok(x) => x,
         Err(answer) => return answer,
     };
+    // A home the desktop keeps is handed only past its write gates, judged as for a send or a write.
+    if let Place::Home(home) = &place {
+        if let Some(refused) = crate::sealedsend::hand_gates(home) {
+            return refused;
+        }
+    }
     let Some(root) = root_id(&items) else {
         return out::denied(if items.is_empty() { Reason::TipAbsent } else { Reason::TipForked }, vec![]);
     };

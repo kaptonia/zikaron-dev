@@ -62,15 +62,13 @@ impl Win {
                             ("", a, b) => fill3(Key::KitEntriesRange, a, b, &in_pick.len().to_string()),
                             _ => fill1(Key::KitPickCount, &in_pick.len().to_string()),
                         };
-                        width::then(
+                        let lines = [(t(Key::KitEntries), Type::Note, c(C::Ink2)), (range.as_str(), Type::Body, c(C::Ink))];
+                        width::then_at(
                             ui,
+                            paint::lines_height(ui, &lines, 2.0).max(tk::INPUT_H),
                             |ui| open_picker = key::key(ui, t(Key::KitPickOpen), Role::Secondary, true).clicked(),
                             |ui, room| {
-                                ui.vertical(|ui| {
-                                    ui.spacing_mut().item_spacing.y = 2.0;
-                                    paint::line(ui, t(Key::KitEntries), Type::Note, c(C::Ink2), room);
-                                    paint::line(ui, &range, Type::Body, c(C::Ink), room);
-                                });
+                                paint::lines(ui, &lines, 2.0, room);
                             },
                         );
                         if let Some(e) = pick_err.as_ref() {
@@ -447,7 +445,7 @@ impl Win {
                 }
                 let (query, range) = typed.borrow().clone();
                 let Some(st) = me.ux.u3.kit_pick.as_mut() else { return };
-                egui::ScrollArea::vertical().id_salt("kit-pick-list").max_height(260.0).show(ui, |ui| {
+                zikaron_ui::scroll::nested(ui, egui::ScrollArea::vertical().id_salt("kit-pick-list").max_height(260.0), |ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     for row in rows.iter().filter(|r| keep(r, &query, &range)) {
                         let (tag, summary, struck) = row_face(&rows, &reading, row);

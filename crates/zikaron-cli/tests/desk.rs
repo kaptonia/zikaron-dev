@@ -117,7 +117,11 @@ fn each_reply_is_answered_by_the_verbs_own_answer() {
         ("anchor", vec![], Reply::Queued { count: 3 }, 3, r#"{"count":3,"ok":false,"reason":"E_QUEUED"}"#),
         ("attest", vec![], Reply::OnDesktop, 1, r#"{"ok":false,"reason":"E_ON_DESKTOP"}"#),
         ("annotate", vec![], Reply::Refused { code: "READ_ONLY".into(), tail: "t".into(), network: false, zh: "只读".into(), en: "read only".into() }, 1, r#"{"detail":"t","ok":false,"reason":"E_DESKTOP_REFUSED","token":"READ_ONLY"}"#),
-        ("anchor", vec![], Reply::Refused { code: "UNREACHABLE".into(), tail: "t".into(), network: true, zh: "连不上".into(), en: "unreachable".into() }, 4, r#"{"detail":"t","ok":false,"reason":"E_DESKTOP_REFUSED","token":"UNREACHABLE"}"#),
+        // `anchor` answers its refusals as the credential's road does: before anything went out, `E_SEND_REFUSED`
+        // (4 for the network's absence of an answer, 1 otherwise); already on chain, `E_ON_CHAIN` with its values.
+        ("anchor", vec![], Reply::Refused { code: "UNREACHABLE".into(), tail: "t".into(), network: true, zh: "连不上".into(), en: "unreachable".into() }, 4, r#"{"detail":"t","ok":false,"reason":"E_SEND_REFUSED","token":"UNREACHABLE"}"#),
+        ("anchor", vec![], Reply::Refused { code: "QUEUE_EMPTY".into(), tail: "t".into(), network: false, zh: "队列空".into(), en: "queue empty".into() }, 1, r#"{"detail":"t","ok":false,"reason":"E_SEND_REFUSED","token":"QUEUE_EMPTY"}"#),
+        ("anchor", vec![], Reply::OnChain { names: vec!["0xh".into()], tx: "0xt".into(), block: 5 }, 1, r#"{"blockNumber":5,"names":["0xh"],"ok":false,"reason":"E_ON_CHAIN","tx":"0xt"}"#),
         ("annotate", vec![], Reply::Closed, 4, r#"{"detail":"CLOSED","ok":false,"reason":"E_DESKTOP"}"#),
     ];
     for (verb, flags, reply, code, want) in replies {
@@ -136,6 +140,7 @@ fn each_reply_is_answered_by_the_verbs_own_answer() {
         match &reply {
             Reply::Queued { .. } => assert_eq!(line, "Queued; waiting for the user to send it from the desktop"),
             Reply::OnDesktop => assert_eq!(line, "This action must be done on the desktop"),
+            Reply::OnChain { .. } => assert_eq!(line, "The chain already holds this anchor (put on chain elsewhere); nothing was sent"),
             Reply::Refused { en, .. } => assert_eq!(&line, en),
             Reply::Closed => assert_eq!(line, "The desktop locked, closed this data folder or quit before it answered"),
             _ => assert!(err.is_empty(), "{reply:?}: {err}"),

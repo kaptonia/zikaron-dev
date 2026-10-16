@@ -78,11 +78,12 @@ fn only_this_senders_anchors_through_this_registry_count_each_at_its_earliest() 
     assert_eq!(send::on_chain(&mut node, 1, &REG, &ME, &[], 0), Ok(Vec::new()));
 }
 
-/// A head that does not read, or a log question refused at every range, is said in words: never "not on chain".
+/// A head that does not read, or a log question refused at every range, is no answer, never "not on chain", and
+/// says which question and what the node met, as structure.
 #[test]
 fn a_node_that_does_not_say_is_no_answer() {
     let mut no_head = Node { head: None, logs: Some("[]".into()) };
-    assert!(send::on_chain(&mut no_head, 1, &REG, &ME, &[h(0xa1)], 0).is_err());
+    assert!(matches!(send::on_chain(&mut no_head, 1, &REG, &ME, &[h(0xa1)], 0), Err(send::NotSaid::Head(_))));
     let mut no_logs = Node { head: Some("0x64"), logs: None };
-    assert!(send::on_chain(&mut no_logs, 1, &REG, &ME, &[h(0xa1)], 0).is_err());
+    assert!(matches!(send::on_chain(&mut no_logs, 1, &REG, &ME, &[h(0xa1)], 0), Err(send::NotSaid::Logs(_))));
 }

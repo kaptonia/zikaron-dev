@@ -162,3 +162,22 @@ fn a_home_that_adopted_a_ledger_starts_no_other() {
     assert_eq!(entries_in_home(&shell).len(), 4);
     let _ = std::fs::remove_dir_all(&at);
 }
+
+/// Adopting writes the home's ledger, so only the instance that writes it adopts: a second instance on the same home
+/// (a reader) is refused by name, and nothing is written.
+#[test]
+fn a_second_instance_reading_a_home_adopts_nothing() {
+    if super::alone_in(module_path!(), "a_second_instance_reading_a_home_adopts_nothing") {
+        return;
+    }
+    let (_writer, at) = fresh_home("reader");
+    let ctx = zikaron_ui::egui::Context::default();
+    let mut second = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
+    second.reread_vault();
+    let _ = apply(&mut second, Action::OpenHome { root: at.display().to_string() });
+    assert!(second.lock.as_ref().is_some_and(|l| !l.mode().writable()), "the second instance reads the home");
+    let got = apply(&mut second, Action::Adopt { dir: fixture().display().to_string() });
+    assert!(matches!(&got, Applied::Trouble(f) if f.which() == Some(app::fault::Known::ReadOnly)), "refused as read-only: {got:?}");
+    assert!(entries_in_home(&second).is_empty(), "nothing written");
+    let _ = std::fs::remove_dir_all(&at);
+}

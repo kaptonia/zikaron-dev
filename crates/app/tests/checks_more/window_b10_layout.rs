@@ -138,7 +138,7 @@ fn at_the_least_width_the_wizards_back_key_does_not_cross_the_steps_own_keys() {
         let (_, texts, _) = app::window::probe_wizard_step(&ctx, shell, Place::Home, Step::Key, app::window::MIN_W, app::window::MIN_H);
         let find = |k: Key| texts.iter().find(|d| d.text == t(k)).map(|d| d.rect).unwrap_or_else(|| panic!("{:?} is drawn: {:?}", t(k), texts.iter().map(|d| &d.text).collect::<Vec<_>>()));
         let back = find(Key::WizPrev);
-        let right: Vec<(Key, Rect)> = [Key::WizDoGenerate, Key::IdDoImportExisting, Key::DoRestoreBackup].into_iter().map(|k| (k, find(k))).collect();
+        let right: Vec<(Key, Rect)> = [Key::WizDoGenerate, Key::IdDoImportExisting, Key::BackupRestoreTitle].into_iter().map(|k| (k, find(k))).collect();
         for (k, r) in &right {
             assert!(!back.intersects(*r), "\"Back\" {back:?} crosses {:?} {r:?}", t(*k));
             assert!(r.max.x <= app::window::MIN_W + 0.5, "{:?} runs past the window: {r:?}", t(*k));

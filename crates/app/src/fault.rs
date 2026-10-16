@@ -377,6 +377,9 @@ pub enum Known {
     /// This ledger was handed off to another place (a ledger handoff, `zikaron_seal::pens`) and no handoff after it
     /// has come back: it is not written here.
     HandedOff,
+    /// The chain already holds anchors of this batch from this key: nothing was signed or sent (the sender asks
+    /// before signing, `zikaron_send::batch::on_chain`).
+    OnChain,
 }
 
 impl Known {
@@ -404,7 +407,7 @@ impl Known {
         Known::NodeRefused,
     ];
 
-    pub const ALL: [Known; 176] = [
+    pub const ALL: [Known; 177] = [
         Known::FontMissing,
         Known::FileMissing,
         Known::Denied,
@@ -581,6 +584,7 @@ impl Known {
         Known::HomeOtherMachine,
         Known::CliWriting,
         Known::HandedOff,
+        Known::OnChain,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -761,6 +765,7 @@ impl Known {
             Known::HomeOtherMachine => "HOME_OTHER_MACHINE",
             Known::CliWriting => "CLI_WRITING",
             Known::HandedOff => "HANDED_OFF",
+            Known::OnChain => "ON_CHAIN",
         }
     }
 }
@@ -949,6 +954,7 @@ impl Known {
             Known::HomeOtherMachine => L::FaultWhatHomeOtherMachine,
             Known::CliWriting => L::FaultWhatCliWriting,
             Known::HandedOff => L::FaultWhatHandedOff,
+            Known::OnChain => L::FaultWhatOnChain,
         }
     }
 
@@ -1132,6 +1138,7 @@ impl Known {
             Known::HomeOtherMachine => Some(L::FaultNextHomeOtherMachine),
             Known::CliWriting => Some(L::FaultNextCliWriting),
             Known::HandedOff => Some(L::FaultNextHandedOff),
+            Known::OnChain => Some(L::FaultNextOnChain),
         }
     }
 }
@@ -1315,6 +1322,7 @@ pub fn translate(k: Known) -> &'static str {
         Known::HomeOtherMachine => "另一台机器是这一处数据的写者",
         Known::CliWriting => "命令行正在写入这本账,这一步没有做",
         Known::HandedOff => "这本账已交接到另一处,收回之前不在这里写",
+        Known::OnChain => "这一批里有锚链上已有:一笔也不签不发",
     }
 }
 
@@ -1341,6 +1349,12 @@ pub struct Fault {
     /// For a connection that failed after going without the system's configuration script, that script's trouble:
     /// the next-step sentence then says it and the way out ([`Fault::without_script`]).
     script: Option<zikaron_net::PacTrouble>,
+    /// For the sender's "already on chain" refusal, its evidence as values (the hashes held, the earliest one's
+    /// transaction and block; the tail says the same in words): the door hands them over as they are.
+    on_chain: Option<(Vec<String>, String, u64)>,
+    /// For a send refused after its batch was landed in flight (no node answered the broadcast, its bytes may be in a
+    /// pool): that batch's transaction, awaited by its hash. The batch is out, never answered as nothing sent.
+    out: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1371,6 +1385,8 @@ impl Fault {
             place: None,
             status: None,
             script: None,
+            on_chain: None,
+            out: None,
         }
     }
 
@@ -1432,6 +1448,22 @@ impl Fault {
         self.status
     }
 
+    /// The sender's "already on chain" evidence as values: the hashes held, the earliest one's transaction and
+    /// block (`None` for every other fault).
+    pub fn on_chain(&self) -> Option<&(Vec<String>, String, u64)> {
+        self.on_chain.as_ref()
+    }
+
+    /// The transaction of a batch this send left in flight before it failed (`None` for every other fault).
+    pub fn out(&self) -> Option<&str> {
+        self.out.as_deref()
+    }
+
+    /// The same fault, for a send whose batch is out (in flight, awaited by `tx`) though the broadcast failed.
+    pub fn sent_out(self, tx: String) -> Fault {
+        Fault { out: Some(tx), ..self }
+    }
+
     /// The place a person named that could not be read (`None` for every other fault).
     pub fn place(&self) -> Option<&str> {
         self.place.as_deref()
@@ -1470,7 +1502,7 @@ impl Fault {
     /// Unknown: passed through unchanged; the sentence on screen is the underlying one.
     pub fn unknown(tail: impl Into<String>) -> Fault {
         let tail = tail.into();
-        Fault { class: Class::Unknown, said: tail.clone(), tail, say: None, then: None, landing: None, place: None, status: None, script: None }
+        Fault { class: Class::Unknown, said: tail.clone(), tail, say: None, then: None, landing: None, place: None, status: None, script: None, on_chain: None, out: None }
     }
 
     pub fn class(&self) -> Class {
@@ -1604,13 +1636,15 @@ pub fn entry_token_say(t: zikaron::tokens::Token) -> crate::lang::Key {
     }
 }
 
-/// Scan refusals to plain words (five members). Exhaustive, as above.
+/// Scan refusals to plain words (five members; a window too wide for the node's span says what to do). Exhaustive,
+/// as above.
 pub fn scan_refusal_say(r: &zikaron_anchor::scan::Refusal) -> crate::lang::Key {
     use crate::lang::Key as L;
     use zikaron_anchor::scan::Refusal as R;
     match r {
         R::ChainIdMismatch { .. } => L::TokScanChainId,
         R::NoEndpoint(_) => L::TokScanNoEndpoint,
+        R::Unanswered { asked: zikaron_anchor::scan::Asked::TooWide { .. }, .. } => L::TokScanTooWide,
         R::Unanswered { .. } => L::TokScanUnanswered,
         R::TxNotItself(_) => L::TokScanTxNotItself,
         R::Malformed(_) => L::TokScanMalformed,
@@ -1689,6 +1723,70 @@ impl From<zikaron_seal::Trouble> for Fault {
         match known_of_sealed(t.code) {
             Some(k) => Fault::known(k, t.tail),
             None => Fault::unknown(t.tail),
+        }
+    }
+}
+
+/// The sender's code as this fault table's member. Exhaustive: a code the sender adds does not compile until it is
+/// said here.
+pub fn known_of_sent(c: zikaron_send::Code) -> Known {
+    use zikaron_send::Code as C;
+    match c {
+        C::NoEndpoint => Known::NoEndpoint,
+        C::SettingsShape => Known::SettingsShape,
+        C::Unreachable => Known::Unreachable,
+        C::Disagree => Known::Disagree,
+        C::ChainShape => Known::ChainShape,
+        C::WrongChain => Known::WrongChain,
+        C::InsufficientFunds => Known::InsufficientFunds,
+        C::NonceUsed => Known::NonceUsed,
+        C::AlreadyPending => Known::AlreadyPending,
+        C::Underpriced => Known::Underpriced,
+        C::GasTooLow => Known::GasTooLow,
+        C::ContractRefused => Known::ContractRefused,
+        C::RateLimited => Known::RateLimited,
+        C::MethodMissing => Known::MethodMissing,
+        C::NodeAuth => Known::NodeAuth,
+        C::NodeRefused => Known::NodeRefused,
+        C::NodeTls => Known::NodeTls,
+        C::NodeTimeout => Known::NodeTimeout,
+        C::AnswerTooLong => Known::AnswerTooLong,
+        C::AnswerNotJson => Known::AnswerNotJson,
+        C::ProxyUnreachable => Known::ProxyUnreachable,
+        C::ProxyCredentialsMissing => Known::ProxyCredentialsMissing,
+        C::ProxyCredentialsRefused => Known::ProxyCredentialsRefused,
+        C::GasRefused => Known::GasRefused,
+        C::KeyMalformed => Known::KeyMalformed,
+        C::AddressMismatch => Known::AddressMismatch,
+        C::ContentShape => Known::ContentShape,
+        C::QueueEmpty => Known::QueueEmpty,
+        C::AuditInput => Known::AuditInput,
+        C::ScanRefused => Known::ScanRefused,
+        C::NoChainId => Known::NoChainId,
+        C::NoRegistry => Known::NoRegistry,
+        C::OnChain => Known::OnChain,
+        C::Broken => Known::Broken,
+        C::HandedOff => Known::HandedOff,
+        C::NotFetched => Known::LedgerNotFetched,
+        C::NewerElsewhere => Known::NewerElsewhere,
+    }
+}
+
+/// A refusal of the sender (`zikaron-send`) as one of this table's faults, its evidence said in this desktop's
+/// words (`chainx::said_of`): a scan's refusal with its first refusal's sentence, a connection made without the
+/// system's proxy script with that script's trouble.
+impl From<zikaron_send::Trouble> for Fault {
+    fn from(t: zikaron_send::Trouble) -> Fault {
+        let f = match (&t.code, &t.why) {
+            (zikaron_send::Code::ScanRefused, zikaron_send::Why::Scan { refused, .. }) => Fault::scan_refused(crate::chainx::said_of(&t.why), refused),
+            (zikaron_send::Code::OnChain, zikaron_send::Why::OnChain { names, tx, block }) => {
+                Fault { on_chain: Some((names.clone(), tx.clone(), *block)), ..Fault::known(Known::OnChain, crate::chainx::said_of(&t.why)) }
+            }
+            _ => Fault::known(known_of_sent(t.code), crate::chainx::said_of(&t.why)),
+        };
+        match t.script {
+            Some(x) => f.without_script(x),
+            None => f,
         }
     }
 }

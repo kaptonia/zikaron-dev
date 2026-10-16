@@ -239,8 +239,8 @@ impl Win {
             items.push(menu::Item::Who(menu::Who { name: names[i], kind: t(id_kind_key(r.kind())), tags: &tags[i], current: current.as_deref() == Some(r.id.as_str()) }));
         }
         items.push(menu::Item::Sep);
-        items.push(menu::row(t(Key::IdDoNew)));
-        items.push(menu::row(t(Key::IdDoImport)));
+        items.push(menu::row(t(Key::IdNewTitle)));
+        items.push(menu::row(t(Key::IdImportTitle)));
         items.push(menu::Item::Sep);
         items.push(menu::row(t(Key::SetKeys)));
         if let Some(i) = menu::show(ctx, id, anchor, true, 236.0, &items) {

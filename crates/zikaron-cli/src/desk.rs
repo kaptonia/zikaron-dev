@@ -49,7 +49,7 @@ pub fn ask(a: &Args) -> Answer {
     }
     // The desktop answers when what it does is done (a send waits for its receipt): no deadline here.
     match zikaron_glue::door::take(&mut door).ok().and_then(|b| Reply::of_bytes(&b)) {
-        Some(r) => answer_of(r),
+        Some(r) => answer_of(r, a.verb()),
         None => absent(Door::Broken, Said::DoorBroken),
     }
 }
@@ -117,8 +117,9 @@ fn absent(why: Door, said: Said) -> Answer {
     out::unanswered(Reason::Desktop, vec![(Key::Detail, s(why.as_str()))]).telling(said.text().to_string())
 }
 
-/// The command line's answer to what the desktop said, by the verb's own answers.
-fn answer_of(r: Reply) -> Answer {
+/// The command line's answer to what the desktop said for `verb`, by the verb's own answers. `anchor` answers as
+/// with the credential (`sealedsend`): already on chain `E_ON_CHAIN`, any other refusal `E_SEND_REFUSED`.
+fn answer_of(r: Reply, verb: &str) -> Answer {
     match r {
         // The desktop writes the entry itself: it is written (never "already there") when it says so.
         Reply::Wrote { entry_id, ledger, seq } => verbs::wrote(&entry_id, &ledger, seq, true),
@@ -127,10 +128,12 @@ fn answer_of(r: Reply) -> Answer {
         Reply::NotYet { tx, waited } => verbs::tx_not_yet(&tx, waited),
         Reply::Unheard { tx, detail } => verbs::tx_unheard(&tx, &detail),
         Reply::Voided { tx } => verbs::tx_void(&tx),
+        Reply::OnChain { names, tx, block } => verbs::on_chain(&names, &tx, block),
         // Under `--home` a package takes no proof bundles (they are chosen on the desktop).
         Reply::Kit { kit_id, path, entries, files, dropped } => verbs::kit_written(&dropped, entries, files, &kit_id, &path, 0),
-        Reply::Queued { count } => out::partial(Reason::Queued, vec![(Key::Count, zikaron::json::Value::Int(count))]).telling(Said::Queued.text().to_string()),
+        Reply::Queued { count } => verbs::queued(count),
         Reply::OnDesktop => on_desktop(),
+        Reply::Refused { code, tail, network, zh, en } if verb == "anchor" => crate::sealedsend::send_refused(&code, &tail, network, out::pick(zh, en)),
         Reply::Refused { code, tail, network, zh, en } => {
             let members = vec![(Key::Token, s(&code)), (Key::Detail, s(&tail))];
             // A network refusal is the absence of an answer (`zikaron/1` §9.4), never a negative one.

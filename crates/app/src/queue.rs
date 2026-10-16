@@ -2,9 +2,10 @@
 //!
 //! It lives in the home's `settings/` directory, sealed (`local::Doc::Queue`), so copying a home carries its
 //! queue along. Its model and bytes are the sealed layer's (`zikaron_seal::queue`), one with the command line's
-//! sealed write; what stays here is where the file lives, reading and writing it under the home's seal, the
-//! words a refusal is said in, the in-process lock ([`amend`]) and the receipt path ([`settle`]), the only caller
-//! of the ways out that record "anchored".
+//! sealed write; its one read-modify-write lock, the receipt path ([`settle`], the only caller of the ways out that
+//! record "anchored") and the queue following the ledger ([`follow`]) are the sender's (`zikaron_send::keep`). What
+//! stays here is where the file lives, reading and writing it under the home's seal ([`Kept`]), and the words a
+//! refusal is said in.
 
 use crate::fault::{Fault, Known};
 use crate::home::{Home, Slot};
@@ -50,67 +51,22 @@ pub fn unparsed(p: &std::path::Path, s: Shape) -> Fault {
     )
 }
 
-/// Serializes queue file changes within one process.
-///
-/// Queueing on the UI thread and removal in the background (after a successful receipt) each read, modify
-/// and write back; unserialized, the later write would restore a stale queue and silently lose the newly
-/// queued entry. Across processes, the home's writer lock applies.
-static AMEND: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub use zikaron_send::keep::Inclusion;
 
-/// The only way the queue on disk is changed: read, modify and write under one lock, returning the queue as
-/// written so the shell's copy always comes from here (see `action::queue_it` and [`settle`]).
+/// The only way the queue on disk is changed: read, modify and write under the sender's one lock
+/// (`zikaron_send::keep::amend`), returning the queue as written so the shell's copy always comes from there.
 pub fn amend<T>(home: &Home, f: impl FnOnce(&mut Queue) -> T) -> Result<(T, Queue), Fault> {
-    let _g = AMEND.lock().unwrap_or_else(|e| e.into_inner());
-    let mut q = Queue::read(home)?;
-    let out = f(&mut q);
-    q.write(home)?;
-    Ok((out, q))
+    zikaron_send::keep::amend(&crate::sendx::Desk::of(home), f)
 }
 
-/// The only removal decision: entries are removed only when the receipt succeeded; otherwise nothing changes.
-///
-/// `anchored` comes from the anchoring crate's `Sent::anchored()` (per law §9.1, a receipt status
-/// other than 1 is not an anchor), and there is no other path to removal, so anything that failed to send
-/// stays queued for retry.
-///
-/// The new queue is returned along with the count. This runs in the background while the shell keeps a copy;
-/// updating only the disk would leave the anchored entries in that copy, so sending again would anchor them
-/// twice (paying gas twice) and later queueing would write them back.
-///
-/// `at` is where the transaction was included (hash, chain id, block number); when given, the block is
-/// recorded in the same write.
+/// The only removal decision (`zikaron_send::keep::settle`): entries are removed only when the receipt succeeded.
 pub fn settle(home: &Home, ids: &[String], anchored: bool, at: Option<&Inclusion>) -> Result<(usize, Queue), Fault> {
-    if !anchored {
-        let _g = AMEND.lock().unwrap_or_else(|e| e.into_inner());
-        let q = Queue::read(home)?;
-        return Ok((0, q));
-    }
-    amend(home, |q| match at {
-        Some(i) => q.included_out(ids, &i.tx, i.chain, i.block),
-        None => q.anchored_out(ids),
-    })
+    zikaron_send::keep::settle(&crate::sendx::Desk::of(home), ids, anchored, at)
 }
 
-/// The queue follows the ledger and the chain: entries a self-audit read on chain that still wait here leave it,
-/// recorded as anchored ([`Queue::seen_out`]); entries owed an anchor that are neither queued nor on chain join
-/// it ([`Queue::push`], which refuses one recorded as anchored). One read-modify-write under [`amend`]; the queue
-/// as written comes back for the shell's copy.
+/// The queue follows the ledger and the chain (`zikaron_send::keep::follow`).
 pub fn follow(home: &Home, on_chain: &[String], owed: &[String], at: u64) -> Result<Queue, Fault> {
-    amend(home, |q| {
-        q.seen_out(on_chain);
-        for id in owed {
-            let _ = q.push(id, at);
-        }
-    })
-    .map(|(_, q)| q)
-}
-
-/// Where an included transaction landed, for recording the block number.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Inclusion {
-    pub tx: String,
-    pub chain: u64,
-    pub block: u64,
+    zikaron_send::keep::follow(&crate::sendx::Desk::of(home), on_chain, owed, at)
 }
 
 /// The numbers in the anchoring density note at the top of the page. Anchoring seq N transitively covers every

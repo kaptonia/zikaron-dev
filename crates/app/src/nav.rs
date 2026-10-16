@@ -209,17 +209,21 @@ pub enum Section {
     Notify,
     /// Local data: encryption, the whole-machine backup, the ledger mirror (recorder), the data folder.
     Data,
+    /// The command line: the terminal command, how it may write this machine's data (through the desktop app or
+    /// with a credential), and how its anchoring is handled.
+    Cli,
     About,
 }
 
 impl Section {
-    pub const ALL: [Section; 7] = [
+    pub const ALL: [Section; 8] = [
         Section::Language,
         Section::Appearance,
         Section::Keys,
         Section::Network,
         Section::Notify,
         Section::Data,
+        Section::Cli,
         Section::About,
     ];
 
@@ -232,6 +236,7 @@ impl Section {
             Section::Network => Key::SetChain,
             Section::Notify => Key::SetCadence,
             Section::Data => Key::SetData,
+            Section::Cli => Key::SetCliGroup,
             Section::About => Key::PageAbout,
         }
     }
@@ -248,6 +253,7 @@ impl Section {
                 Role::Grantee => Key::SetNoteNotifyGrantee,
             },
             Section::Data => Key::SetNoteData,
+            Section::Cli => Key::SetNoteCli,
             Section::About => Key::SetNoteAbout,
         }
     }
@@ -261,6 +267,7 @@ impl Section {
             Section::Network => "network",
             Section::Notify => "notify",
             Section::Data => "data",
+            Section::Cli => "cli",
             Section::About => "about",
         }
     }

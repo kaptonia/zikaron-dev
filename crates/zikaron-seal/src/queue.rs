@@ -383,13 +383,33 @@ impl Queue {
         self.anchored_out(&not_out)
     }
 
-    /// Set the state of these entries (only entries still queued are affected).
-    pub fn mark(&mut self, ids: &[String], step: Step) {
+    /// Set the state of these entries, only where no transaction of theirs is out: an entry submitted or resent
+    /// (in flight, [`Step::in_flight`]) keeps its step, so no writer overwrites a batch another has out. Returns
+    /// how many changed. An entry's in-flight step changes only by [`Queue::moved_by`].
+    pub fn mark(&mut self, ids: &[String], step: Step) -> usize {
+        let mut n = 0;
         for q in self.items.iter_mut() {
-            if ids.iter().any(|x| x == &q.id) {
+            if ids.iter().any(|x| x == &q.id) && !q.step.in_flight() {
                 q.step = step.clone();
+                n += 1;
             }
         }
+        n
+    }
+
+    /// Move a batch out in flight on to its next step: only these entries whose step awaits exactly `txs` on
+    /// `chain` (the batch's own transactions, held by whoever sent them) change; an entry waiting on other
+    /// transactions, or none, is left as it is. Returns how many changed. The receipt wait (included with another
+    /// status, voided), a resend (its new transaction joining) and a broadcast refused outright come here.
+    pub fn moved_by(&mut self, ids: &[String], txs: &[String], chain: u64, step: Step) -> usize {
+        let mut n = 0;
+        for q in self.items.iter_mut() {
+            if ids.iter().any(|x| x == &q.id) && q.step.awaited().is_some_and(|(t, c)| t == txs && c == chain) {
+                q.step = step.clone();
+                n += 1;
+            }
+        }
+        n
     }
 
     /// Included with receipt status 1: remove, record as anchored, and record the block. Only the receipt path (the
@@ -506,6 +526,36 @@ mod seen_tests {
         assert!(!q.has("aa") && q.has("bb"), "{q:?}");
         assert_eq!(q.anchored, vec!["aa".to_string(), "cc".to_string()]);
         assert_eq!(q.push("cc", 3), Pushed::Anchored);
+    }
+
+    /// `mark` changes only entries with no transaction out; a batch in flight moves only by the transactions it
+    /// awaits (`moved_by`). One line per form: queued, refused and reverted are marked; submitted and resent are
+    /// not; `moved_by` with the batch's own transactions moves it, with other transactions, another chain or a
+    /// queued entry moves nothing.
+    #[test]
+    fn mark_leaves_a_batch_in_flight_to_the_one_who_sent_it() {
+        let ids = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let sub = Step::Submitted { tx: "0x01".into(), chain: 1, nonce: Some(4) };
+        let resent = Step::Resent { txs: vec!["0x02".into(), "0x03".into()], chain: 1, nonce: Some(5) };
+        let mut q = Queue::default();
+        for (i, id) in ["q", "f", "r", "s", "t"].iter().enumerate() {
+            let _ = q.push(id, i as u64);
+        }
+        assert_eq!(q.mark(&ids(&["f"]), Step::Refused { said: "X".into() }), 1);
+        assert_eq!(q.mark(&ids(&["r"]), Step::Reverted { tx: "0x09".into(), chain: 1 }), 1);
+        assert_eq!(q.mark(&ids(&["s"]), sub.clone()), 1);
+        assert_eq!(q.mark(&ids(&["t"]), resent.clone()), 1);
+        let refused = Step::Refused { said: "Y".into() };
+        assert_eq!(q.mark(&ids(&["q", "f", "r", "s", "t"]), refused.clone()), 3, "queued, refused and reverted change");
+        assert_eq!(q.step_of("s"), Some(&sub), "a submitted batch is not overwritten");
+        assert_eq!(q.step_of("t"), Some(&resent), "a resent batch is not overwritten");
+        assert_eq!(q.moved_by(&ids(&["s"]), &ids(&["0x09"]), 1, Step::Queued), 0, "other transactions move nothing");
+        assert_eq!(q.moved_by(&ids(&["s"]), &ids(&["0x01"]), 2, Step::Queued), 0, "another chain moves nothing");
+        assert_eq!(q.moved_by(&ids(&["q"]), &ids(&["0x01"]), 1, Step::Queued), 0, "an entry with nothing out is not moved");
+        assert_eq!(q.moved_by(&ids(&["s", "t"]), &ids(&["0x01"]), 1, Step::Queued), 1, "its own transactions move it");
+        assert_eq!(q.step_of("s"), Some(&Step::Queued));
+        assert_eq!(q.moved_by(&ids(&["t"]), &ids(&["0x02", "0x03"]), 1, sub.clone()), 1);
+        assert_eq!(q.step_of("t"), Some(&sub));
     }
 }
 

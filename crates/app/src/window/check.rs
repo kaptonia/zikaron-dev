@@ -293,7 +293,7 @@ impl Win {
         let src = x.found.get(hop).cloned().unwrap_or_default();
         let (said, open_key, m) = match &src.from {
             Some((level, _)) => (t(level_key(*level)).to_string(), Key::U3TermsSwap, Mark::Ok),
-            None => (t(Key::Nothing).to_string(), Key::CheckSourceAdd, Mark::Warn),
+            None => (t(Key::Nothing).to_string(), Key::ReadNetAdd, Mark::Warn),
         };
         // Supplied here and all six green: nothing to fill, so no "replace…".
         let settled = crate::checkx::source_settled(x, hop);
@@ -303,7 +303,7 @@ impl Win {
             ui,
             |ui| !settled && key::link(ui, t(open_key)).clicked(),
             |ui, room| {
-                ui.horizontal(|ui| {
+                width::cell(ui, egui::vec2(room, Type::Body.line().max(tk::MARK)), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
                     mark::mark(ui, m);
                     paint::line(ui, &fill1(Key::CheckSourceLine, &said), Type::Body, c(C::Ink), room - 28.0);

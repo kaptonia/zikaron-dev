@@ -135,7 +135,7 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
             lu.painter().text(list.center(), egui::Align2::CENTER_CENTER, spec.empty, Type::Note.font(), c(C::Ink3));
             return;
         }
-        egui::ScrollArea::vertical().id_salt(id.with("rows")).max_height(list_h).auto_shrink([false, true]).show(&mut lu, |ui| {
+        crate::scroll::nested(&mut lu, egui::ScrollArea::vertical().id_salt(id.with("rows")).max_height(list_h).auto_shrink([false, true]), |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for i in &kept {
                 let it = &items[*i];

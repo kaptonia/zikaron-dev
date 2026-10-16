@@ -171,7 +171,7 @@ impl Win {
         });
         if g.as_ref().map(|x| !x.revoked).unwrap_or(false) {
             stagger(ui, 4, |ui| {
-                if page::Guide::last(ui, t(Key::V2RevokeGrantDots), true).clicked() {
+                if page::Guide::last(ui, t(Key::PageRevoke), true).clicked() {
                     confirm = Some(U3Confirm::Revoke { grant: row.id.clone() });
                 }
             });

@@ -290,18 +290,39 @@ impl Home {
     }
 }
 
+/// The bytes under `p`, which must be there. A home is live while it is measured (a write's temporary file comes
+/// and goes), so an entry listed and gone by the time it is looked at counts nothing, not an error.
 fn walk_size(p: &Path) -> Result<u64, Fault> {
-    let md = std::fs::symlink_metadata(p).map_err(|e| classify(&e, &p.display().to_string()))?;
+    size_of(p, false)
+}
+
+fn size_of(p: &Path, listed: bool) -> Result<u64, Fault> {
+    let gone = |e: &std::io::Error| listed && e.kind() == std::io::ErrorKind::NotFound;
+    let md = match std::fs::symlink_metadata(p) {
+        Ok(m) => m,
+        Err(e) if gone(&e) => return Ok(0),
+        Err(e) => return Err(classify(&e, &p.display().to_string())),
+    };
     if md.is_file() {
         return Ok(md.len());
     }
     if !md.is_dir() {
         return Ok(0);
     }
+    let listing = match std::fs::read_dir(p) {
+        Ok(l) => l,
+        Err(e) if gone(&e) => return Ok(0),
+        Err(e) => return Err(classify(&e, &p.display().to_string())),
+    };
     let mut n = 0;
-    for e in std::fs::read_dir(p).map_err(|e| classify(&e, &p.display().to_string()))? {
-        let e = e.map_err(|e| classify(&e, &p.display().to_string()))?;
-        n += walk_size(&e.path())?;
+    for e in listing {
+        let e = match e {
+            Ok(e) => e,
+            // The folder went while its entries were read: what is left of it is not there.
+            Err(e) if gone(&e) => return Ok(n),
+            Err(e) => return Err(classify(&e, &p.display().to_string())),
+        };
+        n += size_of(&e.path(), true)?;
     }
     Ok(n)
 }

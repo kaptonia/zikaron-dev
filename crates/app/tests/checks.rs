@@ -147,6 +147,158 @@ fn code_only(s: &str) -> String {
         .join("\n")
 }
 
+// ───────────────────── Button words ─────────────────────
+
+/// No button says "more follows": every label a clickable widget draws from the language
+/// table (a key, shown or built, a link, a menu row, a navigation or danger row, a guide or pen key, a page's blue
+/// key, a file row's key, a path row's key, a picker) ends without "…" in either language. Read from every call of those widgets in the
+/// shipped source, so a button added later is judged the same; status lines and input hints are not drawn by
+/// them and are not read.
+#[test]
+fn no_button_word_ends_in_an_ellipsis() {
+    const CLICKABLE: [&str; 16] = [
+        "key::key(",
+        // A key built and shown (its busy words, `.busy_text`, are a status line: outside these parentheses).
+        "key::Key::new(",
+        "key::link(",
+        // The commit key that speaks while it waits: its first words are the key's, the second its status line.
+        ".press_long_saying(ui,",
+        "page::Guide::key(",
+        "page::Guide::last(",
+        ".press(ui,",
+        ".primary_with(ui,",
+        "menu::row(",
+        "f.row(ui,",
+        "f.danger(ui,",
+        "f.nav_big(ui,",
+        "drop::file_row(",
+        "self.long_key(ui,",
+        "pick::key(",
+        "path_row(ui,",
+    ];
+    let words: std::collections::BTreeMap<String, (&str, &str)> = app::lang::TABLE.iter().map(|(k, zh, en)| (format!("{k:?}"), (*zh, *en))).collect();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for (name, text) in shipped() {
+        let code = code_only(&text);
+        for pat in CLICKABLE {
+            let mut from = 0;
+            while let Some(at) = code[from..].find(pat) {
+                let start = from + at + pat.len();
+                // The call's arguments, to its own closing parenthesis.
+                let mut depth = 1usize;
+                let mut end = start;
+                for (i, ch) in code[start..].char_indices() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = start + i;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let args = &code[start..end.max(start)];
+                let args = if pat == ".press_long_saying(ui," { args.split(',').next().unwrap_or(args) } else { args };
+                let mut rest = args;
+                while let Some(k) = rest.find("Key::") {
+                    let tail = &rest[k + 5..];
+                    let id: String = tail.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+                    if let Some((zh, en)) = words.get(&id) {
+                        assert!(!zh.ends_with('…') && !en.ends_with('…') && !en.ends_with("..."), "{name}: {pat} draws Key::{id} ({zh} / {en})");
+                        seen.insert(id.clone());
+                    }
+                    rest = &tail[id.len()..];
+                }
+                from = start;
+            }
+        }
+    }
+    // The scan reaches the buttons it guards (a menu row, a page's key, a navigation row, a picker's key).
+    for k in ["U3AdoptTitle", "PickFile", "ChangePinTitle", "V2DeleteWork", "BackupRestoreTitle", "NavVerifyView", "CheckRefetch", "U3SendGo"] {
+        assert!(seen.contains(k), "the scan did not reach Key::{k}");
+    }
+}
+
+// ───────────────────── Rows and scroll areas ─────────────────────
+
+/// The name of the call whose parentheses hold byte `at` of `code` (the path just before the nearest unclosed `(`).
+fn enclosing_call(code: &str, at: usize) -> String {
+    let b = code.as_bytes();
+    let mut depth = 0i32;
+    let mut i = at;
+    while i > 0 {
+        i -= 1;
+        match b[i] {
+            b')' => depth += 1,
+            b'(' if depth == 0 => {
+                let head = &code[..i];
+                let start = head.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == ':')).map(|k| k + 1).unwrap_or(0);
+                return head[start..].to_string();
+            }
+            b'(' => depth -= 1,
+            _ => {}
+        }
+    }
+    String::new()
+}
+
+/// Every scroll area of the app goes in through the widget library's one way (`zikaron_ui::scroll`), saying
+/// whether it is a page's or a nested one: a nested one at its end keeps the wheel, so the page around it stays.
+#[test]
+fn every_scroll_area_goes_in_through_the_librarys_scroll() {
+    let mut seen = 0;
+    for (name, text) in shipped() {
+        let code = code_only(&text);
+        for (at, _) in code.match_indices("ScrollArea::") {
+            let call = enclosing_call(&code, at);
+            assert!(["scroll::page", "scroll::nested", "scroll::nested_rows"].iter().any(|w| call.ends_with(w)), "{name}: a scroll area shown by `{call}`, not through `zikaron_ui::scroll`");
+            seen += 1;
+        }
+    }
+    // The home page's code field, the record kit's picker list, the licence notices.
+    assert_eq!(seen, 3, "the scan reaches the app's three scroll areas");
+}
+
+/// Nothing laid in a row of `width::then`, `then_at` or `then_line` opens a row or a column of its own there: egui
+/// places a new one by its first, empty size, so in the row's centered layout it would hang half its height low.
+/// What stands there takes one cell (`width::cell`, `paint::lines`, the library's widgets).
+#[test]
+fn nothing_in_a_row_of_then_opens_a_layout_of_its_own() {
+    let mut rows = 0;
+    for (name, text) in shipped() {
+        let code = code_only(&text);
+        for call in ["width::then(", "width::then_at(", "width::then_line("] {
+            for (at, _) in code.match_indices(call) {
+                let open = at + call.len() - 1;
+                let b = code.as_bytes();
+                let (mut depth, mut end) = (0i32, open);
+                for (k, ch) in b.iter().enumerate().skip(open) {
+                    match ch {
+                        b'(' => depth += 1,
+                        b')' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = k;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let args = &code[open..=end];
+                for opener in [".horizontal(", ".horizontal_top(", ".horizontal_wrapped(", ".horizontal_centered(", ".vertical(", ".vertical_centered(", ".vertical_centered_justified("] {
+                    assert!(!args.contains(opener), "{name}: a row of `{call}` opens a layout ({opener}) inside it");
+                }
+                rows += 1;
+            }
+        }
+    }
+    assert!(rows >= 21, "the scan reaches the app's rows of `then` ({rows})");
+}
+
 // ───────────────────── Design values live in the widget library ─────────────────────
 
 #[test]
@@ -1063,10 +1215,13 @@ fn the_pen_is_granted_only_by_the_cores_own_label() {
 /// The single-source flag comes from the endpoint rule, not counted in this layer.
 #[test]
 fn the_single_source_column_comes_from_the_endpoint_law() {
-    let text = read_src_file("chainx.rs").expect("读不出 chainx.rs");
+    // The readings are the sender's (`zikaron_send::node`); the app only says them.
+    let text = read_crate_file("zikaron-send", "node.rs").expect("读不出发送器 node.rs");
     let code = code_only(&text);
     assert!(code.contains("single_source: r.single_source"), "单源那一栏要照抄端点法给的");
-    assert!(!code.contains("sources == 1"), "别在这一层自己判单源");
+    for (name, text) in [("node.rs", text.clone()), ("chainx.rs", read_src_file("chainx.rs").expect("读不出 chainx.rs"))] {
+        assert!(!code_only(&text).contains("sources == 1"), "{name}:别在这一层自己判单源");
+    }
 }
 
 // ═════════════════════ First run and adoption ═════════════════════
@@ -3353,15 +3508,16 @@ fn only_the_receipt_path_records_that_an_entry_was_anchored() {
     let at = queue.find("pub fn drop_ids(").expect("只出队那一口");
     let body = &queue[at..queue[at..].find("\n    }\n").map(|e| at + e).unwrap_or(queue.len())];
     assert!(!body.contains("anchored"), "只出队那一口一个字节也不碰 `anchored`");
-    // The receipt exit is called only by `settle` (the desktop's queue file; the model is the sealed layer's).
-    let app_queue = code_only(&read_src_file("queue.rs").expect("读不出 queue.rs"));
-    let at = app_queue.find("pub fn settle(").expect("出队的唯一一处判");
-    let body = &app_queue[at..app_queue[at..].find("\n}\n").map(|e| at + e).unwrap_or(app_queue.len())];
+    // The receipt exit is called only by `settle` (the sender's, one for every end; the model is the sealed layer's).
+    let keep = code_only(&read_crate_file("zikaron-send", "keep.rs").expect("读不出发送器 keep.rs"));
+    let at = keep.find("pub fn settle<").expect("出队的唯一一处判");
+    let body = &keep[at..keep[at..].find("\n}\n").map(|e| at + e).unwrap_or(keep.len())];
     assert!(body.contains("q.anchored_out(ids)"), "收据说成了那一路走记事实的那一口");
+    assert_eq!(keep.matches(".anchored_out(").count(), 1, "发送器里记「锚成过」只此一处");
+    for f in ["lib.rs", "node.rs", "agree.rs", "gate.rs", "batch.rs", "sent.rs"] {
+        assert!(!code_only(&read_crate_file("zikaron-send", f).expect("发送器源")).contains(".anchored_out("), "{f} 不是收据那一路,不许记「锚成过」");
+    }
     for (name, text) in shipped() {
-        if name == "queue.rs" {
-            continue;
-        }
         let code = code_only(&text);
         assert!(!code.contains(".anchored_out("), "{name} 不是收据那一路,不许记「锚成过」");
     }
@@ -3528,27 +3684,39 @@ fn the_post_landing_test_hook_is_set_only_by_test_code() {
 /// node refusal codes come only from `chainx::said_fault` (the pre-send balance gate has its own place).
 #[test]
 fn what_the_node_said_is_dispatched_in_one_place() {
-    let sign = code_only(&read_src_file("sign.rs").expect("读不出 sign.rs"));
-    assert!(!sign.contains("Known::SendFailed"), "发锚那一路不许再把节点的话压成 SEND_FAILED");
-    assert!(sign.contains("crate::chainx::said_fault(url.for_transport(), &t)"), "发锚那一路按节点说的话分派");
+    // Anchoring is the sender's (`zikaron_send::batch`): its broadcast reads what the node said by the one table.
+    let batch = code_only(&read_crate_file("zikaron-send", "batch.rs").expect("读不出发送器 batch.rs"));
+    assert!(!batch.contains("SendFailed"), "发锚那一路不许再把节点的话压成 SEND_FAILED");
+    assert!(batch.contains("node::said_trouble(url.for_transport(), &e)"), "发锚那一路按节点说的话分派");
+    let sender: Vec<(&str, String)> = ["lib.rs", "node.rs", "agree.rs", "gate.rs", "keep.rs", "batch.rs", "sent.rs"]
+        .into_iter()
+        .map(|f| (f, code_only(&read_crate_file("zikaron-send", f).expect("读不出发送器源"))))
+        .collect();
     for k in [
         "NonceUsed", "AlreadyPending", "Underpriced", "GasTooLow", "ContractRefused", "RateLimited", "MethodMissing",
         "NodeAuth", "WrongChain", "NodeRefused", "NodeTls", "NodeTimeout", "AnswerTooLong", "AnswerNotJson",
     ] {
+        // The app says the sender's code (`fault::known_of_sent`) and dispatches none itself.
         let uses: Vec<String> = shipped()
             .into_iter()
             .filter(|(n, _)| n != "fault.rs")
             .filter(|(_, t)| code_only(t).contains(&format!("Known::{k}")))
             .map(|(n, _)| n)
             .collect();
-        assert_eq!(uses, vec!["chainx.rs".to_string()], "Known::{k} 只许由 chainx 那一处分派给出");
+        assert!(uses.is_empty(), "Known::{k} 只许由发送器那一处分派给出,应用里出现在 {uses:?}");
+        // In the sender, the one dispatch (`node::said_trouble`); `lib.rs` only defines the code and its family.
+        let given: Vec<&str> = sender.iter().filter(|(n, _)| *n != "lib.rs").filter(|(_, t)| t.contains(&format!("Code::{k}"))).map(|(n, _)| *n).collect();
+        assert_eq!(given, vec!["node.rs"], "Code::{k} 只许由 node::said_trouble 那一处分派给出");
     }
     // The node's answer is read in one place for the app and the command line (`rpc::ask_node`,
     // `rpc::read_answer`), and the refusal table is the shared one (`zikaron_anchor::said`), not a copy here.
+    let node = code_only(&read_crate_file("zikaron-send", "node.rs").expect("读不出发送器 node.rs"));
     let chainx = code_only(&read_src_file("chainx.rs").expect("读不出 chainx.rs"));
-    assert!(chainx.contains("rpc::ask_node("), "应用那一扇 https 端点经共用那一处问与读");
-    assert!(!chainx.contains("got.body") && !chainx.contains("member(\"result\")"), "应用不另读一份应答");
-    assert!(!chainx.contains("const MARKS"), "拒因表只一份,在共用层");
+    assert!(node.contains("rpc::ask_node("), "那一扇 https 端点经共用那一处问与读");
+    for (name, code) in [("node.rs", &node), ("chainx.rs", &chainx)] {
+        assert!(!code.contains("got.body") && !code.contains("member(\"result\")"), "{name}:不另读一份应答");
+        assert!(!code.contains("const MARKS"), "{name}:拒因表只一份,在共用层");
+    }
     // "Sent but failed on chain" is kept only for a receipt status other than 1.
     let window = code_only(&read_src_file("window.rs").expect("读不出 window.rs"));
     assert_eq!(window.matches("Known::SendFailed").count(), 1, "SEND_FAILED 只在收据失败那一处说");
@@ -3597,14 +3765,16 @@ fn what_the_node_said_reads_by_one_table_for_the_app_and_the_command_line() {
     assert_eq!(refused.which(), Some(Known::NodeRefused));
     assert!(refused.tail().contains("502"), "the status is in the refusal: {}", refused.tail());
     assert_eq!(said_fault(url, &rpc::shapeless(url)).which(), Some(Known::ChainShape));
-    assert_eq!(said_fault(url, &Trouble::Transport(rpc::NOT_JSON.into())).which(), Some(Known::AnswerNotJson));
+    assert_eq!(said_fault(url, &Trouble::Transport(rpc::Broke::NotJson)).which(), Some(Known::AnswerNotJson));
     // What sending does next, by the same members: rate limited retries the same node, the rest of the network
     // family moves on, a refusal about the call stops.
-    use app::chainx::{next_after, Layer, Next};
-    assert_eq!(next_after(&said_fault(url, &rpc::status(url, 429))), Next::Retry);
-    assert_eq!(next_after(&said_fault(url, &rpc::status(url, 502))), Next::NextEndpoint);
-    assert_eq!(next_after(&said_fault(url, &rpc::shapeless(url))), Next::NextEndpoint);
-    assert_eq!(next_after(&said_fault(url, &node("insufficient funds"))), Next::Stop);
+    // (The sender's rule, `zikaron_send::node::next_after`, on the same refusals.)
+    use app::chainx::Layer;
+    use zikaron_send::node::{next_after, said_trouble, Next};
+    assert_eq!(next_after(&said_trouble(url, &rpc::status(url, 429))), Next::Retry);
+    assert_eq!(next_after(&said_trouble(url, &rpc::status(url, 502))), Next::NextEndpoint);
+    assert_eq!(next_after(&said_trouble(url, &rpc::shapeless(url))), Next::NextEndpoint);
+    assert_eq!(next_after(&said_trouble(url, &node("insufficient funds"))), Next::Stop);
     // The four layer codes lead their sentences and read back as their layers; nothing else is a layer.
     for l in Layer::ALL {
         assert_eq!(Layer::of(&format!("{} · words", l.code())), Some(l));
@@ -3613,6 +3783,11 @@ fn what_the_node_said_reads_by_one_table_for_the_app_and_the_command_line() {
     // Every member here is one of the network family's seventeen (the proxy's leg, and a proxy asking for
     // credentials none given or those given refused, among them), or a refusal about the call.
     assert_eq!(Known::NETWORK.len(), 17);
+    // The sender's network family is this table's, member for member.
+    assert_eq!(zikaron_send::Code::NETWORK.len(), Known::NETWORK.len());
+    for c in zikaron_send::Code::NETWORK {
+        assert!(Known::NETWORK.contains(&app::fault::known_of_sent(c)), "{c:?}");
+    }
 }
 
 /// Passcodes allow letters and digits, case-sensitive; all-identical is refused for any passcode, and
@@ -3655,9 +3830,10 @@ fn every_legal_token_has_its_own_plain_sentence() {
     let scans = [
         R::ChainIdMismatch { declared: 1, served: "0x2".into() },
         R::NoEndpoint(1),
-        R::Unanswered { chain: 1, what: "x".into() },
+        R::Unanswered { chain: 1, asked: zikaron_anchor::scan::Asked::NotLogs },
+        R::Unanswered { chain: 1, asked: zikaron_anchor::scan::Asked::TooWide { span: 10, whole: 5000, asks: 64 } },
         R::TxNotItself("0x".into()),
-        R::Malformed("x".into()),
+        R::Malformed(zikaron_anchor::scan::Shape::Basis),
     ];
     let mut scan_keys: Vec<app::lang::Key> = Vec::new();
     for r in &scans {
@@ -3669,6 +3845,7 @@ fn every_legal_token_has_its_own_plain_sentence() {
         let f = app::fault::Fault::scan_refused(app::fault::Fault::scan_tail(r), std::slice::from_ref(r));
         assert_eq!(f.human(), app::lang::t(k));
         assert!(f.tail().starts_with(r.code()), "证据尾以拒因码起头");
+        assert!(!f.tail().chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)), "证据尾是机器形,不带哪一种话:{}", f.tail());
     }
 }
 
@@ -3955,7 +4132,7 @@ fn every_fetched_byte_goes_through_the_one_tls_client() {
     assert_eq!(app::fetchx::base_of("ftp://x.example/").err().and_then(|f| f.which()), Some(Known::RemoteNotHttps));
     assert_eq!(app::fetchx::base_of("https://x.example/k").expect("认得").at("manifest.json"), "https://x.example/k/manifest.json");
     let fetchx = code_only(&read_src_file("fetchx.rs").expect("读不出 fetchx.rs"));
-    assert!(fetchx.contains("chainx::Https::new("), "远取复用节点问答那一枚 TLS 客户端");
+    assert!(fetchx.contains("chainx::https("), "远取复用节点问答那一枚 TLS 客户端");
     // The app opens no connection and builds no TLS of its own: both live in the one transport.
     for (name, text) in shipped() {
         let t = code_only(&text);
@@ -4032,6 +4209,8 @@ fn the_solid_red_key_is_only_on_a_confirm_card() {
         "fn annotate_sheet(",
         "fn relicense_sheet(",
         "fn genesis_sheet(",
+        // Adopting an existing ledger at the wizard's step that creates one: "adopt in place".
+        "fn wizard_adopt_sheet(",
         "fn id_sheets(",
         "fn bk_sheets(",
         // A fetch found this home at odds with the fetched ledger: "fetch and replace".
@@ -4110,8 +4289,10 @@ fn every_action_answers_whether_it_is_an_exit() {
 /// gate makes after reading the chain, so the compiler rules out a bypass.
 #[test]
 fn every_exit_effect_takes_the_gates_pass() {
-    let effects: [(&str, &str); 5] = [
-        ("sign.rs", "pub fn anchor_send(\n    _pass: &crate::exitgate::Pass,"),
+    // A batch's broadcast is the sender's, and it takes the gate's pass too.
+    let batch = code_only(&read_crate_file("zikaron-send", "batch.rs").expect("读不出发送器 batch.rs"));
+    assert!(batch.contains("pub fn cast(_pass: &gate::Pass,"), "batch.rs:出口那一处效果不收闸的令牌");
+    let effects: [(&str, &str); 4] = [
         ("kitx.rs", "pub fn export(\n    _pass: &crate::exitgate::Pass,"),
         ("badgex.rs", "pub fn export(_pass: &crate::exitgate::Pass,"),
         ("mirror.rs", "pub fn export(_pass: &crate::exitgate::Pass,"),
@@ -4121,15 +4302,64 @@ fn every_exit_effect_takes_the_gates_pass() {
         let code = code_only(&read_src_file(file).unwrap_or_else(|_| panic!("读不出 {file}")));
         assert!(code.contains(sig), "{file}:出口那一处效果不收闸的令牌");
     }
-    // The pass is built only by the gate: its fields are private and its one struct literal is in `pass`.
-    let gate = code_only(&read_src_file("exitgate.rs").expect("exitgate"));
+    // The pass is built only by the gate (the sender's): its fields are private and its one struct literal is in
+    // `pass`; the app re-exports it and builds none.
+    let gate = code_only(&read_crate_file("zikaron-send", "gate.rs").expect("读不出发送器 gate.rs"));
     assert!(gate.contains("pub struct Pass {\n    reading: Reading,\n    root: PathBuf,\n}"), "令牌的成员须是私有的");
     assert_eq!(gate.matches("Pass { reading").count(), 1, "令牌只在闸里造一处");
-    for (name, text) in shipped().into_iter().filter(|(n, _)| n != "exitgate.rs") {
+    for (name, text) in shipped() {
         assert!(!code_only(&text).contains("Pass { reading"), "{name} 自造了令牌");
     }
-    let q = code_only(&read_src_file("action/queue.rs").expect("queue"));
-    assert!(q.find("funds_gate(&b, &secret, fees)").unwrap_or(usize::MAX) < q.find("crate::exitgate::pass(&ask)").unwrap_or(0), "发交易:余额那一判在出口闸之前");
+    for f in ["lib.rs", "node.rs", "agree.rs", "keep.rs", "batch.rs", "sent.rs"] {
+        assert!(!code_only(&read_crate_file("zikaron-send", f).expect("发送器源")).contains("Pass { reading"), "{f} 自造了令牌");
+    }
+    // A batch is sent in this order: asked whether the chain holds it, the balance, the exit gate, the signature,
+    // landed as in flight, then the broadcast.
+    let anchor = &batch[batch.find("pub fn anchor<").expect("发送那一口")..];
+    let anchor = &anchor[..anchor.find("\n}\n").expect("发送那一口的尾")];
+    let at = |needle: &str| anchor.find(needle).unwrap_or_else(|| panic!("发送那一口里没有 {needle}"));
+    let order = [at("on_chain(&b.urls"), at("funds_gate(&b, signer, fees"), at("gate::pass(&ask, end)"), at("sign_new(signer, &b, fees)"), at("Step::Submitted {"), at("cast(&pass,")];
+    assert!(order.windows(2).all(|w| w[0] < w[1]), "发交易:链上已有、余额、出口闸、签名、落在途、广播,依次:{order:?}");
+}
+
+/// The desktop reaches the sender (`zikaron_send`) only through its wiring (`chainx`, `sendx`, `exitgate`, `queue`,
+/// `auditx`, the queue actions, `sign`'s signing port, `task`'s re-export, `fault`'s table), and every way in that
+/// can open a node says this desktop's words for the connection layers first (`chainx::speak`), so no refusal is
+/// said without them.
+#[test]
+fn the_desktop_says_the_connection_layers_before_it_reaches_the_sender() {
+    let wiring = ["chainx.rs", "sendx.rs", "exitgate.rs", "queue.rs", "auditx.rs", "action.rs", "sign.rs", "task.rs", "fault.rs", "lib.rs"];
+    for (name, text) in shipped() {
+        let code = code_only(&text);
+        if code.contains("zikaron_send::") {
+            assert!(wiring.contains(&name.as_str()), "{name} reaches the sender outside its wiring");
+        }
+    }
+    let chainx = code_only(&read_src_file("chainx.rs").expect("chainx"));
+    for f in ["endpoint_at", "https", "ask", "ask_call", "tx_known", "tx_as_held", "head_block", "head_time", "serving", "balance", "fee_reading"] {
+        let body = body_of(&chainx, &format!("pub fn {f}("));
+        assert!(!body.is_empty(), "chainx::{f}");
+        assert!(body.contains("speak();"), "chainx::{f} says the layers first");
+    }
+    let sendx = code_only(&read_src_file("sendx.rs").expect("sendx"));
+    for f in ["pub fn open(", "pub fn of("] {
+        let at = sendx.find(f).unwrap_or_else(|| panic!("Desk {f}"));
+        let body = &sendx[at..at + sendx[at..].find("\n    }\n").expect("its end")];
+        assert!(body.contains("crate::chainx::speak();"), "Desk {f} says the layers first");
+    }
+    let auditx = code_only(&read_src_file("auditx.rs").expect("auditx"));
+    for f in ["pub fn scan_agreed_bytes_with(", "pub fn scan_first("] {
+        assert!(body_of(&auditx, f).contains("crate::chainx::speak();"), "auditx {f} says the layers first");
+    }
+    let action = code_only(&read_src_file("action.rs").expect("action"));
+    let at = action.find("pub(super) fn estimate_on(").expect("the estimate");
+    let estimate = &action[at..at + action[at..].find("\n}\n").expect("its end")];
+    assert!(estimate.contains("crate::chainx::speak();"), "the estimate says the layers first");
+    // The sender opens no node with words of its own: without the end's words, a layer's failure is the node and
+    // the system's detail.
+    let node = code_only(&read_crate_file("zikaron-send", "node.rs").expect("node.rs"));
+    assert_eq!(node.matches("LAYER_WORDS.set(").count(), 1, "the words are set in one place");
+    assert!(!node.contains("lang::"), "the sender holds no sentence");
 }
 
 /// The put-on-chain sheet closes when its broadcast lands, judged by the landing, never by the clock.
@@ -5139,3 +5369,34 @@ mod door_serial;
 mod mirror_adopt;
 #[path = "checks_more/wizard_way_out.rs"]
 mod wizard_way_out;
+#[path = "checks_more/send_r23.rs"]
+mod send_r23;
+#[path = "checks_more/walks_live.rs"]
+mod walks_live;
+
+/// A broken way to a node is said by the desktop's own table (both languages carry the kind), followed by its
+/// evidence in machine form: never a sentence made below the desktop, and the node named once.
+#[test]
+fn a_broken_way_is_said_in_the_desktops_words_with_machine_evidence() {
+    use zikaron_anchor::rpc::{Broke, Trouble};
+    let url = "https://node.example";
+    let words = |k: app::lang::Key| app::lang::TABLE.iter().find(|(key, _, _)| *key == k).map(|(_, zh, en)| (*zh, *en)).expect("a row");
+    let (wire_zh, wire_en) = words(app::lang::Key::Tail090);
+    let (node_zh, node_en) = words(app::lang::Key::Tail089);
+    assert!(!wire_zh.is_empty() && !wire_en.is_empty() && !node_zh.is_empty() && !node_en.is_empty());
+    let cjk = |x: &str| x.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c));
+    for (b, kind) in [
+        (Broke::Late { node: url.into(), deadline: std::time::Duration::from_secs(5) }, (wire_zh, wire_en)),
+        (Broke::Closed { node: url.into() }, (wire_zh, wire_en)),
+        (Broke::NotJson, (wire_zh, wire_en)),
+        (Broke::Status { node: url.into(), code: 503 }, (node_zh, node_en)),
+    ] {
+        let said = app::chainx::trouble_said(url, &Trouble::Transport(b.clone()));
+        let evidence = b.evidence();
+        assert!(said.ends_with(&evidence), "{said}");
+        assert!(!cjk(&evidence), "{evidence}");
+        let head = &said[..said.len() - evidence.len()];
+        assert!(head.contains(kind.0) || head.contains(kind.1), "the kind in the table's words: {said}");
+        assert_eq!(said.matches(url).count(), 1, "the node named once: {said}");
+    }
+}

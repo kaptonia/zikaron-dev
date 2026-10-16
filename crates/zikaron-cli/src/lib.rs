@@ -43,5 +43,7 @@ pub mod kitout;
 pub mod ledger;
 pub mod out;
 pub mod sealed;
-pub mod sent;
+pub mod sealedsend;
+/// What the direct `anchor` sent, kept so a rerun asks about it first: the sender's record (`zikaron_send::sent`).
+pub use zikaron_send::sent;
 pub mod verbs;

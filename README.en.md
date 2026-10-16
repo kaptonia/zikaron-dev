@@ -13,7 +13,7 @@ works and grants rights, and the user, who holds grants and checks what they rec
 
 The command line `zikaron` offers the same ledger actions as the window, one verb per action. It works on plain
 ledger folders and on the ledger mirrors and record kits the app exports; the local data the app keeps sealed it
-reads and writes only while "Command line writes alone" is on in the app's Settings > Local data, with the credential
+reads and writes only while "With a credential" is on in the app's Settings > Command line, with the credential
 that switch issues. With `--home`, writing and putting on chain are done by the running desktop app in its own data folder,
 and the entries show in its window at once.
 
@@ -84,19 +84,19 @@ installer. The app is signed with a self-signed certificate (Kaptonia) and is no
 Change the paths to wherever you downloaded the files.
 
 macOS 11 or later is required. The command line is `ZIKARON.app/Contents/MacOS/zikaron`; the pkg also installs a
-copy at `/usr/local/bin/zikaron`. After installing from the dmg, drag the app into Applications first, then turn on "Enable command line" in the app's Settings > Local data (it places a link in `/usr/local/bin`, with the system's administrator password dialog when needed) to type
+copy at `/usr/local/bin/zikaron`. After installing from the dmg, drag the app into Applications first, then turn on "Enable the zikaron command" in the app's Settings > Command line (it places a link in `/usr/local/bin`, with the system's administrator password dialog when needed) to type
 `zikaron` in a terminal.
 
 **Linux.** On x86_64, use the `.deb` (`sudo apt install ./zikaron-desk_0.1.3_amd64.deb`, which installs the window
 program `zikaron-desk` and the command line `zikaron` in `/usr/bin`) or the AppImage (make it executable with `chmod +x` and run it;
-it launches the window program only, the command line being inside but not exposed, and "Enable command line" is not available in it; without FUSE, run it with
+it launches the window program only, the command line being inside but not exposed, and "Enable the zikaron command" is not available in it; without FUSE, run it with
 `--appimage-extract-and-run`). Both need glibc 2.31 or later; the packages are not signed, so check them with
 `sha256sum <file>` first. On aarch64 Linux, `packaging/linux/build.sh` makes only the `.deb` (an AppImage runtime is pinned for x86_64 only); other architectures
 build from source only, as described below.
 The system file dialog goes through the desktop portal, so `xdg-desktop-portal` and a backend such as `xdg-desktop-portal-gtk`
 should be installed.
 
-**Windows.** On Windows 10 or 11 (x86_64) use `ZIKARON-0.1.3-windows-x86_64.zip`: check the SHA-256 first in PowerShell with `Get-FileHash <file> -Algorithm SHA256`, unpack it into any folder and double-click `zikaron-desk.exe`; the command line is `zikaron.exe` in the same folder (run it in a terminal; double-clicked, it flashes and closes). Nothing is installed and no runtime is needed. The programs are not signed: on first start Windows says "Windows protected your PC"; click "More info", then "Run anyway". On Windows 11 with Smart App Control on, unsigned programs are blocked outright and cannot be allowed one by one; turn it off first in Windows Security › App & browser control › Smart App Control settings. Machine data lives in `%LOCALAPPDATA%\ZIKARON\` by default; deleting the unpacked folder does not delete it. To type `zikaron` in any terminal, turn on "Enable command line" in the app's Settings > Local data, which adds the command line's folder to this user's `PATH`.
+**Windows.** On Windows 10 or 11 (x86_64) use `ZIKARON-0.1.3-windows-x86_64.zip`: check the SHA-256 first in PowerShell with `Get-FileHash <file> -Algorithm SHA256`, unpack it into any folder and double-click `zikaron-desk.exe`; the command line is `zikaron.exe` in the same folder (run it in a terminal; double-clicked, it flashes and closes). Nothing is installed and no runtime is needed. The programs are not signed: on first start Windows says "Windows protected your PC"; click "More info", then "Run anyway". On Windows 11 with Smart App Control on, unsigned programs are blocked outright and cannot be allowed one by one; turn it off first in Windows Security › App & browser control › Smart App Control settings. Machine data lives in `%LOCALAPPDATA%\ZIKARON\` by default; deleting the unpacked folder does not delete it. To type `zikaron` in any terminal, turn on "Enable the zikaron command" in the app's Settings > Command line, which adds the command line's folder to this user's `PATH`.
 
 The user manual is in [`docs/manual/`](docs/manual/) ([English](docs/manual/MANUAL-en.md),
 [中文](docs/manual/MANUAL-zh.md)).
@@ -157,7 +157,7 @@ the folder `dist/ZIKARON-<version>-windows-x86_64/` only, with no zip and no che
 | `crates/zikaron-cli` | The `zikaron` command line |
 | `crates/zikaron-glue` | Reading and writing disclosure kits and grant files, ledger mirrors, and conventions the app and the command line share |
 | `crates/zikaron-seal` | The sealed layer the app and the command line share: the envelope every local file is sealed in, the key vault, a data folder's sealed ledger, the command line's credential |
-| `crates/zikaron-os` | What differs by operating system: system randomness, owner-only files, syncing to disk, a rename that replaces, system proxy settings, where the machine directory is, "Enable command line", the local channel between the app and the command line |
+| `crates/zikaron-os` | What differs by operating system: system randomness, owner-only files, syncing to disk, a rename that replaces, system proxy settings, where the machine directory is, "Enable the zikaron command", the local channel between the app and the command line |
 | `crates/zikaron-pack` | Packaging pieces: the third-party notices generator, the steps that keep the building machine out of a package, building and laying out the Windows package, checking the AppImage runtime |
 | `crates/zikaron-ui` | The widget library and skin |
 | `crates/app` | The desktop app |

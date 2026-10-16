@@ -109,15 +109,15 @@ impl Secret {
 
     /// The signing exit for the anchoring transaction.
     ///
-    /// The anchoring crate's `send::anchor` takes the thirty-two bytes (Ethereum signing lives in that crate),
+    /// The anchoring crate's `send::sign_at` takes the thirty-two bytes (Ethereum signing lives in that crate),
     /// so this lends them for exactly that call: the caller cannot keep the reference, and the self-check
-    /// suite counts exactly one caller, whose next statement is `send::anchor`. It leads to no file; the only
+    /// suite counts exactly one caller, whose next statement is `send::sign_at`. It leads to no file; the only
     /// path to disk is `ciphered`.
     ///
-    /// Visible only to `sign`, and the closure runs the send itself. A `pub(crate)` version could be called
-    /// as `with_tx_key(|k| *k)`, copying the bytes out (e.g. into a background thread) and letting any file
-    /// call the core's signing primitive directly. With `pub(in crate::sign)`, the only caller
-    /// (`sign::anchor_send`) runs `send::anchor` entirely inside the closure, so the loan is exactly that send.
+    /// Visible only to `sign`, and the closure signs itself. A `pub(crate)` version could be called as
+    /// `with_tx_key(|k| *k)`, copying the bytes out (e.g. into a background thread) and letting any file call
+    /// the core's signing primitive directly. With `pub(in crate::sign)`, the only caller (the sender's signing
+    /// port in `sign`) runs `send::sign_at` entirely inside the closure, so the loan is exactly that signature.
     pub(in crate::sign) fn with_tx_key<R>(&self, f: impl FnOnce(&[u8; 32]) -> R) -> R {
         lent();
         f(&self.0)

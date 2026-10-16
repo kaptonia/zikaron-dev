@@ -169,6 +169,14 @@ pub enum Reason {
     /// on another side, the desktop or another place): nothing is sent; `names` are those hashes, `tx` and
     /// `blockNumber` the earliest such anchor.
     OnChain,
+    /// `anchor` sending a home's queue, with the credential (`--ledger`) or through the desktop (`--home`): refused
+    /// before anything went out (`token` the code, spelled as the desktop's closed table spells it; `detail` its
+    /// evidence).
+    SendRefused,
+    /// Writing a home with the credential: the home is read-only, under its read-only mark (not fetched, or newer
+    /// entries elsewhere) or its ledger's own entries break its chain (`token` the code as the desktop spells it,
+    /// `detail` its evidence); nothing was written.
+    ReadOnly,
 }
 
 impl Reason {
@@ -213,10 +221,12 @@ impl Reason {
             Reason::HandedOff => "E_HANDED_OFF",
             Reason::Handoff => "E_HANDOFF",
             Reason::OnChain => "E_ON_CHAIN",
+            Reason::SendRefused => "E_SEND_REFUSED",
+            Reason::ReadOnly => "E_READ_ONLY",
         }
     }
 
-    pub const ALL: [Reason; 39] = [
+    pub const ALL: [Reason; 41] = [
         Reason::Args,
         Reason::Unreadable,
         Reason::Key,
@@ -256,6 +266,8 @@ impl Reason {
         Reason::HandedOff,
         Reason::Handoff,
         Reason::OnChain,
+        Reason::SendRefused,
+        Reason::ReadOnly,
     ];
 }
 

@@ -151,7 +151,7 @@ fn stuck_at(base: u64, cap: u64, left: Vec<String>) -> Stuck {
         input: vec![0xab],
         sent: fees(10),
         offer: Offer::Resend { fees: fees(cap), base_now: base * GWEI },
-        left,
+        left: left.into_iter().map(zikaron_send::Why::Text).collect(),
     }
 }
 

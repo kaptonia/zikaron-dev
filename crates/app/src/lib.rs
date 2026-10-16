@@ -77,6 +77,7 @@ pub mod probe;
 pub mod proxycells;
 pub mod qr;
 pub mod queue;
+pub mod sendx;
 pub mod readerx;
 pub mod readnets;
 pub mod recordsx;

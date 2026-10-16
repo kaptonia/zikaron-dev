@@ -281,20 +281,54 @@ fn a_node_address_is_said_without_its_key() {
     assert_eq!(NodeAddr::new("https://n.example/v3/aaaa").said(), NodeAddr::new("https://n.example/v3/bbbb").said(), "only the key differs: said alike");
 }
 
-/// The raw node address (which may carry a key) never leaves the crate: the field is private, and the raw
-/// form, the place key (it includes the path) and the endpoint spelling are `pub(crate)`.
+/// The raw node address (which may carry a key) reaches no sentence: the field is private, what is said of it is
+/// its safe form, and the written form (`for_transport`, the place key `place`, the endpoint spelling `spec`) is
+/// read in a closed set of places only: the sender's transport (`node`, `agree`, `batch`), and on this side the
+/// person's own settings and node editor and the node lists kept as written (`archive`, `window/check`,
+/// `action/audit`, `deploy`). The type is the sender's (`zikaron_send::node`), so the closed set is read across
+/// both crates and the door.
 #[test]
 fn a_node_address_gives_its_written_form_to_nobody_outside() {
-    let code = super::code_only(&super::read_src_file("chainx.rs").expect("chainx.rs"));
-    assert!(code.contains("pub struct NodeAddr(String);"), "the written form is a private field");
-    for crate_only in ["pub(crate) fn for_transport(&self) -> &str", "pub(crate) fn place(&self) -> String", "pub(crate) fn spec(&self) -> String"] {
-        assert!(code.contains(crate_only), "{crate_only}");
-    }
-    let at = code.find("impl NodeAddr {").expect("impl");
-    let body = &code[at..at + code[at..].find("\n}\n").expect("end")];
+    let read = |f: &str| super::code_only(&std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../zikaron-send/src").join(f)).expect("sender source"));
+    let node = read("node.rs");
+    assert!(node.contains("pub struct NodeAddr(String);"), "the written form is a private field");
+    let at = node.find("impl NodeAddr {").expect("impl");
+    let body = &node[at..at + node[at..].find("\n}\n").expect("end")];
     let public: Vec<&str> = body.lines().map(str::trim).filter(|l| l.starts_with("pub fn")).collect();
-    assert_eq!(public, vec!["pub fn new(written: impl Into<String>) -> NodeAddr {", "pub fn said(&self) -> String {"], "only making one and saying it are public");
-    assert!(code.contains("pub url: NodeAddr,"), "an endpoint's address is the type, not a string");
+    assert_eq!(
+        public,
+        vec!["pub fn new(written: impl Into<String>) -> NodeAddr {", "pub fn said(&self) -> String {", "pub fn place(&self) -> String {", "pub fn for_transport(&self) -> &str {"],
+        "making one, saying it, and the two written readings"
+    );
+    assert!(node.contains("pub url: NodeAddr,"), "an endpoint's address is the type, not a string");
+    let readers = [".for_transport()", ".spec()", ".place()"];
+    let sender_ok = ["node.rs", "agree.rs", "batch.rs"];
+    for f in ["lib.rs", "node.rs", "agree.rs", "gate.rs", "keep.rs", "batch.rs", "sent.rs"] {
+        let code = read(f);
+        if readers.iter().any(|r| code.contains(r)) {
+            assert!(sender_ok.contains(&f), "{f} reads a node's written form");
+        }
+    }
+    let app_ok = ["archive.rs", "check.rs", "audit.rs", "deploy.rs"];
+    let mut stack = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/app-drive/src")];
+    while let Some(dir) = stack.pop() {
+        for e in std::fs::read_dir(&dir).expect("a source folder").flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if p.extension().and_then(|x| x.to_str()) != Some("rs") {
+                continue;
+            }
+            let code = super::code_only(&std::fs::read_to_string(&p).expect("a source file"));
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+            let reads = code.contains("url.for_transport()") || code.contains(".spec()") || code.contains("url.place()");
+            if reads {
+                assert!(app_ok.contains(&name.as_str()) && !p.to_string_lossy().contains("app-drive"), "{} reads a node's written form", p.display());
+            }
+        }
+    }
 }
 
 /// Every keyed document kind gets an on-disk name that differs from its logical name and contains no id; other

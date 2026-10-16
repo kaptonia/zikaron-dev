@@ -7,7 +7,8 @@
 //! holding it is refused by name, `E_HOME_HELD`); the home's label says whose it is, the identity register which
 //! key signs, the vault gives that key; the entry is written into the sealed ledger by the sealed layer's
 //! `Ledger::append` after the same write gate as every other entry, and queued for anchoring in the home's sealed
-//! queue (`zikaron_seal::queue`). The command line's own `anchor` and contract calls never come here.
+//! queue (`zikaron_seal::queue`). `anchor` with `--ledger` sends that queue from here, through the one sender
+//! (`sealedsend`); the command line's direct `anchor` (`--key`, `--endpoint`) never comes here.
 //!
 //! A home is sealed when the ledger's home has a label (`envelope::LABEL_FILE` in its settings room).
 
@@ -29,6 +30,7 @@ pub fn is_home(ledger: &str) -> bool {
 pub struct Opened {
     home: PathBuf,
     machine: PathBuf,
+    account: String,
     ledger: zikaron_seal::ledger::Ledger,
     local: LocalKey,
     names: NameKey,
@@ -36,8 +38,13 @@ pub struct Opened {
     pub key: [u8; 32],
     pub author: String,
     pub items: Vec<Vec<u8>>,
-    _lock: zikaron_os::LockFile,
+    lock: Option<zikaron_os::LockFile>,
 }
+
+/// How long a send waits to take the home's writer lock back to settle its receipt ([`Opened::take_back`]): the
+/// desktop holds it for one write, or the first two stages of a send of its own; and how often it asks meanwhile.
+pub const TAKE_BACK_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+pub const TAKE_BACK_STEP: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// The sealed layer's refusal as this command line's answer: the credential's three refusals, the writer lock,
 /// another machine's mark and a handed-off ledger by their own reasons; anything else as unreadable, with the code
@@ -58,7 +65,7 @@ pub fn refused(t: &Trouble) -> Answer {
 
 /// The sealed layer's code as one word in capitals (`CredentialExpired` → `CREDENTIAL_EXPIRED`), the form the
 /// desktop's codes are spelled in.
-fn word(c: Code) -> String {
+pub fn word(c: Code) -> String {
     let mut out = String::new();
     for (i, ch) in format!("{c:?}").chars().enumerate() {
         if ch.is_ascii_uppercase() && i > 0 {
@@ -146,7 +153,7 @@ pub fn open(ledger: &str, now: u64) -> Result<Opened, Trouble> {
     }
     let ledger = zikaron_seal::ledger::Ledger::open(&ledger_dir)?;
     let items = ledger.pile(&keys(&local, &names, &label.number))?.items;
-    Ok(Opened { home, machine, ledger, local, names, number: label.number, key, author, items, _lock: lock })
+    Ok(Opened { home, machine, account, ledger, local, names, number: label.number, key, author, items, lock: Some(lock) })
 }
 
 /// A sealed home opened for reading: its entries as they open, and what reads its other sealed files (its
@@ -179,30 +186,40 @@ pub fn read(ledger: &str, now: u64) -> Result<Reading, Trouble> {
     Ok(Reading { home, machine, local, names, number: label.number, items })
 }
 
+/// One sealed file's plain bytes (`None` when it is not there): at `dir`/`rel`, owned by `owner`.
+fn sealed_at(local: &LocalKey, names: &NameKey, dir: &Path, rel: &str, doc: Doc, owner: Owner) -> Result<Option<Vec<u8>>, Trouble> {
+    let at = dir.join(rel);
+    let raw = match std::fs::read(&at) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(Trouble::io(&e, &at.display().to_string())),
+    };
+    let ex = Expect { owner: Some(owner), doc, rel: Some(rel.to_string()) };
+    env::open_with(local, &ex, &raw, rel, Some(names)).map(Some)
+}
+
+/// Where the home's settings say its anchors are (`zikaron_seal::ground`); a home without settings has none set.
+fn ground_of(local: &LocalKey, names: &NameKey, home: &Path, number: &str) -> Result<zikaron_seal::ground::Ground, Trouble> {
+    let rel = format!("{}/{}", env::SETTINGS_DIR, zikaron_seal::ground::SETTINGS_FILE);
+    match sealed_at(local, names, home, &rel, Doc::Settings, Owner::Home(number.to_string()))? {
+        None => Ok(zikaron_seal::ground::Ground::default()),
+        Some(plain) => {
+            let v = zikaron::json::parse(&plain).map_err(|t| Trouble::new(Code::SettingsShape, format!("{rel}: {t:?}")))?;
+            Ok(zikaron_seal::ground::of_settings(&v))
+        }
+    }
+}
+
 impl Reading {
     /// One sealed file's plain bytes (`None` when it is not there): at `dir`/`rel`, owned by `owner`.
     fn sealed(&self, dir: &Path, rel: &str, doc: Doc, owner: Owner) -> Result<Option<Vec<u8>>, Trouble> {
-        let at = dir.join(rel);
-        let raw = match std::fs::read(&at) {
-            Ok(b) => b,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(Trouble::io(&e, &at.display().to_string())),
-        };
-        let ex = Expect { owner: Some(owner), doc, rel: Some(rel.to_string()) };
-        env::open_with(&self.local, &ex, &raw, rel, Some(&self.names)).map(Some)
+        sealed_at(&self.local, &self.names, dir, rel, doc, owner)
     }
 
     /// Where the home's settings say its anchors are (`zikaron_seal::ground`); a home without settings has none
     /// set.
     pub fn ground(&self) -> Result<zikaron_seal::ground::Ground, Trouble> {
-        let rel = format!("{}/{}", env::SETTINGS_DIR, zikaron_seal::ground::SETTINGS_FILE);
-        match self.sealed(&self.home, &rel, Doc::Settings, Owner::Home(self.number.clone()))? {
-            None => Ok(zikaron_seal::ground::Ground::default()),
-            Some(plain) => {
-                let v = zikaron::json::parse(&plain).map_err(|t| Trouble::new(Code::SettingsShape, format!("{rel}: {t:?}")))?;
-                Ok(zikaron_seal::ground::of_settings(&v))
-            }
-        }
+        ground_of(&self.local, &self.names, &self.home, &self.number)
     }
 
     /// The terms document kept when the grant `grant` (its id, `0x` and lowercase) was signed, as its path in a
@@ -299,22 +316,89 @@ impl Opened {
 
     /// Queue `id` in the home's sealed queue: read, push, write back whole (the lock is held).
     fn queue(&self, id: &str, now: u64) -> Result<(), Trouble> {
+        let mut q = self.read_queue()?;
+        q.push(id, now);
+        self.write_queue(&q)
+    }
+
+    /// The home's sealed queue as its file holds it (no file: empty).
+    pub fn read_queue(&self) -> Result<zikaron_seal::queue::Queue, Trouble> {
         use zikaron_seal::queue::{Queue, FILE};
         let rel = format!("{}/{FILE}", env::SETTINGS_DIR);
-        let dir = self.home.join(env::SETTINGS_DIR);
-        let owner = Owner::Home(self.number.clone());
-        let mut q = match std::fs::read(dir.join(FILE)) {
-            Ok(raw) => {
-                let ex = Expect { owner: Some(owner.clone()), doc: Doc::Queue, rel: Some(rel.clone()) };
-                let plain = env::open_with(&self.local, &ex, &raw, &rel, Some(&self.names))?;
-                Queue::parse(&plain).map_err(|w| Trouble::new(Code::QueueShape, format!("{rel}: {w:?}")))?
+        match sealed_at(&self.local, &self.names, &self.home, &rel, Doc::Queue, Owner::Home(self.number.clone()))? {
+            Some(plain) => Queue::parse(&plain).map_err(|w| Trouble::new(Code::QueueShape, format!("{rel}: {w:?}"))),
+            None => Ok(Queue::default()),
+        }
+    }
+
+    /// Write the home's sealed queue whole, sealed as the desktop seals it.
+    pub fn write_queue(&self, q: &zikaron_seal::queue::Queue) -> Result<(), Trouble> {
+        use zikaron_seal::queue::FILE;
+        let rel = format!("{}/{FILE}", env::SETTINGS_DIR);
+        let sealed = env::seal_checked(&self.local, &Ident { owner: Owner::Home(self.number.clone()), doc: Doc::Queue, logical: rel }, &q.to_bytes())?;
+        zikaron_seal::land::put_at(&self.home.join(env::SETTINGS_DIR), FILE, &sealed)
+    }
+
+    /// The home's ledger entries as they open now (a send reads them again under its lock: the desktop may have
+    /// written between).
+    pub fn pile(&self) -> Result<Vec<Vec<u8>>, Trouble> {
+        Ok(self.ledger.pile(&keys(&self.local, &self.names, &self.number))?.items)
+    }
+
+    /// Where the home's settings say its anchors are (`zikaron_seal::ground`).
+    pub fn ground(&self) -> Result<zikaron_seal::ground::Ground, Trouble> {
+        ground_of(&self.local, &self.names, &self.home, &self.number)
+    }
+
+    /// What this machine's sealed settings say about the command line (`zikaron_seal::machine`): how its sending
+    /// is handled, the proxy, writing alone.
+    pub fn machine_settings(&self) -> Result<zikaron_seal::machine::Cli, Trouble> {
+        zikaron_seal::machine::read(&self.machine, &self.account, &self.local, &self.names)
+    }
+
+    /// The home's read-only mark (`zikaron_seal::unfetched`; none: `None`).
+    pub fn mark(&self) -> Result<Option<zikaron_seal::unfetched::State>, Trouble> {
+        zikaron_seal::unfetched::read(&self.home, &self.local, &self.names, &self.number)
+    }
+
+    /// Place the home's read-only mark, as the desktop places it.
+    pub fn place_mark(&self, s: zikaron_seal::unfetched::State) -> Result<(), Trouble> {
+        zikaron_seal::unfetched::write(&self.home, &self.local, &self.number, s)
+    }
+
+    /// This user's machine folder.
+    pub fn machine(&self) -> &Path {
+        &self.machine
+    }
+
+    /// The home's folder.
+    pub fn home(&self) -> &Path {
+        &self.home
+    }
+
+    /// Let the home's writer lock go while a send waits for its receipt (holding none, so the desktop may write and
+    /// send the rest of the queue meanwhile).
+    pub fn let_go(&mut self) {
+        self.lock = None;
+    }
+
+    /// Take the home's writer lock back to settle a send's receipt, asking again while the desktop holds it, for
+    /// [`TAKE_BACK_WAIT`] at most (then refused by name, `HomeHeld`: nothing is settled, and the batch stays in
+    /// flight for whichever sender asks next); another machine's mark is refused as at the opening.
+    pub fn take_back(&mut self) -> Result<(), Trouble> {
+        if self.lock.is_some() {
+            return Ok(());
+        }
+        let until = std::time::Instant::now() + TAKE_BACK_WAIT;
+        loop {
+            match take_lock(&self.home, &self.machine) {
+                Ok(l) => {
+                    self.lock = Some(l);
+                    return Ok(());
+                }
+                Err(t) if t.code == Code::HomeHeld && std::time::Instant::now() < until => std::thread::sleep(TAKE_BACK_STEP),
+                Err(t) => return Err(t),
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Queue::default(),
-            Err(e) => return Err(Trouble::io(&e, &dir.join(FILE).display().to_string())),
-        };
-        q.push(id, now);
-        let plain = q.to_bytes();
-        let sealed = env::seal_checked(&self.local, &Ident { owner, doc: Doc::Queue, logical: rel }, &plain)?;
-        zikaron_seal::land::put_at(&dir, FILE, &sealed)
+        }
     }
 }

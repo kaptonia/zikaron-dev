@@ -21,6 +21,9 @@ zikaron-os = { path = "../zikaron-os" }
 # The sealed layer, one implementation with the desktop: writing a home the desktop keeps sealed, with the
 # command line's credential (`sealed`).
 zikaron-seal = { path = "../zikaron-seal" }
+# The sender, one for every road that puts anchors on chain: the direct `anchor` keeps its record of what it sent
+# there (`sent`).
+zikaron-send = { path = "../zikaron-send" }
 
 [[bin]]
 name = "zikaron"

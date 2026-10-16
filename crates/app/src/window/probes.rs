@@ -729,6 +729,56 @@ pub fn probe_ledger_set_up(ctx: &egui::Context, shell: Shell, width: f32, height
     (win.shell, true, step)
 }
 
+/// The first-run wizard at "create the ledger" on a place with no ledger: its "adopt existing ledger folder" key
+/// pressed where it is drawn; in the sheet that opens, `dir` stands as the folder chosen (where the folder dialog's
+/// answer lands: the dialog itself is the system's, not drawn here) and "adopt in place" pressed where it is drawn.
+pub fn probe_wizard_adopt(ctx: &egui::Context, shell: Shell, dir: &str, width: f32, height: f32) -> (Shell, WizardAdopt) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Home, role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    win.wizard_open(crate::nav::Step::Genesis);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    // Frames with these events, then eight without; the last one's output.
+    let mut run = |win: &mut Win, events: Vec<Vec<egui::Event>>| -> egui::FullOutput {
+        let mut out = None;
+        for e in events.into_iter().chain(std::iter::repeat_n(Vec::new(), 8)) {
+            clock += 0.1;
+            let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events: e, ..Default::default() };
+            out = Some(ctx.run(input, |c| win.draw(c)));
+        }
+        out.expect("a frame")
+    };
+    let settle = |win: &mut Win, run: &mut dyn FnMut(&mut Win, Vec<Vec<egui::Event>>) -> egui::FullOutput| run(win, Vec::new());
+    // Press the text `word` where it is drawn (the topmost of its kind); whether it was drawn.
+    let press = |win: &mut Win, run: &mut dyn FnMut(&mut Win, Vec<Vec<egui::Event>>) -> egui::FullOutput, out: &egui::FullOutput, word: &str| -> bool {
+        let Some(at) = texts_of(out).iter().rev().find(|d| d.text == word).map(|d| d.rect.center()) else { return false };
+        let click = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(win, vec![vec![egui::Event::PointerMoved(at)], vec![click(true), click(false)], vec![egui::Event::PointerGone]]);
+        true
+    };
+    let mut reading = WizardAdopt::default();
+    let out = settle(&mut win, &mut run);
+    reading.key_drawn = press(&mut win, &mut run, &out, t(Key::AdoptGroup));
+    let out = settle(&mut win, &mut run);
+    reading.sheet_drawn = win.ux.confirm_adopt && texts_of(&out).iter().any(|d| d.text == t(Key::WizAdoptNote));
+    win.ux.wiz_adopt = dir.to_string();
+    let out = settle(&mut win, &mut run);
+    let told = win.shell.faults.len();
+    reading.adopt_pressed = press(&mut win, &mut run, &out, t(Key::DoAdopt));
+    let out = settle(&mut win, &mut run);
+    reading.step_after = win.ux.wizard.map(|s| format!("{s:?}")).unwrap_or_default();
+    reading.done_after = crate::nav::Progress::of(&win.shell).done(crate::nav::Step::Genesis);
+    reading.next_drawn_after = texts_of(&out).iter().any(|d| d.text == t(Key::WizardNext));
+    reading.key_drawn_after = texts_of(&out).iter().any(|d| d.text == t(Key::AdoptGroup));
+    reading.toast = win.toasts.showing().map(str::to_string);
+    reading.refused = win.shell.faults.get(told..).and_then(|t| t.last()).map(|f| (f.human().to_string(), f.next()));
+    (win.shell, reading)
+}
+
 /// The wizard on the identity step with new words in hand and their check showing (as after "I have copied
 /// them"); then "back" pressed the way a click presses it (at the drawn key), twice: from the check, then
 /// from the words. The shell needs new words in hand (`Action::NewIdentity`).
@@ -870,13 +920,13 @@ pub fn probe_typed_under(ctx: &egui::Context, shell: Shell, width: f32, height: 
     (win.shell, reading)
 }
 
-/// The "write alone" sheet opened over the local data page and driven by the window's own input: the days cell
+/// The "with a credential" sheet opened over the command line's page and driven by the window's own input: the days cell
 /// clicked and "400" typed, then cleared and "2" typed; the "does not expire" switch's title clicked, and "9"
 /// typed into the days cell while it is on. Read after each: the cell, and the line under the switch.
 pub fn probe_cli_sheet(ctx: &egui::Context, shell: Shell, width: f32, height: f32) -> (Shell, CliSheet) {
     let role = shell.settings.role;
     let mut ux = Ux::default();
-    ux.nav.land(crate::nav::history_of(Place::Settings(crate::nav::Section::Data), role));
+    ux.nav.land(crate::nav::history_of(Place::Settings(crate::nav::Section::Cli), role));
     ux.wizard_asked = true;
     let mut win = fresh_win(shell, Typed::default(), ux);
     win.faults_told = usize::MAX;
@@ -901,10 +951,11 @@ pub fn probe_cli_sheet(ctx: &egui::Context, shell: Shell, width: f32, height: f3
     };
     let key = |k: egui::Key| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
     let drawn = settle(&mut win, &mut run);
+    let gas_said = drawn.iter().any(|d| d.text == t(Key::SetCliAloneGas));
     // The days cell is the field before the word "days": its middle sits half a cell and the gap left of the word.
     let unit = drawn.iter().find(|d| d.text == t(Key::CliLastsDays)).map(|d| d.rect);
     let toggle = drawn.iter().find(|d| d.text == t(Key::CliLastsNever)).map(|d| d.rect.center());
-    let mut reading = CliSheet::default();
+    let mut reading = CliSheet { gas_said, ..Default::default() };
     let (Some(unit), Some(toggle)) = (unit, toggle) else { return (win.shell, reading) };
     let cell = egui::pos2(unit.left() - tk::S2 - settings::CLI_CELL_W / 2.0, unit.center().y);
     let said_has = |texts: &[Drawn], s: &str| texts.iter().any(|d| d.text == s);
@@ -928,6 +979,28 @@ pub fn probe_cli_sheet(ctx: &egui::Context, shell: Shell, width: f32, height: f3
     reading.days_while_never = win.ux.cli_span[0].clone();
     reading.quiet_while_never = !texts.iter().any(|d| !until.is_empty() && d.text.starts_with(&until));
     (win.shell, reading)
+}
+
+/// The ledger's check card, folded open on the records view (as the audit page opens it): every text drawn once the
+/// fold has opened and the page settled.
+pub fn probe_audit_card(ctx: &egui::Context, shell: Shell, width: f32, height: f32) -> (Shell, Vec<Drawn>) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::View(crate::nav::View::Log, 0), role));
+    ux.wizard_asked = true;
+    ux.u3.audit_open = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut out = None;
+    for _ in 0..10 {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), ..Default::default() };
+        out = Some(ctx.run(input, |c| win.draw(c)));
+    }
+    let drawn = out.as_ref().map(texts_of).unwrap_or_default();
+    (win.shell, drawn)
 }
 
 /// Settings, network: the proxy section drawn (the saved proxy fills its own line as the page fills it); every

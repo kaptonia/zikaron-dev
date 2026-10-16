@@ -291,7 +291,7 @@ pub fn rail_list<T: Pages + ?Sized>(ui: &mut egui::Ui, t: &T, list_h: f32) -> Op
         }
     }
     let mut picked = None;
-    egui::ScrollArea::vertical().scroll_source(egui::scroll_area::ScrollSource { drag: false, ..egui::scroll_area::ScrollSource::ALL }).id_salt("rail-list").max_height(list_h).auto_shrink([false, false]).show(ui, |ui| {
+    crate::scroll::page(ui, egui::ScrollArea::vertical().scroll_source(egui::scroll_area::ScrollSource { drag: false, ..egui::scroll_area::ScrollSource::ALL }).id_salt("rail-list").max_height(list_h).auto_shrink([false, false]), |ui| {
         if let Some(i) = rail::nav(ui, &lines, lit_i) {
             picked = items.get(i).map(|x| x.3);
         }
@@ -359,7 +359,7 @@ pub fn page_area<T: Pages + ?Sized>(ui: &mut egui::Ui, t: &mut T, tips: (&str, &
     let p = motion::enter(&ctx, egui::Id::new("zikaron-page-entry"), key, 0.0, how.dur(), motion::Curve::Ease);
     let (off, alpha) = how.at(p);
     let route_salt = motion::key_of(&(stack, name, key));
-    let shown = egui::ScrollArea::vertical().scroll_source(egui::scroll_area::ScrollSource { drag: false, ..egui::scroll_area::ScrollSource::ALL }).id_salt(("page", route_salt)).auto_shrink([false, false]).show(&mut body, |ui| {
+    let shown = crate::scroll::page(&mut body, egui::ScrollArea::vertical().scroll_source(egui::scroll_area::ScrollSource { drag: false, ..egui::scroll_area::ScrollSource::ALL }).id_salt(("page", route_salt)).auto_shrink([false, false]), |ui| {
         egui::Frame::new()
             .inner_margin(egui::Margin { left: tk::PAGE_PAD as i8, right: tk::PAGE_PAD as i8, top: tk::S3 as i8, bottom: tk::PAGE_PAD as i8 })
             .show(ui, |ui| {

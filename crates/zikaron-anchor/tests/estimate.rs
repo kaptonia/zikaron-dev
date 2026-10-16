@@ -31,7 +31,7 @@ fn an_estimate_is_read_once_by_its_shape_and_held_at_the_ceiling() {
         assert_eq!(q(bad), Err(NoGas::Unreadable(bad.to_string())), "{bad}");
     }
     assert_eq!(estimate(Ok(Value::Int(16))), Err(NoGas::NotText(Value::Int(16))));
-    let net = Trouble::Transport("broke".into());
+    let net = Trouble::Transport(zikaron_anchor::rpc::Broke::Said("broke".into()));
     let node = Trouble::Node("{\"code\":3,\"message\":\"execution reverted\"}".into());
     assert_eq!(estimate(Err(net.clone())), Err(NoGas::Network(net.clone())), "the estimate broke: the network's");
     assert_eq!(estimate(Err(node.clone())), Err(NoGas::Refused(node.clone())), "the estimate refused: the call's");
@@ -119,7 +119,7 @@ impl Endpoint for Scripted {
                 Ok(w(&format!("\"{}\"", zikaron::hexfmt::encode(&zikaron::cryptox::keccak256(&raw)))))
             }
             "eth_getTransactionReceipt" => Ok(w("null")),
-            _ => Err(Trouble::Transport(format!("not asked: {method}"))),
+            _ => Err(Trouble::Transport(zikaron_anchor::rpc::Broke::Said(format!("not asked: {method}")))),
         }
     }
     fn name(&self) -> String {

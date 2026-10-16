@@ -348,29 +348,6 @@ pub fn basis_of(g: &Ground) -> Value {
     zikaron_glue::basis::basis_of(&zikaron_glue::basis::Window { chain: g.chain, registry: &registry, from_block: g.from_block, to_block: g.to_block, senders: &g.senders })
 }
 
-/// The largest number of endpoints on any chain: how many rounds a scan runs.
-fn rounds(eps: &[Endpoint]) -> usize {
-    let mut n = 1;
-    for e in eps {
-        n = n.max(eps.iter().filter(|x| x.chain == e.chain).count());
-    }
-    n
-}
-
-/// Which chains had only one endpoint answer this pass (this sets the single-source flag).
-///
-/// It counts endpoints that answered, not endpoints configured: with two configured and the second down, the
-/// reading still has one source, and counting configured ones would wrongly claim that several sources agree.
-/// Each chain is computed from the URLs that actually answered for it.
-fn thin_from(answered: &[(u64, String)], chains: &[u64]) -> Vec<u64> {
-    zikaron_anchor::endpoints::thin_chains(answered, chains)
-}
-
-fn nth_for(eps: &[Endpoint], chain: u64, k: usize) -> Option<String> {
-    let mine: Vec<&str> = eps.iter().filter(|e| e.chain == chain).map(|e| e.url.for_transport()).collect();
-    mine.get(k.min(mine.len().saturating_sub(1))).map(|u| (*u).to_string())
-}
-
 /// Whether a scan uses this machine's record of already-checked chain facts (`checkedx`). Every scan does,
 /// except the grant check page's: that page has no privileges (no key, no disk, no sending), so it reads and
 /// writes no local file and asks about every log.
@@ -423,8 +400,8 @@ pub fn scan_first(eps: &[Endpoint], basis_bytes: &[u8]) -> Result<(Scanned1, sca
     chains.dedup();
     let mut https: Vec<(u64, Box<dyn rpc::Endpoint>)> = Vec::new();
     for c in &chains {
-        let Some(url) = nth_for(eps, *c, 0) else { continue };
-        if let Some(h) = crate::chainx::endpoint_at(&url) {
+        crate::chainx::speak();
+        if let Some(h) = zikaron_send::agree::open_nth(eps, *c, 0) {
             https.push((*c, h));
         }
     }
@@ -481,169 +458,22 @@ pub fn scan_agreed_bytes(eps: &[Endpoint], basis_bytes: &[u8]) -> Result<Scan, F
     scan_agreed_bytes_with(eps, basis_bytes, Facts::Local)
 }
 
-/// [`scan_agreed_bytes`], choosing whether this machine's record of checked facts is used ([`Facts`]). With
+/// [`scan_agreed_bytes`], choosing whether this machine's record of checked facts is used ([`Facts`]): the
+/// sender's agreed scan (`zikaron_send::agree::scan`, one with the exit gate's), its evidence said here. With
 /// [`Facts::Local`], once the endpoints agree, the facts every run read identically on a chain where more than
 /// one endpoint answered are added to the record (`checkedx::agreed`); failing to add them only costs extra
 /// questions next time, never this scan's answer.
 pub fn scan_agreed_bytes_with(eps: &[Endpoint], basis_bytes: &[u8], facts: Facts) -> Result<Scan, Fault> {
-    if eps.is_empty() {
-        return Err(Fault::known(Known::NoEndpoint, crate::lang::t(crate::lang::Key::Tail084).to_string()));
-    }
-    let r = match rounds_over(eps, basis_bytes, &facts.known()) {
-        Ok(r) => r,
-        Err(no_label) => return Ok(no_label),
-    };
-    let fresh = crate::checkedx::agreed(&r.sightings, &thin_from(&r.answered, &r.chains));
-    let (reading, unanswered, asked) = r.converge()?;
-    if facts == Facts::Local {
-        let _ = crate::checkedx::add(&fresh);
-    }
-    Ok(Scan::Basis(Agreed {
-        fragment: reading.fragment,
-        unanswered,
-        asked,
-        single_source: reading.single_source,
-    }))
-}
-
-/// What the rounds of one agreed scan returned, before they are reconciled.
-struct Rounds {
-    runs: Vec<(String, Value)>,
-    /// Which endpoint each run asked on each chain (chain id and url), in run order.
-    places: Vec<Vec<(u64, String)>>,
-    unanswered: Vec<String>,
-    refused: Vec<zikaron_anchor::scan::Refusal>,
-    /// The endpoints that actually answered (chain id and url); the single-source flag counts them.
-    answered: Vec<(u64, String)>,
-    asked: usize,
-    chains: Vec<u64>,
-    /// For each run that answered, the chains it read and the facts it read afresh (`checkedx::agreed`).
-    sightings: Vec<(Vec<u64>, scan::Sightings)>,
-}
-
-impl Rounds {
-    /// Reconciles by the endpoint rule: no round answering is the scan's refusal; rounds that differ are a
-    /// disagreement.
-    fn converge(self) -> Result<(zikaron_anchor::endpoints::Reading, Vec<String>, usize), Fault> {
-        if self.runs.is_empty() {
-            return Err(Fault::scan_refused(self.unanswered.join(" · "), &self.refused));
-        }
-        let thin = thin_from(&self.answered, &self.chains);
-        let empty = answered_empty(&self.runs, &self.places);
-        let reading = zikaron_anchor::endpoints::agree_over(self.runs, thin).map_err(|d| {
-            // Still a disagreement (no majority, no first-come wins); if one endpoint returned nothing where
-            // another returned records, the message names it: it lacks history back to the start block (a node
-            // that keeps only recent logs answers older windows empty).
-            let said = if empty.is_empty() {
-                crate::lang::filln(crate::lang::Key::Tail086, &[&(d.sources.len()).to_string(), &(d.sources.join(" ")).to_string()])
-            } else {
-                crate::lang::filln(crate::lang::Key::TailNoHistory, &[&empty.join(" ")])
-            };
-            Fault::known(Known::Disagree, said)
-        })?;
-        Ok((reading, self.unanswered, self.asked))
-    }
-}
-
-/// The endpoints that answered a chain with no records (no anchor, no evidence) while another endpoint answered
-/// the same chain with some: each by its URL, once, in run order.
-fn answered_empty(runs: &[(String, Value)], places: &[Vec<(u64, String)>]) -> Vec<String> {
-    let count = |v: &Value, chain: u64| -> usize {
-        ["anchors", "evidence"]
-            .iter()
-            .filter_map(|k| match v.member(k) {
-                Some(Value::Arr(a)) => Some(a.iter().filter(|x| matches!(x.member("chainId"), Some(Value::Int(c)) if *c == chain)).count()),
-                _ => None,
-            })
-            .sum()
-    };
-    let mut out: Vec<String> = Vec::new();
-    for (i, (_, v)) in runs.iter().enumerate() {
-        for (chain, url) in places.get(i).map(|p| p.as_slice()).unwrap_or(&[]) {
-            let others = runs.iter().enumerate().any(|(j, (_, w))| j != i && places.get(j).map(|p| p.iter().any(|(c, _)| c == chain)).unwrap_or(false) && count(w, *chain) > 0);
-            if count(v, *chain) == 0 && others && !out.contains(url) {
-                out.push(url.clone());
-            }
-        }
-    }
-    out
-}
-
-/// Each round scans every chain at its k-th endpoint. If the core's validation says this is not a basis, the
-/// no-label scan comes back unchanged.
-fn rounds_over(eps: &[Endpoint], basis_bytes: &[u8], known: &scan::Known) -> Result<Rounds, Scan> {
-    let mut chains: Vec<u64> = eps.iter().map(|e| e.chain).collect();
-    chains.sort_unstable();
-    chains.dedup();
-
-    let mut runs: Vec<(String, Value)> = Vec::new();
-    let mut places: Vec<Vec<(u64, String)>> = Vec::new();
-    let mut unanswered: Vec<String> = Vec::new();
-    let mut refused: Vec<zikaron_anchor::scan::Refusal> = Vec::new();
-    // The endpoints that actually answered this pass (chain id and url); the single-source flag counts them.
-    let mut answered: Vec<(u64, String)> = Vec::new();
-    let mut asked = 0usize;
-    let mut sightings: Vec<(Vec<u64>, scan::Sightings)> = Vec::new();
-    // Open every round's nodes in order; the rounds then run concurrently (`zikaron_anchor::endpoints::each`)
-    // and results are taken in round order, so the scan's result never depends on which answered first.
-    type Round = (Vec<String>, Vec<(u64, String)>, Vec<(u64, Box<dyn rpc::Endpoint + Send>)>);
-    let mut jobs: Vec<Round> = Vec::new();
-    for k in 0..rounds(eps) {
-        let mut said: Vec<String> = Vec::new();
-        let mut https: Vec<(u64, Box<dyn rpc::Endpoint + Send>)> = Vec::new();
-        let mut used: Vec<(u64, String)> = Vec::new();
-        for c in &chains {
-            let Some(url) = nth_for(eps, *c, k) else { continue };
-            match crate::chainx::endpoint_at(&url) {
-                Some(h) => {
-                    used.push((*c, url));
-                    https.push((*c, h));
-                }
-                None => said.push(format!("{c}={}", crate::chainx::address_said(&url))),
-            }
-        }
-        jobs.push((said, used, https));
-    }
-    let lost_chain = chains.first().copied().unwrap_or(0);
-    let done = zikaron_anchor::endpoints::each(
-        jobs,
-        |(said, used, mut https)| {
-            if https.is_empty() {
-                return (said, used, None);
-            }
-            let mut handed: Vec<(u64, &mut dyn rpc::Endpoint)> = https
-                .iter_mut()
-                .map(|(c, h)| (*c, &mut **h as &mut dyn rpc::Endpoint))
-                .collect();
-            // Every round reads the same record: one round's new facts never spare another round a question.
-            let got = scan::run_knowing(basis_bytes, &[], &mut handed, known);
-            (said, used, Some(got))
-        },
-        || (Vec::new(), Vec::new(), Some(Err(zikaron_anchor::scan::Refusal::Unanswered { chain: lost_chain, what: "the scan stopped short".into() }))),
-    );
-    for (k, (said, used, got)) in done.into_iter().enumerate() {
-        unanswered.extend(said);
-        let Some(got) = got else { continue };
-        let names: Vec<String> = used.iter().map(|(c, _)| format!("{c}#{k}")).collect();
-        asked += used.len();
-        match got {
-            // The core's validation says this is not a basis: pass the no-label result through unchanged,
-            // never wrapped as a successful scan.
-            Ok(Err(no_label)) => return Err(Scan::NoLabel { report: no_label, unanswered, asked }),
-            Ok(Ok((s, _, seen))) => {
-                // This round actually answered, so its URLs count as sources for the single-source flag.
-                answered.extend(used.iter().cloned());
-                sightings.push((used.iter().map(|(c, _)| *c).collect(), seen));
-                places.push(used.clone());
-                runs.push((names.join(","), scan::fragment(&s)))
-            }
-            Err(r) => {
-                unanswered.push(Fault::scan_tail(&r));
-                refused.push(r);
-            }
-        }
-    }
-    Ok(Rounds { runs, places, unanswered, refused, answered, asked, chains, sightings })
+    crate::chainx::speak();
+    let got = match facts {
+        Facts::Local => zikaron_send::agree::scan(eps, basis_bytes, &crate::sendx::Local),
+        Facts::Bare => zikaron_send::agree::scan(eps, basis_bytes, &zikaron_send::Bare),
+    }?;
+    let said = |w: &[zikaron_send::Why]| w.iter().map(crate::chainx::said_of).collect::<Vec<String>>();
+    Ok(match got {
+        zikaron_send::agree::Scan::Basis(a) => Scan::Basis(Agreed { fragment: a.fragment, unanswered: said(&a.unanswered), asked: a.asked, single_source: a.single_source }),
+        zikaron_send::agree::Scan::NoLabel { report, unanswered, asked } => Scan::NoLabel { report, unanswered: said(&unanswered), asked },
+    })
 }
 
 pub fn online(home: &Home, eps: &[Endpoint], g: &Ground) -> Result<Verdict, Fault> {

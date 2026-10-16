@@ -35,6 +35,7 @@ pub mod palette;
 pub mod pin;
 pub mod probe;
 pub mod rail;
+pub mod scroll;
 pub mod secret;
 pub mod seg;
 pub mod sheet;

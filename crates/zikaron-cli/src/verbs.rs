@@ -53,7 +53,7 @@ const ACCEPTS: [(&str, &[&str], &[&str]); 25] = [
     ("succeed", &WRITE, &["to", "kind", "effective", "statement", "home"]),
     ("annotate", &WRITE, &["subject", "note", "home"]),
     ("retract", &WRITE, &["subject", "note", "home"]),
-    ("anchor", &[], &["key", "endpoint", "form", "registry", "hash", "calldata", "wait-secs", "proxy", "home"]),
+    ("anchor", &[], &["key", "endpoint", "form", "registry", "hash", "calldata", "wait-secs", "proxy", "home", "ledger"]),
     ("scan", &[], &["endpoint", "fixture", "basis", "adoptions", "proxy", "ledger"]),
     ("audit", &[], &["ledger", "root", "input", "fragment", "unavailable", "out"]),
     ("check-grant", &[], &["ledger", "root", "input", "fragment", "unavailable", "now", "grant"]),
@@ -519,6 +519,10 @@ fn retract(a: &Args) -> Answer {
         Ok(x) => x,
         Err(answer) => return answer,
     };
+    // A home's write gates, as for every entry written with the credential.
+    if let Some(refused) = home.as_ref().and_then(|(h, _)| crate::sealedsend::write_gates(h)) {
+        return refused;
+    }
     let root = match root_named(a, &items) {
         Ok(x) => x,
         Err(answer) => return answer,
@@ -554,6 +558,22 @@ fn retract(a: &Args) -> Answer {
 // Chain.
 
 fn anchor(a: &Args) -> Answer {
+    // A home's queue, sent with the credential (`sealedsend`): what it sends and how come from the home's settings
+    // and this machine's, so the flags that would name them are misuse, as a key is for any sealed write.
+    if let Some(at) = a.one("ledger") {
+        if !crate::sealed::is_home(&at) {
+            out::misuse(Reason::Args, out::Subject::flag("ledger"), out::Said::AnchorNotAHome);
+        }
+        if a.one("key").is_some() || a.one(args::KEY_FILE).is_some() {
+            out::misuse(Reason::Args, out::Subject::Flags(vec!["key", args::KEY_FILE]), out::Said::SealedNoKey);
+        }
+        for f in ["endpoint", "form", "registry", "hash", "calldata", "proxy"] {
+            if !a.many(f).is_empty() {
+                out::misuse(Reason::Args, out::Subject::flag(f), out::Said::HomeSettingsSay);
+            }
+        }
+        return crate::sealedsend::anchor(&at, std::time::Duration::from_secs(a.u64_of("wait-secs").unwrap_or(90)));
+    }
     proxy_from(a);
     use zikaron_anchor::send;
     let specs = chain::endpoint_specs(&a.many_at("endpoint"));
@@ -655,18 +675,11 @@ fn anchor(a: &Args) -> Answer {
         match send::on_chain(&mut ep, chain_id, &reg, &from, &hashes, zikaron_anchor::deploy::start_of(chain_id, &reg)) {
             Ok(found) if !found.is_empty() => {
                 let first = found[0];
-                return out::denied(
-                    Reason::OnChain,
-                    vec![
-                        (Key::BlockNumber, Value::Int(first.block)),
-                        (Key::Names, Value::Arr(found.iter().map(|f| s(&hexfmt::encode(&f.hash))).collect())),
-                        (Key::Tx, s(&hexfmt::encode(&first.tx))),
-                    ],
-                )
-                .telling(out::Said::OnChain.text().to_string());
+                let names: Vec<String> = found.iter().map(|f| hexfmt::encode(&f.hash)).collect();
+                return on_chain(&names, &hexfmt::encode(&first.tx), first.block);
             }
             Ok(_) => {}
-            Err(said) => return out::unanswered(Reason::Unreachable, vec![(Key::Detail, s(&said))]),
+            Err(not) => return out::unanswered(Reason::Unreachable, vec![(Key::Detail, s(&not.evidence()))]),
         }
     }
     // The transaction is estimated before it is sent, by the rule the app takes (`send::estimate_gas`), and
@@ -704,6 +717,11 @@ fn anchor(a: &Args) -> Answer {
             send::NoGas::Unreadable(hex) => out::unanswered(Reason::Unreachable, vec![(Key::Detail, s(&hex))]),
         },
         Err(send::NotSent::Send(e)) => out::unanswered(Reason::Unreachable, vec![(Key::Detail, s(&format!("{e:?}")))]),
+        // The node's answer to the nonce question, as it came, named by the question.
+        Err(send::NotSent::Nonce(v)) => {
+            let said = v.map(|v| String::from_utf8_lossy(&zikaron::json::canon_bytes(&v)).into_owned()).unwrap_or_default();
+            out::unanswered(Reason::Unreachable, vec![(Key::Detail, s(&format!("eth_getTransactionCount: {said}")))])
+        }
         // The hash could not be landed: nothing was broadcast.
         Err(send::NotSent::Land(said)) => out::unanswered(Reason::Unreachable, vec![(Key::Detail, s(&said))]),
         // The broadcast failed after the hash was landed: the bytes may be in a pool, so the answer carries the
@@ -729,8 +747,24 @@ fn sent_answer(tx: &[u8; 32], confirm: &zikaron_anchor::send::Confirm, wait: std
     }
 }
 
-/// `anchor`'s answers once the transaction went out, built here only (the command line's own sending and the
-/// desktop's under `--home` both answer by these): included with status 1, at that block.
+/// `anchor`'s answer when the chain already holds anchors of hashes it was to send, from this key through this
+/// registry (`names`, the earliest in `tx` at `block`): nothing was sent. Built here only: the direct `anchor`, the
+/// desktop's under `--home` and the credential's with `--ledger` all answer by it.
+pub(crate) fn on_chain(names: &[String], tx: &str, block: u64) -> Answer {
+    out::denied(Reason::OnChain, vec![(Key::BlockNumber, Value::Int(block)), (Key::Names, Value::Arr(names.iter().map(|n| s(n)).collect())), (Key::Tx, s(tx))])
+        .telling(out::Said::OnChain.text().to_string())
+}
+
+/// `anchor`'s answer when the switch leaves sending to the person on the desktop: nothing was sent, `count`
+/// entries wait in the queue (exit 3). The desktop's under `--home` and the credential's with `--ledger` answer by
+/// it.
+pub(crate) fn queued(count: u64) -> Answer {
+    out::partial(Reason::Queued, vec![(Key::Count, Value::Int(count))]).telling(out::Said::Queued.text().to_string())
+}
+
+/// `anchor`'s answers once the transaction went out, built here only (the command line's own sending, the
+/// desktop's under `--home` and the credential's with `--ledger` all answer by these): included with status 1, at
+/// that block.
 pub(crate) fn anchored(tx: &str, block: Option<u64>) -> Answer {
     out::affirmed(vec![(Key::BlockNumber, block.map(Value::Int).unwrap_or(Value::Null)), (Key::Tx, s(tx))])
 }
@@ -1745,6 +1779,10 @@ fn write_entry(a: &Args, kind: EntryType, body: Vec<(Field, Value)>) -> Answer {
             Ok(x) => x,
             Err(answer) => return answer,
         };
+        // The home's write gates, as for a send: its read-only mark, a ledger that broke, a ledger handed off.
+        if let Some(refused) = crate::sealedsend::write_gates(&home) {
+            return refused;
+        }
         // A file recorded into the home is this machine's original of that record, indexed as the desktop indexes
         // the files it signs (`--file` of `history`: its place, its name, the content it gave).
         let original = match (kind, a.one("file")) {
@@ -1989,10 +2027,11 @@ pub(crate) fn ledger_trouble(t: &zikaron_store::codes::Trouble) -> Answer {
 }
 
 fn refused(r: chain::Refused) -> Answer {
-    out::unanswered(
-        r.reason,
-        vec![(Key::Detail, s(&r.detail)), (Key::Token, s(&r.code))],
-    )
+    let a = out::unanswered(r.reason, vec![(Key::Detail, s(&r.detail)), (Key::Token, s(&r.code))]);
+    match r.line {
+        Some(said) => a.telling(said.text().to_string()),
+        None => a,
+    }
 }
 
 /// Every flag a verb uses must be in [`ALL_FLAGS`] or [`MORE_FLAGS`]; the tests scan for it.

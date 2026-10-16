@@ -560,6 +560,26 @@ pub struct WizardBack {
     pub step_after_words: String,
 }
 
+/// What the wizard's "adopt existing ledger folder" did at "create the ledger" (`probe_wizard_adopt`).
+#[derive(Clone, Debug, Default)]
+pub struct WizardAdopt {
+    /// Whether the key was drawn beside "create the ledger" (and so pressed), and whether its sheet then showed.
+    pub key_drawn: bool,
+    pub sheet_drawn: bool,
+    /// Whether the sheet's "adopt in place" was drawn (and so pressed) with the folder chosen.
+    pub adopt_pressed: bool,
+    /// The step the wizard stood at afterwards, and whether that step was done then (read from the shell).
+    pub step_after: String,
+    pub done_after: bool,
+    /// Whether the step's "next" key, and the adopt key again, were drawn afterwards.
+    pub next_drawn_after: bool,
+    pub key_drawn_after: bool,
+    /// The sentence the window showed for it, and the window's most recent trouble's sentences (first, next), if
+    /// it was refused.
+    pub toast: Option<String>,
+    pub refused: Option<(String, String)>,
+}
+
 /// What clicking the other language on the first-run wizard's or the passcode gate's switch did.
 #[derive(Clone, Debug, Default)]
 pub struct LangPick {
@@ -589,6 +609,9 @@ pub struct CliSheet {
     pub never_on: bool,
     pub days_while_never: String,
     pub quiet_while_never: bool,
+    /// Whether the sheet said, as it opened, that the command line may spend this identity's gas while
+    /// putting on chain from the command line sends automatically.
+    pub gas_said: bool,
 }
 
 /// What typing at the passcode gate did, with nothing over it and with the lock screen's restore sheet over it.

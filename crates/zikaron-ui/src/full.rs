@@ -55,7 +55,7 @@ pub fn centered<R>(ui: &mut egui::Ui, id_salt: &str, rect: Rect, width: f32, dro
     let col = Rect::from_min_size(pos2(rect.center().x - w / 2.0, rect.top()), vec2(w + bar_room(ui), rect.height()));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(col).layout(egui::Layout::top_down(egui::Align::Min)));
     child.set_clip_rect(rect);
-    let out = egui::ScrollArea::vertical().id_salt(id.with("scroll")).max_height(rect.height()).auto_shrink([false, true]).show(&mut child, |ui| {
+    let out = crate::scroll::page(&mut child, egui::ScrollArea::vertical().id_salt(id.with("scroll")).max_height(rect.height()).auto_shrink([false, true]), |ui| {
         ui.add_space((top - rect.top()).max(0.0));
         let r = ui.vertical(|ui| {
             ui.set_width(w);

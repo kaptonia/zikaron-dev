@@ -110,6 +110,7 @@ dependencies = [
  "zikaron-os",
  "zikaron-pack",
  "zikaron-seal",
+ "zikaron-send",
  "zikaron-store",
  "zikaron-ui",
 ]
@@ -3595,6 +3596,7 @@ dependencies = [
  "zikaron-kit",
  "zikaron-os",
  "zikaron-seal",
+ "zikaron-send",
  "zikaron-store",
 ]
 
@@ -3649,6 +3651,18 @@ dependencies = [
  "zikaron-kit",
  "zikaron-os",
  "zikaron-store",
+]
+
+[[package]]
+name = "zikaron-send"
+version = "0.1.3"
+dependencies = [
+ "zikaron",
+ "zikaron-anchor",
+ "zikaron-glue",
+ "zikaron-net",
+ "zikaron-os",
+ "zikaron-seal",
 ]
 
 [[package]]

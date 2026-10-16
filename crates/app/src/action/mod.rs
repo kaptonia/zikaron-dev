@@ -1546,7 +1546,7 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
     // anchoring actions are refused by name without touching the disk.
     if a.writes_ledger() {
         if let Some(s) = shell.unfetched {
-            return shell.trouble(s.fault());
+            return shell.trouble(crate::restorex::fault(s));
         }
     }
     // While the command line writes alone, a write of the ledger or the queue takes the home's writer lock first
@@ -2476,17 +2476,8 @@ pub struct Enqueued {
 
 // Anchor queue.
 
-/// The anchors of this batch and what is needed to send them (chain id, registry, endpoints on that chain).
-struct Batch {
-    ids: Vec<String>,
-    hashes: Vec<[u8; 32]>,
-    chain: u64,
-    registry: Address,
-    /// All of the chain's endpoints, in settings order.
-    urls: Vec<crate::chainx::NodeAddr>,
-    /// The retry backoff delays (a shell field tests may change).
-    backoff: Vec<std::time::Duration>,
-}
+/// The anchors of a batch and what is needed to send them: the sender's (`zikaron_send::batch::Batch`).
+use zikaron_send::batch::Batch;
 
 /// How long to wait for an anchor to be included. Not being included in time means "not yet", not a verdict,
 /// and the anchor stays queued.

@@ -85,60 +85,9 @@ pub mod appearance {
     pub const SYSTEM: &str = "system";
 }
 
-/// How the desktop app handles the CLI's `anchor` command: send it as the send button would, or leave the
-/// entries queued for the user to send from the desktop.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum CliAnchor {
-    /// Send at once (the default, also when the member is absent).
-    #[default]
-    Send,
-    /// Send nothing: show the request and leave the entries queued for the user.
-    Queue,
-}
-
-impl CliAnchor {
-    pub const ALL: [CliAnchor; 2] = [CliAnchor::Send, CliAnchor::Queue];
-
-    /// The value written to the file.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            CliAnchor::Send => "send",
-            CliAnchor::Queue => "queue",
-        }
-    }
-}
-
-/// How long a command-line credential lasts once issued: a number of seconds, or never expiring.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Lasts {
-    Secs(u64),
-    Never,
-}
-
-/// The longest a credential may last when it expires: a year.
-pub const LASTS_MAX: u64 = 365 * 86_400;
-/// The shortest: a minute.
-pub const LASTS_MIN: u64 = 60;
-/// The word written for a credential that never expires.
-pub const NEVER: &str = "never";
-
-impl Lasts {
-    /// Whether this length may be chosen (between [`LASTS_MIN`] and [`LASTS_MAX`], or never).
-    pub fn ok(self) -> bool {
-        match self {
-            Lasts::Secs(n) => (LASTS_MIN..=LASTS_MAX).contains(&n),
-            Lasts::Never => true,
-        }
-    }
-
-    /// When a credential issued at `issued` expires (`None`: never).
-    pub fn expires(self, issued: u64) -> Option<u64> {
-        match self {
-            Lasts::Secs(n) => Some(issued + n),
-            Lasts::Never => None,
-        }
-    }
-}
+/// How the command line's sending is handled, and how long its credential lasts: read where the command line
+/// reads them too (`zikaron_seal::machine`).
+pub use zikaron_seal::machine::{CliAnchor, Lasts, LASTS_MAX, LASTS_MIN, NEVER};
 
 /// Which way the command line writes now. Exactly one at any time: writing alone outranks the desktop's door,
 /// so while it is on the door is closed whatever its own switch says.
@@ -161,10 +110,8 @@ pub mod member {
     pub const NETWORK: &str = "network";
     pub const APPEARANCE: &str = "appearance";
     pub const LANG: &str = "lang";
-    pub const PROXY: &str = "proxy";
-    pub const CLI_ANCHOR: &str = "cli_anchor";
+    pub use zikaron_seal::machine::member::{CLI_ALONE, CLI_ANCHOR, PROXY};
     pub const CLI_DESKTOP: &str = "cli_desktop";
-    pub const CLI_ALONE: &str = "cli_alone";
     pub const BACKUP_FAILED: &str = "backup_failed";
     pub const AT: &str = "at";
     pub const COUNT: &str = "count";
@@ -376,6 +323,7 @@ fn parse(bytes: &[u8], p: &std::path::Path) -> Result<Machine, Fault> {
         return Err(Fault::known(Known::MachineShape, p.display().to_string()));
     };
     let mut out = Machine::default();
+    let mut cli = zikaron_seal::machine::Cli::default();
     let mut shape_ok = false;
     for (k, val) in members {
         match (k.as_str(), &val) {
@@ -428,23 +376,19 @@ fn parse(bytes: &[u8], p: &std::path::Path) -> Result<Machine, Fault> {
                 }
             }
             ("aside", _) => return Err(Fault::known(Known::MachineShape, "aside".to_string())),
-            (member::PROXY, Value::Str(p)) => out.proxy = Some(p.clone()),
-            (member::CLI_ANCHOR, Value::Str(w)) if CliAnchor::ALL.iter().any(|x| x.as_str() == w) => {
-                out.cli_anchor = CliAnchor::ALL.into_iter().find(|x| x.as_str() == w).unwrap_or_default();
-            }
-            (member::CLI_ANCHOR, _) => return Err(Fault::known(Known::MachineShape, member::CLI_ANCHOR.to_string())),
             (member::CLI_DESKTOP, Value::Bool(b)) => out.cli_desktop = *b,
             (member::CLI_DESKTOP, _) => return Err(Fault::known(Known::MachineShape, member::CLI_DESKTOP.to_string())),
-            (member::CLI_ALONE, Value::Int(n)) if Lasts::Secs(*n).ok() => out.cli_alone = Some(Lasts::Secs(*n)),
-            (member::CLI_ALONE, Value::Str(w)) if w == NEVER => out.cli_alone = Some(Lasts::Never),
-            (member::CLI_ALONE, _) => return Err(Fault::known(Known::MachineShape, member::CLI_ALONE.to_string())),
+            // The proxy, the handling of the command line's sending and writing alone: read by the sealed layer,
+            // where the command line reads them with its credential.
+            _ if zikaron_seal::machine::take(&mut cli, &k, &val)? => {}
             _ => out.extra.push((k, val)),
         }
     }
     if !shape_ok {
         return Err(Fault::known(Known::MachineShape, member::SHAPE.to_string()));
     }
-    Ok(out)
+    let zikaron_seal::machine::Cli { proxy, cli_anchor, cli_alone } = cli;
+    Ok(Machine { proxy, cli_anchor, cli_alone, ..out })
 }
 
 /// Write the settings. An invalid value (e.g. an auto-lock time not in [`LOCK_CHOICES`]) is an error and the
@@ -568,19 +512,14 @@ pub fn to_bytes(m: &Machine) -> Result<Vec<u8>, Fault> {
 }
 
 /// Proxy setting values in the machine settings.
-pub mod proxy {
-    pub const SYSTEM: &str = "system";
-    pub const NONE: &str = "none";
-}
+pub use zikaron_seal::machine::proxy;
 
-/// The effective proxy choice: unset or `system` follows the system, `none` disables the proxy, a valid
-/// address is used as the proxy. An unreadable value follows the system (and stays in the file as written).
+/// The effective proxy choice, by the one reading of the member (the sender's `node::route_of`, through
+/// `chainx`; the command line's with its credential too): unset or `system` follows the system, `none` disables
+/// the proxy, a valid address is used as the proxy. An unreadable value follows the system (and stays in the file
+/// as written).
 pub fn proxy_choice(m: &Machine) -> zikaron_net::Choice {
-    match m.proxy.as_deref().map(str::trim) {
-        None | Some(proxy::SYSTEM) => zikaron_net::Choice::System,
-        Some(proxy::NONE) => zikaron_net::Choice::Off,
-        Some(p) => zikaron_net::proxy_of(p).map(zikaron_net::Choice::Manual).unwrap_or(zikaron_net::Choice::System),
-    }
+    crate::chainx::route_of(m.proxy.as_deref())
 }
 
 /// The route last read from or written to the sealed settings in this process, kept without the password: what

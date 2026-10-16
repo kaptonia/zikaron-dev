@@ -30,6 +30,10 @@ zikaron-os = { path = "../zikaron-os" }
 # The sealed layer (envelope, names key, key vault, sealed ledger), one implementation with the command line: the
 # app keeps only its wiring (where the machine directory is, its fault table and words, its trace marks).
 zikaron-seal = { path = "../zikaron-seal" }
+# The sender, one with the command line: reading the chain, the exit gate, the queue's lock and steps, sending a
+# batch and its receipt wait. The app keeps only its wiring (`sendx`, `chainx`, `exitgate`, `queue`, the queue
+# actions): its words for the sender's codes, its home under this machine's seal, its key's signing port.
+zikaron-send = { path = "../zikaron-send" }
 # Third party: the egui family. On the app side only the `window` module touches it.
 eframe = { version = "0.33", default-features = false, features = ["glow"] }
 # Third-party cryptography: on the app side only the `cryptx` module touches these (phrases and private-key

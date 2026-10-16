@@ -490,6 +490,11 @@ pub struct Shell {
     /// different count means another writer (the command line) wrote meanwhile, and the copies are read again
     /// ([`Shell::take_turn`], [`Shell::follow_disk`]).
     pub seen_entries: Option<usize>,
+    /// The queue file as this instance last accounted for it, by the digest of its bytes on disk (`None`: not
+    /// looked at yet; `Some(None)`: no file), at the same moments as [`Shell::seen_entries`]. Another writer may
+    /// change the queue alone (mark a batch sent, put entries on chain, follow the chain) without writing an
+    /// entry; a different digest reads the queue again ([`Shell::follow_disk`]).
+    pub seen_queue: Option<Option<[u8; 32]>>,
     /// When this instance last looked at the disk for another writer's entries (the interface clock).
     pub followed_at: f64,
     /// The ledger's mark when the home's reading (`archive`) last landed or was asked again: a moved mark makes
@@ -651,6 +656,7 @@ impl Shell {
             cli_path: None,
             credential: None,
             seen_entries: None,
+            seen_queue: None,
             followed_at: f64::NEG_INFINITY,
             archive_mark: None,
             landed: None,
@@ -781,6 +787,8 @@ impl Shell {
         }
         if self.seen_entries != Some(entry_files(&home)) {
             self.reread_home_files(&home);
+        } else if self.seen_queue != Some(queue_mark(&home)) {
+            self.reread_queue(&home);
         }
         Ok(())
     }
@@ -791,22 +799,30 @@ impl Shell {
         self.stale_rows();
         self.book_changed();
         self.rooted = crate::ledgerx::head(home).map(|h| h.is_some()).unwrap_or(false);
-        match crate::queue::Queue::read(home) {
-            Ok(q) => self.queue = q,
-            Err(f) => self.faults.push(f),
-        }
+        self.reread_queue(home);
         match Settings::read(home) {
             Ok(s) => self.settings = s,
             Err(f) => self.faults.push(f),
         }
     }
 
-    /// At every drain: while the command line writes alone, a writer lets the lock go once nothing that writes
-    /// local data is in flight (counting the ledger as it leaves it); with writing alone off, it takes the lock
-    /// again and keeps it (the command line holding it a moment longer is retried at the next drain).
+    /// The queue read again from the disk (its lamps follow it), and accounted for.
+    fn reread_queue(&mut self, home: &crate::home::Home) {
+        self.seen_queue = Some(queue_mark(home));
+        match crate::queue::Queue::read(home) {
+            Ok(q) => self.queue = q,
+            Err(f) => self.faults.push(f),
+        }
+        self.stale_rows();
+    }
+
+    /// At every drain: while the command line writes alone, a writer lets the lock go once nothing in flight
+    /// holds its turn (a send's receipt wait does not: it settles under the lock on its own, `lock::settling`),
+    /// counting the ledger as it leaves it; with writing alone off, it takes the lock again and keeps it (the
+    /// command line holding it a moment longer is retried at the next drain).
     pub fn turn_sync(&mut self) {
         let alone = self.machine.cli_alone.is_some();
-        let writing = self.tasks.flying().iter().any(|k| k.writes_local());
+        let writing = self.tasks.holds_turn();
         let Some(root) = self.home.as_ref().map(|h| h.root().to_path_buf()) else { return };
         let home = crate::home::Home::bare(root);
         let Some(lock) = self.lock.as_mut() else { return };
@@ -817,6 +833,7 @@ impl Shell {
             if lock.held() && !writing {
                 lock.release();
                 self.seen_entries = Some(entry_files(&home));
+                self.seen_queue = Some(queue_mark(&home));
             }
         } else if !lock.held() {
             if let Err(f) = lock.regain(&home) {
@@ -1097,14 +1114,18 @@ impl Shell {
         let Some(root) = self.home.as_ref().map(|h| h.root().to_path_buf()) else { return };
         let home = crate::home::Home::bare(root);
         let count = entry_files(&home);
+        let queue = queue_mark(&home);
         match self.seen_entries {
             Some(seen) if seen != count => {
                 self.reread_home_files(&home);
                 self.followed |= count > seen;
             }
+            // Only the queue changed (another writer sent, or followed the chain): it alone is read again.
+            Some(_) if self.seen_queue.is_some_and(|was| was != queue) => self.reread_queue(&home),
             _ => {}
         }
         self.seen_entries = Some(count);
+        self.seen_queue = Some(queue);
     }
 
     /// When the next look at the disk ([`Shell::follow_disk`]) falls due, in seconds from `now`, while the window
@@ -1324,6 +1345,11 @@ impl Shell {
             .iter()
             .filter_map(|spec| Endpoint::parse(spec))
             .collect();
+        // What the disk holds is marked as seen before it is read (`follow_disk`): another writer's change after this
+        // moment differs from the mark, so the next look reads it again; marked after the read, a change landing in
+        // between would be taken as seen and never read.
+        self.seen_entries = Some(entry_files(home));
+        self.seen_queue = Some(queue_mark(home));
         // The two local bookkeeping files do not block opening when malformed, but the problem is shown.
         // Reading them as empty silently would lose queued entries; refusing to open would block the
         // broken-chain recovery path, which needs the home open. So the fault goes to the screen and an empty
@@ -1527,6 +1553,7 @@ impl Shell {
             credential: _,
             // Counted against the home whose lock is held; a new home starts uncounted (cleared below).
             seen_entries,
+            seen_queue,
             followed_at: _,
             archive_mark,
             landed,
@@ -1650,6 +1677,7 @@ impl Shell {
         // Another home's count says nothing about this one: counted afresh at the first look.
         if home {
             *seen_entries = None;
+            *seen_queue = None;
         }
         *landed = None;
         *followed = false;
@@ -2370,6 +2398,12 @@ pub const FOLLOW_EVERY: f64 = 1.0;
 
 /// How many entry files a home's ledger holds now (names only, nothing opened): what the writer turn and the look
 /// at the disk compare.
+/// The queue file's bytes on disk, by their digest (`None`: no file, or one that does not read); only compared,
+/// never opened.
+fn queue_mark(home: &crate::home::Home) -> Option<[u8; 32]> {
+    std::fs::read(home.dir(crate::home::Slot::Settings).join(crate::queue::FILE)).ok().map(|b| zikaron::cryptox::sha256(&b))
+}
+
 fn entry_files(home: &crate::home::Home) -> usize {
     let dir = home.dir(crate::home::Slot::Ledger);
     std::fs::read_dir(&dir)

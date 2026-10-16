@@ -14,8 +14,10 @@
 //! an earlier one's) is adopted too: its entries are read through the mirror's own check ([`mirrored`]), and
 //! one entry that fails it refuses the whole mirror.
 //!
-//! One home keeps one ledger: a home that already has a root adopts only that same ledger again (what it holds
-//! already is skipped); another ledger, or entries with no root, is refused whole before anything is written.
+//! One ledger, one root: what is adopted holds exactly one genesis entry, so the home that takes it has its root as
+//! after creating its ledger; entries with no root, or with two, are refused whole before anything is written. One
+//! home keeps one ledger: a home that already has a root adopts only that same ledger again (what it holds already
+//! is skipped); another ledger is refused whole.
 
 use crate::auditx;
 use crate::fault::{Fault, Known};
@@ -122,13 +124,24 @@ pub fn adopt(dir: &std::path::Path, into: &Home) -> Result<Adopted, Fault> {
             ledger.survey().map_err(|t| Fault::known(Known::Ledger, format!("{t:?}")))?.items
         }
     };
+    // One ledger, one root: what is adopted holds exactly one genesis entry (none is some of a ledger's entries, two
+    // are two ledgers), so a home that takes it has a root, as after creating its ledger. Refused whole before
+    // anything is written.
+    let mut roots: Vec<String> = items.iter().filter_map(|b| k1::check(b).ok()).filter(|e| e.seq == 0).map(|e| e.id_hex()).collect();
+    roots.sort();
+    roots.dedup();
+    let whole = roots.len() == 1;
+    if !whole {
+        return Err(Fault::known(Known::NotAdoptable, format!("roots {} · {}", roots.len(), roots.join(" ")))
+            .worded(Some(crate::lang::Key::AdoptOneRoot), Some(crate::lang::Key::AdoptOneRootNext)));
+    }
+    let theirs = roots.first().cloned().unwrap_or_default();
     // One home, one ledger: a home that already has a root takes only entries of that same ledger (the same again,
-    // or what it lacks); a ledger with another root, or with none, is refused whole before anything is written.
+    // or what it lacks); a ledger with another root is refused whole before anything is written.
     let ours = into.ledger()?.pile()?.items.iter().filter_map(|b| k1::check(b).ok()).find(|e| e.seq == 0).map(|e| e.id_hex());
-    let theirs = items.iter().filter_map(|b| k1::check(b).ok()).find(|e| e.seq == 0).map(|e| e.id_hex());
     if let Some(ours) = ours {
-        if theirs.as_deref() != Some(ours.as_str()) {
-            return Err(Fault::known(Known::AlreadyRooted, format!("{ours} · {}", theirs.unwrap_or_default()))
+        if theirs != ours {
+            return Err(Fault::known(Known::AlreadyRooted, format!("{ours} · {theirs}"))
                 .worded(Some(crate::lang::Key::AdoptOtherRoot), Some(crate::lang::Key::AdoptOtherRootNext)));
         }
     }

@@ -1160,6 +1160,9 @@ struct Ux {
     wizard_forced: bool,
     /// The confirmation sheet after the key that writes genesis.
     confirm_genesis: bool,
+    /// The sheet that adopts an existing ledger at the step that creates one, and the folder chosen in it.
+    confirm_adopt: bool,
+    wiz_adopt: String,
     /// Whether the language from settings has been applied.
     lang_applied: bool,
     /// The shell's page the window last followed or set itself (`chrome` follows a change to it; `entered`

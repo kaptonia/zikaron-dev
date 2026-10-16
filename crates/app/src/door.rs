@@ -200,21 +200,31 @@ pub fn turn_of(shell: &Shell, q: &Request) -> Result<Turn, Fault> {
         return Err(Fault::known(Known::DoorUnread, q.verb.clone()));
     };
     let act = (row.make)(q);
-    // Send everything sendable in the queue, as the queue page's send key does. An empty queue is reported by
-    // the action's own rule, whatever the setting says.
+    // Send everything sendable in the queue, as the queue page's send key does, by the switch's one judgement
+    // (`zikaron_seal::machine::turn`, the credential road's too). Left queued, and an empty queue, are reported
+    // by the action's own rule.
     if let Action::SendBatch { .. } = act {
         let count = shell.queue.sendable();
-        return Ok(match (shell.machine.cli_anchor, count) {
-            (crate::machine::CliAnchor::Send, 1..) => Turn::Send { count },
-            _ => Turn::Act(Action::SendAsked { count }),
+        return Ok(match zikaron_seal::machine::turn(shell.machine.cli_anchor, count) {
+            zikaron_seal::machine::Turn::Send => Turn::Send { count },
+            zikaron_seal::machine::Turn::Leave | zikaron_seal::machine::Turn::Nothing => Turn::Act(Action::SendAsked { count }),
         });
     }
     Ok(Turn::Act(act))
 }
 
 /// A refusal as the door reports it: the code, the evidence, whether it is a network refusal (no answer
-/// rather than a negative one, `Known::NETWORK`), and its message in both languages.
+/// rather than a negative one, `Known::NETWORK`), and its message in both languages. The sender's "already on
+/// chain" goes as its own reply, its evidence as values (the hashes, the earliest transaction and block), so
+/// both of the command line's roads answer it alike.
 pub fn refused(f: &Fault) -> Reply {
+    if let Some((names, tx, block)) = f.on_chain() {
+        return Reply::OnChain { names: names.clone(), tx: tx.clone(), block: *block };
+    }
+    // A send whose batch is out though the broadcast failed is no refusal: no node answered for its transaction.
+    if let Some(tx) = f.out() {
+        return Reply::Unheard { tx: tx.to_string(), detail: f.tail().to_string() };
+    }
     let (code, network, (zh, en)) = match f.which() {
         Some(k) => (k.as_str().to_string(), Known::NETWORK.contains(&k), crate::lang::both(f.what_key().unwrap_or(k.what()))),
         None => (f.class().as_str().to_string(), false, (f.said(), f.said())),
