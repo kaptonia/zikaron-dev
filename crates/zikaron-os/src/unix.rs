@@ -635,6 +635,10 @@ unsafe extern "C" {
 const LOCK_EX: i32 = 2;
 const LOCK_NB: i32 = 4;
 
+pub fn going(path: &std::path::Path) -> bool {
+    matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+}
+
 pub fn lock_now(file: &std::fs::File) -> bool {
     use std::os::unix::io::AsRawFd;
     // SAFETY: `flock` reads only the descriptor, which `file` keeps open for the call.

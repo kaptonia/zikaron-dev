@@ -32,6 +32,11 @@ const OPEN_ALWAYS: u32 = 4;
 const TRUNCATE_EXISTING: u32 = 5;
 const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
 const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+/// The `NTSTATUS` values an open meets on an entry that is not there, or is being deleted.
+const STATUS_OBJECT_NAME_NOT_FOUND: i32 = 0xC000_0034_u32 as i32;
+const STATUS_OBJECT_PATH_NOT_FOUND: i32 = 0xC000_003A_u32 as i32;
+const STATUS_DELETE_PENDING: i32 = 0xC000_0056_u32 as i32;
 const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
 const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
 const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 0x2;
@@ -74,6 +79,11 @@ unsafe extern "system" {
     fn GetCurrentProcess() -> Handle;
     fn CloseHandle(h: Handle) -> i32;
     fn LocalFree(p: *mut c_void) -> *mut c_void;
+}
+
+#[link(name = "ntdll")]
+unsafe extern "system" {
+    fn RtlGetLastNtStatus() -> i32;
 }
 
 #[link(name = "kernel32")]
@@ -1136,6 +1146,23 @@ fn lock_with(file: &std::fs::File, flags: u32) -> bool {
     let mut at = Overlapped { internal: 0, internal_high: 0, offset: 0, offset_high: LOCK_OFFSET_HIGH, event: std::ptr::null_mut() };
     // SAFETY: the handle stays open for the call (`file` holds it) and `at` outlives it.
     unsafe { LockFileEx(file.as_raw_handle() as Handle, flags, 0, 1, 0, &mut at) != 0 }
+}
+
+/// The entry opened for its attributes alone (no access asked, every sharing allowed, a folder too, a link
+/// itself): an open that succeeds is an entry there; one that fails is read by the status the system met, read
+/// at once on this thread: not there, or delete pending (which the Win32 error alone spells as access denied).
+pub fn going(path: &Path) -> bool {
+    let name = wide(path);
+    let share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+    // SAFETY: `name` is a NUL-terminated wide string that outlives the call; no security descriptor or template.
+    let h = unsafe { CreateFileW(name.as_ptr(), 0, share, std::ptr::null_mut(), OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, std::ptr::null_mut()) };
+    if h != INVALID_HANDLE_VALUE {
+        // SAFETY: `h` is the handle just opened, closed once.
+        unsafe { CloseHandle(h) };
+        return false;
+    }
+    // SAFETY: reads this thread's last status; nothing has been called since the failed open.
+    matches!(unsafe { RtlGetLastNtStatus() }, STATUS_OBJECT_NAME_NOT_FOUND | STATUS_OBJECT_PATH_NOT_FOUND | STATUS_DELETE_PENDING)
 }
 
 pub fn lock_now(file: &std::fs::File) -> bool {

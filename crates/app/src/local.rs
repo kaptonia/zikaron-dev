@@ -586,20 +586,21 @@ fn walk(root: &Path, rel: &str, out: &mut Vec<(PathBuf, String)>) {
 /// Like `walk`, but fails on a directory that cannot be listed (a change that reseals every file must not
 /// skip one it cannot see). The directories it walks are live (a write's temporary file comes and goes; the
 /// command line's door is removed and bound again as a home opens), so an entry listed and gone by the time it is
-/// looked at is not there, not an error: nothing the walk is for vanishes that way (a write replaces a file under
-/// its own name in one step). The root itself must be there.
+/// looked at is not there, not an error: gone as the look itself says (not found), or as the entry's own state says
+/// when the look failed otherwise (`zikaron_os::going`: not there, or being deleted). Nothing the walk is for
+/// vanishes that way (a write replaces a file under its own name in one step). The root itself must be there.
 fn walk_strict(root: &Path, rel: &str, out: &mut Vec<(PathBuf, String)>) -> Result<(), Fault> {
     let at = if rel.is_empty() { root.to_path_buf() } else { root.join(rel) };
     let listing = match std::fs::read_dir(&at) {
         Ok(l) => l,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !rel.is_empty() => return Ok(()),
+        Err(e) if !rel.is_empty() && (e.kind() == std::io::ErrorKind::NotFound || zikaron_os::going(&at)) => return Ok(()),
         Err(e) => return Err(classify(&e, &at.display().to_string())),
     };
     for e in listing {
         let e = match e {
             Ok(e) => e,
             // The folder went while its entries were read: what is left of it is not there.
-            Err(x) if x.kind() == std::io::ErrorKind::NotFound && !rel.is_empty() => return Ok(()),
+            Err(x) if !rel.is_empty() && (x.kind() == std::io::ErrorKind::NotFound || zikaron_os::going(&at)) => return Ok(()),
             Err(x) => return Err(classify(&x, &at.display().to_string())),
         };
         let name = e.file_name().to_string_lossy().to_string();
@@ -608,7 +609,7 @@ fn walk_strict(root: &Path, rel: &str, out: &mut Vec<(PathBuf, String)>) -> Resu
             Ok(m) if m.is_dir() => walk_strict(root, &r, out)?,
             Ok(m) if m.is_file() => out.push((e.path(), r)),
             Ok(_) => {}
-            Err(x) if x.kind() == std::io::ErrorKind::NotFound => {}
+            Err(x) if x.kind() == std::io::ErrorKind::NotFound || zikaron_os::going(&e.path()) => {}
             Err(x) => return Err(classify(&x, &e.path().display().to_string())),
         }
     }

@@ -291,13 +291,15 @@ impl Home {
 }
 
 /// The bytes under `p`, which must be there. A home is live while it is measured (a write's temporary file comes
-/// and goes), so an entry listed and gone by the time it is looked at counts nothing, not an error.
+/// and goes), so an entry listed and gone by the time it is looked at counts nothing, not an error: gone as the
+/// look itself says (not found), or as the entry's own state says when the look failed otherwise
+/// (`zikaron_os::going`: not there, or being deleted).
 fn walk_size(p: &Path) -> Result<u64, Fault> {
     size_of(p, false)
 }
 
 fn size_of(p: &Path, listed: bool) -> Result<u64, Fault> {
-    let gone = |e: &std::io::Error| listed && e.kind() == std::io::ErrorKind::NotFound;
+    let gone = |e: &std::io::Error| listed && (e.kind() == std::io::ErrorKind::NotFound || zikaron_os::going(p));
     let md = match std::fs::symlink_metadata(p) {
         Ok(m) => m,
         Err(e) if gone(&e) => return Ok(0),

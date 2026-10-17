@@ -421,6 +421,25 @@ pub fn wipe_string_tail(s: &mut String, old: usize) {
 #[cfg(test)]
 mod tests {
 
+    /// An entry is going when it is not there: a file or a folder that is there is not going, the same names once
+    /// removed are. (A Windows entry being deleted, its last handle still open, is the third form; the walks of a
+    /// live folder meet it in the app's tests.)
+    #[test]
+    fn an_entry_is_going_when_it_is_not_there() {
+        let dir = std::env::temp_dir().join(format!("zk-os-going-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let file = dir.join("file");
+        std::fs::write(&file, b"x").expect("a file");
+        assert!(!going(&file), "a file that is there");
+        assert!(!going(&dir), "a folder that is there");
+        std::fs::remove_file(&file).expect("removed");
+        assert!(going(&file), "a file removed");
+        std::fs::remove_dir_all(&dir).expect("removed");
+        assert!(going(&dir), "a folder removed");
+        assert!(going(&dir.join("never")), "under a folder that is not there");
+    }
+
     /// The three wipes leave zeros where the secret was: a slice whole; a string's whole allocation, past its
     /// length too, and the string empty; a string's let-go tail, its text kept.
     #[test]
@@ -719,6 +738,16 @@ mod tests {
         pretend_unsupported(0);
         let _ = std::fs::remove_dir_all(&d);
     }
+}
+
+// ───────────────────────── An entry on its way out ─────────────────────────
+
+/// Whether an entry a folder listed is on its way out at this moment, judged by the entry's own state, not by the
+/// error a look at it met: it is not there any more, or (Windows) it is being deleted, its last handle not yet
+/// closed, so the system opens it as "delete pending" and answers access denied. A walk of a live folder takes
+/// such an entry as not there; an entry that is there and will not open is not going, and its trouble stands.
+pub fn going(path: &Path) -> bool {
+    imp::going(path)
 }
 
 // ───────────────────────── The single-writer lock ─────────────────────────
