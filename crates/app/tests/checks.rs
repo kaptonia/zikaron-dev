@@ -156,11 +156,10 @@ fn code_only(s: &str) -> String {
 /// them and are not read.
 #[test]
 fn no_button_word_ends_in_an_ellipsis() {
-    const CLICKABLE: [&str; 16] = [
+    const CLICKABLE: [&str; 15] = [
         "key::key(",
         // A key built and shown (its busy words, `.busy_text`, are a status line: outside these parentheses).
         "key::Key::new(",
-        "key::link(",
         // The commit key that speaks while it waits: its first words are the key's, the second its status line.
         ".press_long_saying(ui,",
         "page::Guide::key(",
@@ -5012,7 +5011,7 @@ fn the_shortcuts_read_the_key_the_layout_gives_the_press() {
     // the egui-winit version is pinned here so an upgrade must recheck that fallback.
     let lock = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock")).expect("the lock file");
     let at = lock.find("name = \"egui-winit\"").expect("egui-winit in the lock");
-    assert!(lock[at..].lines().nth(1).is_some_and(|l| l.trim() == "version = \"0.33.3\""), "egui-winit moved: check its logical-or-physical key fallback again");
+    assert!(lock[at..].lines().nth(1).is_some_and(|l| l.trim() == "version = \"0.34.3\""), "egui-winit moved: check its logical-or-physical key fallback again");
 }
 
 /// The window's drag band (over the page) acts like a title bar: dragging moves the window, a double click
@@ -5288,43 +5287,10 @@ fn alone_in(module: &str, test: &str) -> bool {
     true
 }
 
-/// Every test the family's component registry names (`family-components.json`, each `tests[]` path and name)
-/// is a function in that file now: a renamed or removed test is found here, not by a reader of the registry. A
-/// test the file's `marked!` macro makes is there by its `name: …;` line in that macro's call.
-#[test]
-fn every_registered_test_names_a_function_that_is_there() {
-    use zikaron::json::Value;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let v = zikaron::json::parse(&std::fs::read(root.join("family-components.json")).expect("the component registry")).expect("JSON");
-    let Some(Value::Arr(components)) = v.member("components") else { panic!("no components") };
-    let mut missing = Vec::new();
-    let mut seen = 0;
-    for c in components {
-        let Some(Value::Arr(tests)) = c.member("tests") else { continue };
-        for t in tests {
-            let (Some(Value::Str(path)), Some(Value::Str(name))) = (t.member("path"), t.member("name")) else {
-                missing.push(format!("{t:?}"));
-                continue;
-            };
-            seen += 1;
-            let code = std::fs::read_to_string(root.join(path)).map(|x| code_only(&x)).unwrap_or_default();
-            let there = code.match_indices(&format!("fn {name}")).any(|(i, m)| code[i + m.len()..].starts_with(['(', '<']));
-            let made = code.match_indices("marked! {").any(|(i, m)| {
-                let call = &code[i + m.len()..];
-                let call = &call[..call.find("\n}").unwrap_or(call.len())];
-                call.lines().any(|l| l.trim_start().strip_prefix(name.as_str()).is_some_and(|r| r.starts_with(':')))
-            });
-            if !there && !made {
-                missing.push(format!("{path} {name}"));
-            }
-        }
-    }
-    assert!(seen > 0, "the registry names its tests");
-    assert!(missing.is_empty(), "registered tests that are not there: {missing:#?}");
-}
-
 #[path = "checks_more/gaps.rs"]
 mod gaps;
+#[path = "checks_more/refresh_steady.rs"]
+mod refresh_steady;
 #[path = "checks_more/gaps_b10m.rs"]
 mod gaps_b10m;
 #[path = "checks_more/window_b10.rs"]

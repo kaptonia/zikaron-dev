@@ -130,7 +130,8 @@ impl Win {
         self.ensure_rows(now);
         self.ensure_grants(now);
         let lines = self.alert_lines();
-        let links: Vec<Option<String>> = lines.iter().map(|l| l.go.map(|p| fill1(Key::GoPlace, self.place_title(p)))).collect();
+        // A line that goes somewhere is clicked whole: its chevron says so, no words beside it.
+        let links: Vec<Option<String>> = lines.iter().map(|l| l.go.map(|_| String::new())).collect();
         let mut go: Option<Place> = None;
         stagger(ui, 0, |ui| {
             card::form(ui, |ui, f| {
@@ -151,20 +152,6 @@ impl Win {
         }
         if let Some(p) = go {
             self.go(p, now);
-        }
-    }
-
-    /// A place's name as the rail says it (links are named after where they land).
-    pub(super) fn place_title(&self, place: Place) -> &'static str {
-        use crate::nav::{tab, View};
-        match crate::nav::settle(place, self.shell.settings.role) {
-            Place::Home => t(Key::NavHome),
-            Place::SettingsHome | Place::Settings(_) => t(Key::NavSettings),
-            Place::View(View::Grants, tab::GRANTS_NEW) => t(Key::V2NewGrant),
-            Place::View(View::MyGrants, tab::HELD_RELICENSE) => t(Key::U4RelicenseTitle),
-            Place::View(View::Works, tab::WORKS_KIT) => t(Key::U3UseForKit),
-            Place::View(v, _) => t(v.key()),
-            Place::Page(p) => p.title(),
         }
     }
 }

@@ -17,8 +17,7 @@
 
 use crate::icons::{self, Glyph};
 
-use crate::paint;
-use crate::palette::{self, c, Lift, C};
+use crate::palette::{self, c, C};
 use crate::tokens::{self, Radius, Type};
 use egui::{pos2, vec2, Rect};
 
@@ -160,7 +159,7 @@ fn calendar(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::Id, an
         guarded = crate::layer::under(ui, crate::layer::Under::Guard);
         crate::layer::body(ui, rect);
         ui.multiply_opacity(e);
-        paint::surface(ui.painter(), rect, Radius::Menu, c(C::Surface), Lift::Menu);
+        crate::material::paint(ui.painter(), rect, Radius::Menu, crate::material::Level::Float, 0.0);
         let left = rect.left() + PAD + 3.0;
         // Head row: ‹ month ›.
         let head = Rect::from_min_size(pos2(left, rect.top() + PAD), vec2(CELL_W * 7.0, HEAD_H));
@@ -169,7 +168,7 @@ fn calendar(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::Id, an
             let resp = ui.interact(r, id.with(("turn", k)), egui::Sense::click());
             if resp.hovered() {
                 let press = resp.is_pointer_button_down_on();
-                ui.painter().rect_filled(r, egui::CornerRadius::same(6), c(if press { C::Press } else { C::Hover }));
+                ui.painter().rect_filled(r, Radius::Ctl.egui(), c(if press { C::Press } else { C::Hover }));
             }
             icons::glyph_at(ui.painter(), glyph, r.center(), 14.0, c(C::Ink2));
             if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -191,14 +190,17 @@ fn calendar(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::Id, an
             let resp = ui.interact(r, id.with(("day", i)), egui::Sense::click());
             let on = chosen == Some(day);
             let here = (day.0, day.1) == view;
+            // The chosen day is a solid key's ground (no halo); a hovered one the kit's soft ground; today a
+            // thin ring of the accent.
             if on {
-                ui.painter().rect_filled(r, egui::CornerRadius::same(6), c(C::Accent));
+                ui.painter().add(crate::material::small(r, Radius::Ctl.egui(), 1.0));
+                ui.painter().add(crate::material::solid(r, Radius::Ctl.px(), c(C::Accent)));
             } else if resp.hovered() {
                 let press = resp.is_pointer_button_down_on();
-                ui.painter().rect_filled(r, egui::CornerRadius::same(6), c(if press { C::Press } else { C::Hover }));
+                ui.painter().rect_filled(r, Radius::Ctl.egui(), c(if press { C::Press } else { C::Hover }));
             }
             if day == today && !on {
-                ui.painter().rect_stroke(r, egui::CornerRadius::same(7), egui::Stroke::new(2.0_f32, c(C::Accent)), egui::StrokeKind::Inside);
+                ui.painter().rect_stroke(r, Radius::Ctl.egui(), egui::Stroke::new(1.5_f32, c(C::Accent)), egui::StrokeKind::Inside);
             }
             let ink = if on { palette::ON_SOLID } else if here { c(C::Ink) } else { c(C::Ink3) };
             ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, day.2.to_string(), Type::Body.font(), ink);

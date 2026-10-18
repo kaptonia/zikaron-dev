@@ -38,6 +38,9 @@ pub struct AuditRead {
     pub at: f64,
     /// Which ledger mark this report was computed for ([`Shell::book_mark`]).
     pub mark: u64,
+    /// The table generation this report's lamps go with ([`Shell::rows_gen`] once the report landed): the
+    /// ledger's state is judged only against a table read at that generation ([`Shell::ledger_ok`]).
+    pub rows_gen: u64,
 }
 
 /// The bar at the top of every page.
@@ -248,7 +251,16 @@ pub struct Shell {
     /// Table generation: incremented on every invalidation; a read in flight returns with the generation it
     /// started with and is dropped on mismatch.
     pub rows_gen: u64,
+    /// The generation the table held in `rows` was read at. A stale table stays shown until the new reading
+    /// lands ([`Self::rows_current`]): "not read" belongs only to a table never read.
+    pub rows_at: u64,
     pub grants_gen: u64,
+    /// The generation the register held in `grants` was read at, as `rows_at`.
+    pub grants_at: u64,
+    /// The ledger's state ("normal / problems") as last judged from one generation: a report and the table
+    /// read for its lamps ([`Self::judge_ledger`]). It changes only when a new pair is in hand; between them
+    /// the last conclusion stands. `None` until this home's first pair.
+    pub ledger_ok: Option<bool>,
     /// The key vault state now. Read once at start and changed by each passcode action; the frame only reads
     /// this field, so the window never touches the disk for it.
     pub vault: Vault,
@@ -561,7 +573,10 @@ impl Shell {
             settings: Settings::default(),
             rows: None,
             rows_gen: 0,
+            rows_at: 0,
             grants_gen: 0,
+            grants_at: 0,
+            ledger_ok: None,
             vault: Vault::of(crate::keybox::state()),
             vault_recoverable: crate::keybox::recoverable().unwrap_or(true),
             vault_said: None,
@@ -915,6 +930,7 @@ impl Shell {
         self.grants = None;
         self.rows = None;
         self.audit = None;
+        self.ledger_ok = None;
         self.reconciled = None;
         self.handed = None;
     }
@@ -1468,20 +1484,47 @@ impl Shell {
         now - last >= every as f64
     }
 
-    /// Mark this table stale. Clearing the reading and allowing a new read must happen together: `Tasks`
-    /// records "started" (not reset by failure, which prevents spinning), so clearing only the reading would
-    /// never trigger another read. Every place that sets `rows` to `None` goes through here (`grants`
-    /// likewise).
+    /// Mark this table stale: a new generation, and a new read allowed. The table held stays shown until the new
+    /// reading lands (a refresh never empties it); moving the generation and allowing the read happen together,
+    /// since `Tasks` records "started" (not reset by failure, which prevents spinning). Every refresh of the table
+    /// goes through here (`grants` likewise).
     pub fn stale_rows(&mut self) {
-        self.rows = None;
         self.rows_gen += 1;
         self.tasks.forget(crate::task::Kind::Ledger);
     }
 
     pub fn stale_grants(&mut self) {
-        self.grants = None;
         self.grants_gen += 1;
         self.tasks.forget(crate::task::Kind::Grants);
+    }
+
+    /// Whether the table held is the reading of the current generation (no read is due).
+    pub fn rows_current(&self) -> bool {
+        self.rows.is_some() && self.rows_at == self.rows_gen
+    }
+
+    /// Whether the register held is the reading of the current generation.
+    pub fn grants_current(&self) -> bool {
+        self.grants.is_some() && self.grants_at == self.grants_gen
+    }
+
+    /// Judge the ledger's state from one generation: the last report and the table read for its lamps. A broken
+    /// chain is a problem on the report alone; otherwise only a table of the report's generation is counted
+    /// with it (this desk's own deletions are recognized, not unknown types; entries awaiting anchoring are not
+    /// faults). With no such pair in hand the last conclusion stands.
+    fn judge_ledger(&mut self) {
+        use zikaron::tokens::Key as T;
+        let Some(a) = self.audit.as_ref() else { return };
+        if a.broken {
+            self.ledger_ok = Some(false);
+            return;
+        }
+        let Some((rows, _)) = self.rows.as_ref().filter(|_| self.rows_at == a.rows_gen) else { return };
+        let items = crate::auditx::items(&a.report);
+        let n = |k: T| items.iter().find(|i| i.key == k.as_str()).and_then(|i| i.count).unwrap_or(0);
+        let convention = crate::retractx::read(rows).count;
+        let bad = n(T::Findings) + n(T::Missing) + n(T::Malformed) + n(T::Void) + n(T::AdoptionUnproven) + n(T::Unproven) + n(T::UnknownType).saturating_sub(convention);
+        self.ledger_ok = Some(bad == 0);
     }
 
     /// The ledger's source changed. `Source::Ledger`: the ledger in the same home was replaced (adoption in
@@ -1585,7 +1628,10 @@ impl Shell {
             // Read from the ledger (cleared in both scopes):
             rows,
             rows_gen,
+            rows_at: _,
             grants_gen,
+            grants_at: _,
+            ledger_ok,
             audit,
             audit_asked,
             tail_asked,
@@ -1646,6 +1692,7 @@ impl Shell {
         *rows_gen += 1;
         *grants_gen += 1;
         *audit = None;
+        *ledger_ok = None;
         // A source change means this home has no report yet: the next frame audits (without waiting for the
         // period).
         *audit_asked = None;
@@ -1937,6 +1984,7 @@ impl Shell {
                         fragment: fragment.clone(),
                         at: now,
                         mark: self.audit_asked.unwrap_or(self.book_mark),
+                        rows_gen: self.rows_gen,
                     });
                     // Save this pass's `anchored` set: the next start says "checked last time" from it.
                     if let Some(h) = self.home.as_ref() {
@@ -1954,8 +2002,14 @@ impl Shell {
                     self.pen = if *complete { Pen::Granted } else { Pen::Held };
                     // The anchor lamps' source changed, so the table is stale. Green comes only from the
                     // report's `anchored` item; a new report with an unrefreshed table would show the
-                    // previous report's lamps, a silent staleness.
+                    // previous report's lamps, a silent staleness. The report goes with the table of the new
+                    // generation, and the ledger's state is judged once that table lands.
                     self.stale_rows();
+                    let r#gen = self.rows_gen;
+                    if let Some(a) = self.audit.as_mut() {
+                        a.rows_gen = r#gen;
+                    }
+                    self.judge_ledger();
                 }
                 // A read started from a source that has since been invalidated (a new report, new entries, a
                 // queue change) describes the earlier state and is dropped: leave it empty, clear "started",
@@ -1963,8 +2017,10 @@ impl Shell {
                 Ok(Done::Ledger { rows, strays, handed, r#gen }) => {
                     if *r#gen == self.rows_gen {
                         self.rows = Some((rows.clone(), *strays));
+                        self.rows_at = *r#gen;
                         self.handed = handed.clone();
                         self.queue_follows_ledger();
+                        self.judge_ledger();
                     } else {
                         self.tasks.forget(crate::task::Kind::Ledger);
                     }
@@ -2108,6 +2164,7 @@ impl Shell {
                 Ok(Done::Grants { rows, r#gen }) => {
                     if *r#gen == self.grants_gen {
                         self.grants = Some(rows.clone());
+                        self.grants_at = *r#gen;
                     } else {
                         self.tasks.forget(crate::task::Kind::Grants);
                     }

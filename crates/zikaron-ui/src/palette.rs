@@ -309,64 +309,6 @@ impl Tone {
     }
 }
 
-/// Elevation: cards at rest, lifted on hover, the drop-downs (menus, search pickers, the date picker: they
-/// open over the page beside their field, so they lift as a hovered card does, not as a sheet), floating
-/// layers (sheets), and the toast (a small floating strip: a shorter, lighter shadow than a sheet's). Each
-/// is a half-point ring plus soft shadows; the dark table carries its own.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Lift {
-    Card,
-    Hover,
-    Menu,
-    Float,
-    Toast,
-}
-
-/// One soft shadow: y offset, blur, color.
-#[derive(Clone, Copy, Debug)]
-pub struct Soft {
-    pub y: f32,
-    pub blur: f32,
-    pub color: Color32,
-}
-
-const fn soft(y: f32, blur: f32, r: u8, g: u8, b: u8, a: u8) -> Soft {
-    Soft { y, blur, color: rgba(r, g, b, a) }
-}
-
-/// The ring color and shadows of an elevation, from the current blend.
-pub fn lift(l: Lift) -> (Color32, [Soft; 2]) {
-    let (ring_l, sh_l, ring_d, sh_d) = match l {
-        Lift::Card => (
-            rgba(0, 0, 0, 15),
-            [soft(1.0, 2.0, 16, 24, 40, 10), soft(6.0, 16.0, 16, 24, 40, 10)],
-            rgba(255, 255, 255, 15),
-            [soft(1.0, 2.0, 0, 0, 0, 77), soft(0.0, 0.0, 0, 0, 0, 0)],
-        ),
-        Lift::Hover | Lift::Menu => (
-            rgba(0, 0, 0, 15),
-            [soft(2.0, 4.0, 16, 24, 40, 13), soft(12.0, 28.0, 16, 24, 40, 20)],
-            rgba(255, 255, 255, 20),
-            [soft(12.0, 28.0, 0, 0, 0, 89), soft(0.0, 0.0, 0, 0, 0, 0)],
-        ),
-        Lift::Float => (
-            rgba(0, 0, 0, 20),
-            [soft(18.0, 48.0, 16, 24, 40, 46), soft(2.0, 6.0, 16, 24, 40, 15)],
-            rgba(255, 255, 255, 20),
-            [soft(18.0, 48.0, 0, 0, 0, 140), soft(0.0, 0.0, 0, 0, 0, 0)],
-        ),
-        Lift::Toast => (
-            rgba(0, 0, 0, 15),
-            [soft(4.0, 12.0, 16, 24, 40, 20), soft(1.0, 3.0, 16, 24, 40, 10)],
-            rgba(255, 255, 255, 20),
-            [soft(4.0, 12.0, 0, 0, 0, 90), soft(0.0, 0.0, 0, 0, 0, 0)],
-        ),
-    };
-    let t = blend();
-    let s = |a: Soft, b: Soft| Soft { y: a.y + (b.y - a.y) * t, blur: a.blur + (b.blur - a.blur) * t, color: mix(a.color, b.color, t) };
-    (mix(ring_l, ring_d, t), [s(sh_l[0], sh_d[0]), s(sh_l[1], sh_d[1])])
-}
-
 /// The canvas color the window is cleared to before anything is drawn (the page ground).
 pub fn canvas() -> [f32; 4] {
     c(C::Ground).to_normalized_gamma_f32()

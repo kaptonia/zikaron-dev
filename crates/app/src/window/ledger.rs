@@ -1,14 +1,14 @@
 use super::*;
 
 impl Win {
-    /// Read the table once if it has not been read, so opening a page shows the ledger without the user
-    /// pressing anything.
+    /// Read the table when it has not been read at the current generation, so opening a page shows the ledger
+    /// without the user pressing anything; a stale table stays shown until the new reading lands.
     ///
     /// It starts a background pass (no disk I/O in the frame). A task of this kind starts itself only once:
     /// the condition checks whether `Tasks` recorded an attempt (success or failure), so a failed read does
     /// not start another pass every frame.
     pub(super) fn ensure_rows(&mut self, now: f64) {
-        if self.shell.rows.is_some() || self.shell.home.is_none() || self.shell.tasks.attempted(crate::task::Kind::Ledger) {
+        if self.shell.rows_current() || self.shell.home.is_none() || self.shell.tasks.attempted(crate::task::Kind::Ledger) {
             return;
         }
         self.auto(Action::ReadLedger, now);
@@ -22,7 +22,7 @@ impl Win {
 
     /// Read the register once, like [`Self::ensure_rows`].
     pub(super) fn ensure_grants(&mut self, now: f64) {
-        if self.shell.grants.is_some() || self.shell.home.is_none() || self.shell.tasks.attempted(crate::task::Kind::Grants) {
+        if self.shell.grants_current() || self.shell.home.is_none() || self.shell.tasks.attempted(crate::task::Kind::Grants) {
             return;
         }
         self.auto(Action::ReadGrants, now);

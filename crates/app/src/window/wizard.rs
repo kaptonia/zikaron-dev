@@ -7,6 +7,9 @@
 
 use super::*;
 
+/// The first-run wizard's column of steps, on the rail's ground.
+const WIZ_SIDE_W: f32 = 260.0;
+
 impl Win {
     pub(super) fn wizard_layer(&mut self, ctx: &egui::Context, now: f64) {
         use crate::nav::Step;
@@ -35,10 +38,9 @@ impl Win {
         let back = crate::nav::prev(step, sub);
         let mut go_back = false;
         let mut lang_to: Option<crate::lang::Lang> = None;
-        full::cover(ctx, "wizard", |ui, drop| {
+        full::cover(ctx, "wizard", WIZ_SIDE_W, |ui, drop| {
             let screen = ui.max_rect();
-            let side = egui::Rect::from_min_size(screen.min, egui::vec2(260.0, screen.height()));
-            ui.painter().rect_filled(side, 0.0, c(C::Rail));
+            let side = egui::Rect::from_min_size(screen.min, egui::vec2(WIZ_SIDE_W, screen.height()));
             ui.painter().vline(side.right(), side.y_range(), egui::Stroke::new(1.0_f32, c(C::Line2)));
             // The left column: the steps.
             let mut left = ui.new_child(egui::UiBuilder::new().max_rect(side.shrink2(egui::vec2(22.0, 0.0))).layout(egui::Layout::top_down(egui::Align::Min)));
@@ -637,8 +639,8 @@ mod gas_address {
             events,
             ..Default::default()
         };
-        ctx.run(input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| gas_face(ui, Some(ADDR), Some(&crate::wizard::gas_request(ADDR, 11_155_111)), "0.0000 ETH", true));
+        ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show_inside(ui, |ui| gas_face(ui, Some(ADDR), Some(&crate::wizard::gas_request(ADDR, 11_155_111)), "0.0000 ETH", true));
         })
     }
 

@@ -1767,7 +1767,6 @@ pub enum Key {
     U3CopiedSig,
     HandedBarPlain,
     AlarmRevokedOf,
-    GoPlace,
     IdGroup,
     ChangePinTitle,
     SaidCopiedAddress,
@@ -2033,7 +2032,7 @@ pub enum Key {
 
 impl Key {
     /// All keys, in [`TABLE`] order.
-    pub const ALL: [Key; 1967] = [
+    pub const ALL: [Key; 1966] = [
         Key::PageRevoke,
         Key::PageAdopt,
         Key::PageSucceed,
@@ -3739,7 +3738,6 @@ impl Key {
         Key::U3CopiedSig,
         Key::HandedBarPlain,
         Key::AlarmRevokedOf,
-        Key::GoPlace,
         Key::IdGroup,
         Key::ChangePinTitle,
         Key::SaidCopiedAddress,
@@ -4005,7 +4003,7 @@ impl Key {
 }
 
 /// Every UI string: `(key, Chinese, English)`. One row per key, both languages in each row.
-pub const TABLE: [(Key, &str, &str); 1967] = [
+pub const TABLE: [(Key, &str, &str); 1966] = [
     (Key::PageRevoke, "撤销授权", "Revoke grant"),
     (Key::PageAdopt, "导入上链存证", "Import anchor proofs"),
     (Key::PageSucceed, "移交账本", "Hand over ledger"),
@@ -5727,11 +5725,10 @@ pub const TABLE: [(Key, &str, &str); 1967] = [
     (Key::U3CopiedSig, "已复制签字", "Signature copied"),
     (Key::HandedBarPlain, "账本已移交给新密钥,当前只读", "Ledger handed over to a new key; read-only"),
     (Key::AlarmRevokedOf, "我的授权已被撤销 · {0}", "Held grant revoked · {0}"),
-    (Key::GoPlace, "去{0}", "Open {0}"),
     (Key::IdGroup, "身份", "Identity"),
     (Key::ChangePinTitle, "修改口令", "Change passcode"),
     (Key::SaidCopiedAddress, "已复制地址", "Address copied"),
-    (Key::ZoneExample, "例:首锚区块时刻 {0}", "e.g. first anchor block time {0}"),
+    (Key::ZoneExample, "{0}", "{0}"),
     (Key::SetUsageHuman, "已用 {0} / {1}", "{0} of {1} used"),
     (Key::SetPending, "待设置", "To set up"),
     (Key::WizCount, "首次启动 · {0}/{1}", "Getting started · {0}/{1}"),

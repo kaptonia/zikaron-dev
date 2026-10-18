@@ -17,7 +17,7 @@ pub fn paint_switch(ui: &egui::Ui, rect: Rect, id: egui::Id, on: bool, enabled: 
     p.rect(rect, egui::CornerRadius::same(10), fill, egui::Stroke::new(0.5_f32, egui::Color32::from_black_alpha(15).gamma_multiply(1.0 - ground)), egui::StrokeKind::Inside);
     let x = rect.left() + 10.0 + 14.0 * knob;
     let at = pos2(x, rect.center().y);
-    p.add(egui::Shadow { offset: [0, 1], blur: 2, spread: 0, color: egui::Color32::from_black_alpha(64).gamma_multiply(alpha) }.as_shape(Rect::from_center_size(at, vec2(16.0, 16.0)), egui::CornerRadius::same(8)));
+    p.add(crate::material::small(Rect::from_center_size(at, vec2(16.0, 16.0)), egui::CornerRadius::same(8), alpha * 1.6));
     p.circle_filled(at, 8.0, c(C::Knob).gamma_multiply(alpha.max(0.8)));
 }
 

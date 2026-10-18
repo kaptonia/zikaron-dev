@@ -60,7 +60,8 @@ impl Win {
     // ─── The frame ───
 
     /// One frame of the shell: rail, toolbar and page; the wizard and the gate over them; sheets over all.
-    pub(super) fn chrome(&mut self, ctx: &egui::Context, now: f64) {
+    pub(super) fn chrome(&mut self, ui: &mut egui::Ui, now: f64) {
+        let ctx = &ui.ctx().clone();
         self.ux.now = now;
         if self.ux.nav.place.is_none() {
             let start = self.ux.nav.hist.get(&self.ux.nav.stack).map(|h| h.bottom().clone());
@@ -96,11 +97,11 @@ impl Win {
             self.wizard_by_itself();
         }
         if self.rail_shown() {
-            self.chrome_rail(ctx, now);
+            self.chrome_rail(ui, now);
         }
         // A page that takes drops in its own zones says so as it draws (`takes_drops`).
         self.ux.page_drops = false;
-        self.chrome_page(ctx, now);
+        self.chrome_page(ui, now);
         // The full-window layers: the first-run wizard, and the passcode gate above it.
         if self.ux.wizard.is_some() && !gate {
             self.wizard_layer(ctx, now);
@@ -112,7 +113,8 @@ impl Win {
     }
 
     /// The side rail.
-    fn chrome_rail(&mut self, ctx: &egui::Context, now: f64) {
+    fn chrome_rail(&mut self, ui: &mut egui::Ui, now: f64) {
+        let ctx = &ui.ctx().clone();
         let role = self.shell.settings.role;
         let in_settings = self.ux.nav.stack == self.stack_of(self.settings_place());
         let mut picked: Option<P> = None;
@@ -124,12 +126,12 @@ impl Win {
         let (words, voice, progress, sync) = self.status_say();
         let pin_set = !self.shell.vault.absent();
         let (id_name, id_kind) = self.id_chip_words();
-        let panel = egui::SidePanel::left("rail")
-            .exact_width(tk::RAIL_W)
+        let panel = egui::Panel::left("rail")
+            .exact_size(tk::RAIL_W)
             .resizable(false)
             .show_separator_line(false)
             .frame(rail::panel_frame())
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 // On macOS the top of the rail is the window's handle (there is no title bar): dragging here
                 // drags the window. Elsewhere the system's title bar does that.
@@ -395,9 +397,13 @@ impl Win {
     }
 
     /// The page area: toolbar and body (the shell's, over this product's pages).
-    fn chrome_page(&mut self, ctx: &egui::Context, now: f64) {
+    fn chrome_page(&mut self, ui: &mut egui::Ui, now: f64) {
+        let ctx = &ui.ctx().clone();
         let covered = !self.rail_shown();
-        egui::CentralPanel::default().frame(rail::page_frame()).show(ctx, |ui| {
+        // Under a cover (the wizard, the gate) the page paints no ground: the cover paints its own, and the
+        // wizard's column lets the system's material through.
+        let frame = if covered { egui::Frame::NONE } else { rail::page_frame() };
+        egui::CentralPanel::default().frame(frame).show_inside(ui, |ui| {
             if covered {
                 return;
             }

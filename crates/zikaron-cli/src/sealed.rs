@@ -112,9 +112,10 @@ pub fn machine_here() -> Result<PathBuf, Trouble> {
     Ok(m)
 }
 
-/// The home of `ledger` (as given to `--ledger`): its parent.
+/// The home of `ledger` (as given to `--ledger`): the directory it is in, said by the platform piece's one place
+/// for that (`zikaron_os::parent_dir`): a bare `--ledger ledger` is in the working directory `.`.
 fn home_of(ledger: &str) -> PathBuf {
-    Path::new(ledger).parent().map(Path::to_path_buf).unwrap_or_default()
+    zikaron_os::parent_dir(Path::new(ledger)).to_path_buf()
 }
 
 /// Open the sealed home whose ledger is `ledger` with this machine's credential, at `now` (seconds since the
@@ -400,5 +401,18 @@ impl Opened {
                 Err(t) => return Err(t),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A ledger's home is the directory it is in: the working directory for a bare name, never the empty path.
+    #[test]
+    fn a_ledgers_home_is_the_directory_it_is_in() {
+        use std::path::Path;
+        assert_eq!(super::home_of("ledger"), Path::new("."));
+        assert_eq!(super::home_of("./ledger"), Path::new("."));
+        assert_eq!(super::home_of("h/ledger"), Path::new("h"));
+        assert_eq!(super::home_of("/abs/h/ledger"), Path::new("/abs/h"));
     }
 }

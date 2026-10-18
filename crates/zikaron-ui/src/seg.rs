@@ -31,7 +31,7 @@ fn cell_w(ui: &egui::Ui, cell: &Cell) -> f32 {
 
 /// Paint the sliding thumb.
 fn thumb(p: &egui::Painter, r: Rect) {
-    p.add(egui::Shadow { offset: [0, 1], blur: 2, spread: 0, color: egui::Color32::from_black_alpha(20) }.as_shape(r, Radius::Thumb.egui()));
+    p.add(crate::material::small(r, Radius::Thumb.egui(), 1.0));
     p.rect(r, Radius::Thumb.egui(), c(C::Surface), egui::Stroke::new(0.5_f32, egui::Color32::from_black_alpha(10)), egui::StrokeKind::Outside);
 }
 

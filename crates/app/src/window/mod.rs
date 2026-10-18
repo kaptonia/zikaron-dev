@@ -146,6 +146,9 @@ struct Win {
     ux: Ux,
     /// Asks the user for a path (the system file dialog; a windowless run supplies its own).
     asker: crate::platform::Asker,
+    /// The native window the system's material lies under, and whether that material is in the dark appearance
+    /// now (`None`: no material, the app paints its own ground).
+    backdrop: Option<(zikaron_os::Window, bool)>,
 }
 
 /// The four kinds of written output: the landing toast says where each went and, when that differs from the
@@ -166,12 +169,19 @@ const OLD_DATA_TAG: u64 = u64::MAX;
 const CLI_SWITCHES_TAG: u64 = u64::MAX - 1;
 
 impl Win {
-    /// One frame. `update` only calls this and does not use `eframe::Frame`, so tests can run the same code in
-    /// a headless frame (`probe_face`).
-    fn draw(&mut self, ctx: &egui::Context) {
+    /// One frame, in the root `ui`. `App::ui` only calls this and does not use `eframe::Frame`, so tests can run
+    /// the same code in a headless frame (`probe_face`).
+    fn draw(&mut self, ui: &mut egui::Ui) {
+        let ctx = &ui.ctx().clone();
         zikaron_ui::probe::begin(ctx);
         let now = ctx.input(|i| i.time);
-        skin::follow(ctx, self.appearance());
+        let blend = skin::follow(ctx, self.appearance());
+        if let Some((w, dark)) = self.backdrop.as_mut() {
+            if (blend > 0.5) != *dark {
+                *dark = blend > 0.5;
+                zikaron_os::backdrop_appearance(*w, *dark);
+            }
+        }
         // Every landing goes through the one registry (`landing`).
         self.land(ctx, now);
         // Results of requests made through the command line's door are reported like a click's.
@@ -254,7 +264,7 @@ impl Win {
 
         self.shortcuts(ctx, now);
         // Rail, toolbar and page; the first-run wizard and the passcode gate as full-window layers; sheets above all.
-        self.chrome(ctx, now);
+        self.chrome(ui, now);
         self.tick(ctx, now);
         // If a place asked for a path this frame, open the dialog now without blocking the frame.
         self.paths_ask(ctx);
@@ -312,14 +322,15 @@ fn folder_of(path: &str) -> String {
 }
 
 impl eframe::App for Win {
-    fn update(&mut self, ctx: &egui::Context, _f: &mut eframe::Frame) {
-        self.draw(ctx);
+    fn ui(&mut self, ui: &mut egui::Ui, _f: &mut eframe::Frame) {
+        self.draw(ui);
     }
 
     /// Clear the canvas to the page ground. The default is black, which would show as a dark band in any gap
     /// between two surfaces.
     fn clear_color(&self, _v: &egui::Visuals) -> [f32; 4] {
-        zikaron_ui::palette::canvas()
+        // Over the system's material the canvas is clear: the page's own panel paints its ground.
+        if zikaron_ui::material::glass() { [0.0; 4] } else { zikaron_ui::palette::canvas() }
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {

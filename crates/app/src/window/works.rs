@@ -18,20 +18,15 @@ impl Win {
         out
     }
 
-    /// Ledger state ("normal / problems"): normal when the audit has a reading, the chain is not broken and
-    /// there is no real fault. Entries awaiting anchoring are not faults; this desk's own deletions count as
-    /// recognized, not as unknown types.
+    /// Ledger state ("normal / problems"): a broken chain is a problem on the last report alone; otherwise the
+    /// conclusion the shell judged from one generation, a report and the table read for its lamps
+    /// (`Shell::ledger_ok`), which stands until the next such pair: a refresh never shows a mix of the two.
     pub(super) fn ledger_state(&self) -> Option<bool> {
-        use zikaron::tokens::Key as T;
-        let a = self.shell.audit.as_ref()?;
-        if a.broken {
-            return Some(false);
+        match self.shell.audit.as_ref() {
+            None => None,
+            Some(a) if a.broken => Some(false),
+            Some(_) => self.shell.ledger_ok,
         }
-        let items = crate::auditx::items(&a.report);
-        let n = |k: T| items.iter().find(|i| i.key == k.as_str()).and_then(|i| i.count).unwrap_or(0);
-        let convention = self.shell.rows.as_ref().map(|(r, _)| crate::retractx::read(r).count).unwrap_or(0);
-        let bad = n(T::Findings) + n(T::Missing) + n(T::Malformed) + n(T::Void) + n(T::AdoptionUnproven) + n(T::Unproven) + n(T::UnknownType).saturating_sub(convention);
-        Some(bad == 0)
     }
 
     /// The records page: a compact drop zone for a new record, search and "check a file", then the table.

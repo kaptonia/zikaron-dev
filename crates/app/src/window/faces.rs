@@ -340,6 +340,7 @@ pub(super) fn fresh_win(shell: Shell, typed: Typed, ux: Ux) -> Win {
         faults_told: 0,
         ux,
         asker: crate::platform::ask_path,
+        backdrop: None,
     }
 }
 
@@ -371,7 +372,7 @@ impl SendProbe {
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1180.0, 760.0));
         let input = egui::RawInput { screen_rect: Some(screen), time: Some(self.t), ..Default::default() };
         let win = &mut self.win;
-        let _ = ctx.run(input, |c| win.draw(c));
+        let _ = ctx.run_ui(input, |ui| win.draw(ui));
         self.win.ux.u3.confirm.is_some()
     }
 
@@ -423,17 +424,19 @@ pub fn probe_paths(ctx: &egui::Context, shell: Shell, asker: crate::platform::As
         t += 0.1;
         let input = egui::RawInput { screen_rect: Some(screen), time: Some(t), ..Default::default() };
         let mut took = Vec::new();
-        let _ = ctx.run(input, |c| {
+        let _ = ctx.run_ui(input, |ui| {
+            let c = &ui.ctx().clone();
             for (n, kind) in &f.ask {
                 let _ = path_answer(c, site(n), true, *kind);
             }
-            win.draw(c);
+            win.draw(ui);
         });
         // Taken the next frame they are drawn, as the places do (the answer landed at this frame's start).
         let input = egui::RawInput { screen_rect: Some(screen), time: Some(t + 0.05), ..Default::default() };
         t += 0.05;
-        let _ = ctx.run(input, |c| {
-            win.draw(c);
+        let _ = ctx.run_ui(input, |ui| {
+            let c = &ui.ctx().clone();
+            win.draw(ui);
             for n in &f.take {
                 took.push((*n, path_answer(c, site(n), false, crate::platform::Pick::File)));
             }

@@ -400,7 +400,7 @@ impl Win {
                             let room = ui.available_width();
                             paint::line(ui, &width::file_name(p), Type::Small, c(C::Ink2), room);
                         }
-                        clear_batch = key::link(ui, t(Key::PickClear)).clicked();
+                        clear_batch = key::key(ui, t(Key::PickClear), Role::Plain, true).clicked();
                     }
                     field(ui, t(Key::U3WorkName), None, |ui| input::line(ui, &mut me.typed.work_note, ""));
                     fold::fold(ui, "new-record-for", t(Key::ForFold), |ui| {
@@ -936,7 +936,7 @@ impl Win {
                     width::then_line(
                         ui,
                         |ui| {
-                            if !rows.is_empty() && key::link(ui, t(Key::U3AdSelectAll)).clicked() {
+                            if !rows.is_empty() && key::key(ui, t(Key::U3AdSelectAll), Role::Plain, true).clicked() {
                                 *select_all = true;
                             }
                         },

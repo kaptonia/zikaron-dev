@@ -11,8 +11,7 @@
 use crate::datepick;
 use crate::menu::{self, Item};
 
-use crate::paint;
-use crate::palette::{c, Lift, C};
+use crate::palette::{c, C};
 use crate::tokens::{self, Radius, Type};
 use egui::{pos2, vec2, Rect};
 
@@ -111,7 +110,7 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
         guarded = crate::layer::under(ui, crate::layer::Under::Guard);
         crate::layer::body(ui, rect);
         ui.multiply_opacity(e);
-        paint::surface(ui.painter(), rect, Radius::Menu, c(C::Surface), Lift::Menu);
+        crate::material::paint(ui.painter(), rect, Radius::Menu, crate::material::Level::Float, 0.0);
         let inner = Rect::from_min_max(pos2(rect.left() + INSET, rect.top() + PAD + INSET), pos2(rect.right() - INSET, rect.bottom() - PAD));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
         child.spacing_mut().item_spacing.y = tokens::S2;

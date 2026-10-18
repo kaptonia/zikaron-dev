@@ -102,7 +102,7 @@ fn wheel_over_nested(frames: usize, nested: bool) -> (f32, f32) {
         let mut events = Vec::new();
         if inner_rect.is_positive() {
             events.push(egui::Event::PointerMoved(inner_rect.center()));
-            events.push(egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: egui::vec2(0.0, -3.0), modifiers: egui::Modifiers::NONE });
+            events.push(egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: egui::vec2(0.0, -3.0), phase: egui::TouchPhase::Move, modifiers: egui::Modifiers::NONE });
         }
         let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0))), time: Some(i as f64 / 60.0), events, ..Default::default() };
         let _ = ctx.run(input, |ctx| {
@@ -151,7 +151,7 @@ fn a_nested_area_with_nothing_more_to_show_lets_the_wheel_reach_the_page() {
         let mut events = Vec::new();
         if inner_rect.is_positive() {
             events.push(egui::Event::PointerMoved(inner_rect.center()));
-            events.push(egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: egui::vec2(0.0, -3.0), modifiers: egui::Modifiers::NONE });
+            events.push(egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: egui::vec2(0.0, -3.0), phase: egui::TouchPhase::Move, modifiers: egui::Modifiers::NONE });
         }
         let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0))), time: Some(i as f64 / 60.0), events, ..Default::default() };
         let _ = ctx.run(input, |ctx| {
@@ -196,7 +196,7 @@ fn a_nested_area_under_another_layer_keeps_nothing_of_its_wheel() {
         let mut events = Vec::new();
         if top_rect.is_positive() {
             events.push(egui::Event::PointerMoved(top_rect.center()));
-            events.push(egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: egui::vec2(0.0, -3.0), modifiers: egui::Modifiers::NONE });
+            events.push(egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: egui::vec2(0.0, -3.0), phase: egui::TouchPhase::Move, modifiers: egui::Modifiers::NONE });
         }
         let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0))), time: Some(i as f64 / 60.0), events, ..Default::default() };
         let _ = ctx.run(input, |ctx| {

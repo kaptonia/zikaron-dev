@@ -8,7 +8,7 @@ use crate::icons::{self, Glyph};
 use crate::mark::{self, Mark};
 use crate::motion;
 use crate::paint;
-use crate::palette::{c, Lift, Tone, C};
+use crate::palette::{c, Tone, C};
 use crate::tokens::{self, Radius, Type};
 use egui::{pos2, vec2, Rect};
 
@@ -229,9 +229,7 @@ pub fn table(ui: &mut egui::Ui, id_salt: &str, cols: &[Column], head: bool, rows
     }
     let card = Rect::from_min_max(top, pos2(top.x + w, y + tokens::LIST_PAD_Y));
     ui.advance_cursor_after_rect(card);
-    let mut shapes = Vec::new();
-    crate::card::raised_shapes(&p, card, Radius::Card, c(C::Surface), Lift::Card, &mut shapes);
-    ui.painter().set(slot, egui::Shape::Vec(shapes));
+    ui.painter().set(slot, egui::Shape::Vec(crate::material::shapes(card, Radius::Card, crate::material::Level::Card, 0.0)));
     hit
 }
 

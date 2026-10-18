@@ -15,19 +15,18 @@ use crate::palette::{self, c, C};
 use crate::tokens::{self, Radius, Type};
 use egui::{pos2, vec2, Color32, Rect};
 
-/// The six roles. Closed.
+/// The five roles. Closed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {
     Primary,
     Secondary,
     Guide,
     Commit,
-    Link,
     Plain,
 }
 
 impl Role {
-    pub const ALL: [Role; 6] = [Role::Primary, Role::Secondary, Role::Guide, Role::Commit, Role::Link, Role::Plain];
+    pub const ALL: [Role; 5] = [Role::Primary, Role::Secondary, Role::Guide, Role::Commit, Role::Plain];
 
     fn solid(self) -> bool {
         matches!(self, Role::Primary | Role::Commit)
@@ -52,7 +51,6 @@ pub fn face(r: Role) -> Face {
         Role::Secondary => Face { fill: c(C::Surface), hover: c(C::Hover), line: c(C::Line), text: c(C::Ink), hover_text: c(C::Ink) },
         Role::Guide => Face { fill: c(C::Surface), hover: c(C::PenWash), line: c(C::PenEdge), text: c(C::Pen), hover_text: c(C::Pen) },
         Role::Plain => Face { fill: Color32::TRANSPARENT, hover: c(C::Hover), line: Color32::TRANSPARENT, text: c(C::Ink2), hover_text: c(C::Ink) },
-        Role::Link => Face { fill: Color32::TRANSPARENT, hover: Color32::TRANSPARENT, line: Color32::TRANSPARENT, text: c(C::AccentInk), hover_text: c(C::AccentInk) },
     }
 }
 
@@ -164,9 +162,6 @@ pub fn size_of(ui: &egui::Ui, k: &Key) -> egui::Vec2 {
     // gap included), so it does not change width when it starts.
     let w = words(k.text).max(k.busy_text.map(|b| words(b) + BUSY_RING_W).unwrap_or(0.0));
     let glyphs = [k.lead, k.trail].iter().flatten().count() as f32 * (12.0 + 6.0);
-    if k.role == Role::Link {
-        return vec2(w + glyphs, Type::Key.line());
-    }
     // A menu key keeps 16 before its words and 12 after its caret.
     let pad = if k.trail.is_some() { tokens::KEY_PAD_X + 12.0 } else { tokens::KEY_PAD_X * 2.0 };
     vec2(w + glyphs + pad, tokens::KEY_H)
@@ -207,18 +202,6 @@ pub fn paint(ui: &egui::Ui, rect: Rect, resp: &egui::Response, k: &Key, phase: P
     let alpha = if k.enabled || phase.busy() { 1.0 } else { tokens::OFF };
     let dim = |col: Color32| col.gamma_multiply(alpha);
 
-    if k.role == Role::Link {
-        let colour = dim(f.text);
-        let g = p.layout_no_wrap(k.text.to_string(), font(k.role), colour);
-        let pos = pos2(rect.left(), rect.center().y - g.size().y / 2.0);
-        let w = g.size().x;
-        p.galley(pos, g, colour);
-        if hot {
-            p.hline(rect.left()..=rect.left() + w, rect.center().y + 8.0, egui::Stroke::new(1.0_f32, colour));
-        }
-        return;
-    }
-
     // Failed: red and one shake.
     let (fail, shake) = match phase {
         Phase::Fail { at } => (true, motion::shake_at(ctx, Some(at), 0.36)),
@@ -235,15 +218,14 @@ pub fn paint(ui: &egui::Ui, rect: Rect, resp: &egui::Response, k: &Key, phase: P
         text = palette::ON_SOLID;
     }
     if k.enabled && !matches!(k.role, Role::Plain) {
-        let drop = match (k.role, palette::blend() > 0.5) {
-            (Role::Primary, _) => Color32::from_rgba_unmultiplied(37, 99, 235, 71),
-            (Role::Commit, _) => Color32::from_rgba_unmultiplied(168, 58, 44, 71),
-            (_, false) => Color32::from_rgba_unmultiplied(20, 20, 30, 18),
-            (_, true) => Color32::from_rgba_unmultiplied(0, 0, 0, 102),
-        };
-        p.add(egui::Shadow { offset: [0, 1], blur: 2, spread: 0, color: drop }.as_shape(r, radius));
+        p.add(crate::material::small(r, radius, 1.0));
     }
-    p.rect(r, radius, dim(fill), egui::Stroke::new(1.0_f32, dim(line)), egui::StrokeKind::Inside);
+    if k.role.solid() || fail {
+        p.add(crate::material::solid(r, Radius::Ctl.px(), dim(fill)));
+        p.rect_stroke(r, radius, egui::Stroke::new(1.0_f32, dim(line)), egui::StrokeKind::Inside);
+    } else {
+        p.rect(r, radius, dim(fill), egui::Stroke::new(1.0_f32, dim(line)), egui::StrokeKind::Inside);
+    }
     if k.enabled && !k.role.solid() && !matches!(k.role, Role::Plain) && !fail {
         // The inset lip under white keys.
         let span = (r.left() + 8.0)..=(r.right() - 8.0);
@@ -333,11 +315,6 @@ pub fn paint(ui: &egui::Ui, rect: Rect, resp: &egui::Response, k: &Key, phase: P
         let g = if fail { Glyph::No } else { Glyph::Ok };
         icons::glyph_at(p, g, r.center(), 16.0 * k2, colour.gamma_multiply(mark_in.min(1.0)));
     }
-}
-
-/// A link: words in the link blue, underlined on hover.
-pub fn link(ui: &mut egui::Ui, text: &str) -> egui::Response {
-    key(ui, text, Role::Link, true)
 }
 
 /// An icon key in the toolbar and the rail: 26 (or `size`) square, the glyph in the second ink, hover ground,

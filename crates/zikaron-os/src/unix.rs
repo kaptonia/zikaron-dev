@@ -650,3 +650,182 @@ pub fn lock_wait(file: &std::fs::File) -> bool {
     // SAFETY: as above.
     unsafe { flock(file.as_raw_fd(), LOCK_EX) == 0 }
 }
+
+// ───────────────────────── The window's backdrop (macOS: the system's glass or vibrancy) ─────────────────────────
+
+#[cfg(target_os = "macos")]
+mod appkit {
+    use std::ffi::{c_char, c_void, CString};
+
+    #[link(name = "AppKit", kind = "framework")]
+    unsafe extern "C" {}
+
+    unsafe extern "C" {
+        fn objc_getClass(name: *const c_char) -> *mut c_void;
+        fn sel_registerName(name: *const c_char) -> *mut c_void;
+        fn objc_msgSend();
+    }
+
+    pub type Id = *mut c_void;
+
+    /// NSRect, as AppKit passes it by value.
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct Rect {
+        pub x: f64,
+        pub y: f64,
+        pub w: f64,
+        pub h: f64,
+    }
+
+    pub fn sel(name: &str) -> Id {
+        let c = CString::new(name).unwrap_or_default();
+        unsafe { sel_registerName(c.as_ptr()) }
+    }
+
+    pub fn class(name: &str) -> Id {
+        let c = CString::new(name).unwrap_or_default();
+        unsafe { objc_getClass(c.as_ptr()) }
+    }
+
+    /// `[obj sel]` answering an object.
+    pub unsafe fn send(obj: Id, s: &str) -> Id {
+        let f: unsafe extern "C" fn(Id, Id) -> Id = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(obj, sel(s)) }
+    }
+
+    /// `[obj sel:arg]` with an object argument.
+    pub unsafe fn send_id(obj: Id, s: &str, arg: Id) -> Id {
+        let f: unsafe extern "C" fn(Id, Id, Id) -> Id = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(obj, sel(s), arg) }
+    }
+
+    /// `[obj sel:n]` with an integer argument (NSInteger, NSUInteger, BOOL widened).
+    pub unsafe fn send_int(obj: Id, s: &str, n: isize) {
+        let f: unsafe extern "C" fn(Id, Id, isize) = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(obj, sel(s), n) }
+    }
+
+    /// `[obj sel:flag]` with a BOOL argument.
+    pub unsafe fn send_bool(obj: Id, s: &str, b: bool) {
+        let f: unsafe extern "C" fn(Id, Id, bool) = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(obj, sel(s), b) }
+    }
+
+    /// `[obj sel]` answering an NSRect.
+    pub unsafe fn send_rect(obj: Id, s: &str) -> Rect {
+        let f: unsafe extern "C" fn(Id, Id) -> Rect = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(obj, sel(s)) }
+    }
+
+    /// `[obj initWithFrame:rect]`.
+    pub unsafe fn init_frame(obj: Id, r: Rect) -> Id {
+        let f: unsafe extern "C" fn(Id, Id, Rect) -> Id = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(obj, sel("initWithFrame:"), r) }
+    }
+
+    /// `[parent addSubview:view positioned:place relativeTo:other]`.
+    pub unsafe fn add_subview(parent: Id, view: Id, place: isize, other: Id) {
+        let f: unsafe extern "C" fn(Id, Id, Id, isize, Id) = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(parent, sel("addSubview:positioned:relativeTo:"), view, place, other) }
+    }
+
+    /// An NSString of `s` (autoreleased).
+    pub unsafe fn string(s: &str) -> Id {
+        let c = CString::new(s).unwrap_or_default();
+        let f: unsafe extern "C" fn(Id, Id, *const c_char) -> Id = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(class("NSString"), sel("stringWithUTF8String:"), c.as_ptr()) }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn backdrop_available() -> bool {
+    true
+}
+
+/// The window's appearance (Aqua or DarkAqua), so the system's material follows the app's light or dark choice.
+#[cfg(target_os = "macos")]
+fn set_appearance(window: appkit::Id, dark: bool) {
+    use appkit::*;
+    unsafe {
+        let name = string(if dark { "NSAppearanceNameDarkAqua" } else { "NSAppearanceNameAqua" });
+        let look = send_id(class("NSAppearance"), "appearanceNamed:", name);
+        if !look.is_null() {
+            send_id(window, "setAppearance:", look);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn backdrop(w: crate::Window, dark: bool) -> crate::Backdrop {
+    use appkit::*;
+    let crate::Window::AppKit(view) = w else { return crate::Backdrop::Tint };
+    if view.is_null() {
+        return crate::Backdrop::Tint;
+    }
+    unsafe {
+        let window = send(view, "window");
+        if window.is_null() {
+            return crate::Backdrop::Tint;
+        }
+        let content = send(window, "contentView");
+        let frame_view = if content.is_null() { std::ptr::null_mut() } else { send(content, "superview") };
+        if frame_view.is_null() {
+            return crate::Backdrop::Tint;
+        }
+        set_appearance(window, dark);
+        // macOS 26 and later have the system's glass; earlier ones its vibrancy, under the window's sidebar material.
+        let glass = class("NSGlassEffectView");
+        let (cls, kind) = if glass.is_null() { (class("NSVisualEffectView"), crate::Backdrop::Vibrancy) } else { (glass, crate::Backdrop::Glass) };
+        if cls.is_null() {
+            return crate::Backdrop::Tint;
+        }
+        let bounds = send_rect(frame_view, "bounds");
+        let effect = init_frame(send(cls, "alloc"), bounds);
+        if effect.is_null() {
+            return crate::Backdrop::Tint;
+        }
+        // Width and height follow the window (NSViewWidthSizable | NSViewHeightSizable).
+        send_int(effect, "setAutoresizingMask:", 2 | 16);
+        if kind == crate::Backdrop::Vibrancy {
+            // Under-window background material, blended behind the window, always active.
+            send_int(effect, "setMaterial:", 21);
+            send_int(effect, "setBlendingMode:", 0);
+            send_int(effect, "setState:", 1);
+        }
+        send_bool(window, "setOpaque:", false);
+        send_id(window, "setBackgroundColor:", send(class("NSColor"), "clearColor"));
+        // Behind the content view (NSWindowBelow), inside the window's frame view: the app's surfaces lie over it.
+        add_subview(frame_view, effect, -1, content);
+        kind
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn backdrop_appearance(w: crate::Window, dark: bool) {
+    use appkit::*;
+    let crate::Window::AppKit(view) = w else { return };
+    if view.is_null() {
+        return;
+    }
+    unsafe {
+        let window = send(view, "window");
+        if !window.is_null() {
+            set_appearance(window, dark);
+        }
+    }
+}
+
+/// Linux: no system material reaches the window; the app paints its own tinted ground.
+#[cfg(not(target_os = "macos"))]
+pub fn backdrop_available() -> bool {
+    false
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn backdrop(_w: crate::Window, _dark: bool) -> crate::Backdrop {
+    crate::Backdrop::Tint
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn backdrop_appearance(_w: crate::Window, _dark: bool) {}

@@ -25,6 +25,7 @@ pub mod input;
 pub mod kv;
 pub mod layer;
 pub mod mark;
+pub mod material;
 pub mod menu;
 pub mod motion;
 pub mod nav;

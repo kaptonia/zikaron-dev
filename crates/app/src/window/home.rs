@@ -157,7 +157,7 @@ impl Win {
         let amber = motion::flag(ui.ctx(), id.with("amber"), state != 2, tk::SLOW);
         let r = paint::scaled(rect.translate(egui::vec2(0.0, -hot)), press);
         let p = ui.painter();
-        paint::surface(p, r, tk::Radius::Card, c(C::Surface), if hot > 0.5 { zikaron_ui::palette::Lift::Hover } else { zikaron_ui::palette::Lift::Card });
+        zikaron_ui::material::paint(p, r, tk::Radius::Card, zikaron_ui::material::Level::Card, hot);
         let edge = zikaron_ui::palette::mix(c(C::OkEdge), zikaron_ui::palette::mix(c(C::WarnEdge), c(C::Warn), hot), amber);
         p.rect_stroke(r, tk::Radius::Card.egui(), egui::Stroke::new(1.0_f32, edge), egui::StrokeKind::Outside);
         let n = if state == 1 { busy } else { sendable };

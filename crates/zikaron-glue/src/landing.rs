@@ -61,7 +61,7 @@ fn failed(subject: &Path, what: &str, at: &Path, e: &std::io::Error) -> Trouble 
 /// (`zikaron_store::layout::tmp_file_name`: a fixed prefix and sixteen random hex digits), so any reader of a
 /// directory recognises a leftover one with `zikaron_store::layout::tmp_shaped`, whichever write left it.
 fn beside(out: &Path) -> Result<PathBuf, Trouble> {
-    let parent = out.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    let parent = zikaron_os::parent_dir(out);
     let nonce = nonce().map_err(|e| failed(Path::new(zikaron_os::ENTROPY_SOURCE), "read", Path::new(zikaron_os::ENTROPY_SOURCE), &e))?;
     Ok(parent.join(zikaron_store::layout::tmp_file_name(&nonce)))
 }
@@ -211,10 +211,6 @@ pub fn mkdir(path: &Path) -> Result<(), Trouble> {
 /// Sync the parent after the move so the name is durable too. Failure is reported (`E_IO` naming the parent)
 /// rather than silently claiming success: the bytes are in place, but may not survive a power cut.
 fn sync_parent(out: &Path) -> Result<(), Trouble> {
-    // A bare file name has the working directory `.` as its parent.
-    let parent = match out.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p,
-        _ => Path::new("."),
-    };
+    let parent = zikaron_os::parent_dir(out);
     zikaron_os::sync_dir(parent, out).map_err(|e| failed(parent, "directory sync", parent, &e))
 }

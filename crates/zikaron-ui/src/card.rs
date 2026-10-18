@@ -5,7 +5,8 @@ use crate::icons::{self, Glyph};
 use crate::mark::{self, Mark};
 use crate::motion::{self, Curve};
 use crate::paint;
-use crate::palette::{c, Lift, C};
+use crate::material::{self, Level};
+use crate::palette::{c, C};
 use crate::tokens::{self, Radius, Type};
 use egui::{pos2, vec2, Rect};
 
@@ -22,10 +23,7 @@ pub fn card_pad<R>(ui: &mut egui::Ui, pad: egui::Vec2, add: impl FnOnce(&mut egu
         add(ui)
     });
     let rect = shown.response.rect;
-    let tmp = ui.painter().clone();
-    let mut shapes = Vec::new();
-    raised_shapes(&tmp, rect, Radius::Card, c(C::Surface), Lift::Card, &mut shapes);
-    ui.painter().set(slot, egui::Shape::Vec(shapes));
+    ui.painter().set(slot, egui::Shape::Vec(material::shapes(rect, Radius::Card, Level::Card, 0.0)));
     shown.inner
 }
 
@@ -44,10 +42,7 @@ pub fn open_card<R>(ui: &mut egui::Ui, id: egui::Id, add: impl FnOnce(&mut egui:
     let hot = motion::flag(ui.ctx(), hot_id, resp.hovered(), tokens::FAST);
     let press = motion::to(ui.ctx(), press_id, if resp.is_pointer_button_down_on() { 0.995 } else { 1.0 }, tokens::FAST, Curve::Ease);
     let r = paint::scaled(rect, press);
-    let tmp = ui.painter().clone();
-    let mut shapes = Vec::new();
-    raised_shapes(&tmp, r, Radius::Card, c(C::Surface), if hot > 0.5 { Lift::Hover } else { Lift::Card }, &mut shapes);
-    ui.painter().set(slot, egui::Shape::Vec(shapes));
+    ui.painter().set(slot, egui::Shape::Vec(material::shapes(r, Radius::Card, Level::Card, hot)));
     crate::probe::row(ui.ctx(), rect);
     (shown.inner, resp.on_hover_cursor(egui::CursorIcon::PointingHand))
 }
@@ -66,20 +61,6 @@ pub fn choice<R>(ui: &mut egui::Ui, on: bool, add: impl FnOnce(&mut egui::Ui) ->
             add(ui)
         })
         .inner
-}
-
-/// The shapes of a raised surface (so a card can put them under content drawn first).
-pub fn raised_shapes(_p: &egui::Painter, rect: Rect, radius: Radius, fill: egui::Color32, lift: Lift, out: &mut Vec<egui::Shape>) {
-    let (ring, shadows) = crate::palette::lift(lift);
-    let r = radius.egui();
-    for s in shadows.iter().rev() {
-        if s.color.a() == 0 {
-            continue;
-        }
-        let sh = egui::Shadow { offset: [0, s.y.round() as i8], blur: s.blur.round().clamp(0.0, 255.0) as u8, spread: 0, color: s.color };
-        out.push(sh.as_shape(rect, r).into());
-    }
-    out.push(egui::epaint::RectShape::new(rect, r, fill, egui::Stroke::new(0.5_f32, ring), egui::StrokeKind::Outside).into());
 }
 
 /// A flat card: a one-point line instead of a shadow (side notes, the "how the recipient checks" card).
@@ -169,7 +150,7 @@ pub fn tile(ui: &mut egui::Ui, t: &Tile) -> egui::Response {
     let press = motion::to(ui.ctx(), id.with("press"), if t.clickable && resp.is_pointer_button_down_on() { 0.99 } else { 1.0 }, tokens::FAST, Curve::Ease);
     let r = paint::scaled(rect.translate(vec2(0.0, -hot)), press);
     let p = ui.painter();
-    paint::surface(p, r, Radius::Card, c(C::Surface), if hot > 0.5 { Lift::Hover } else { Lift::Card });
+    material::paint(p, r, Radius::Card, Level::Card, hot);
     let inner = r.shrink2(pad);
     let room = inner.width();
     let title_fit = crate::width::elide_to(ui, t.title, Type::Note.font(), room);
@@ -286,9 +267,7 @@ pub fn form<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui, &mut Form) -> 
         })
         .inner;
     let rect = Rect::from_min_size(top, vec2(w, (f.bottom - top.y).max(0.0)));
-    let mut shapes = Vec::new();
-    raised_shapes(ui.painter(), rect, Radius::Card, c(C::Surface), Lift::Card, &mut shapes);
-    ui.painter().set(card_slot, egui::Shape::Vec(shapes));
+    ui.painter().set(card_slot, egui::Shape::Vec(material::shapes(rect, Radius::Card, Level::Card, 0.0)));
     let last = f.rows.saturating_sub(1);
     let fills: Vec<egui::Shape> = f
         .fills

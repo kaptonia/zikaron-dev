@@ -228,7 +228,7 @@ impl Win {
             for m in &x.missed {
                 states::okline(ui, Mark::Warn, &format!("{} {}", m.name, t(m.reading.key())));
             }
-            if gaps.contains(&crate::checkx::Gap::NoNode) && key::link(ui, t(Key::CheckGoSettings)).clicked() {
+            if gaps.contains(&crate::checkx::Gap::NoNode) && key::key(ui, t(Key::CheckGoSettings), Role::Plain, true).clicked() {
                 go_settings = true;
             }
             for r in &x.refused {
@@ -301,7 +301,7 @@ impl Win {
         paint::rule(ui, 0.0);
         let (_, hit) = width::then_line(
             ui,
-            |ui| !settled && key::link(ui, t(open_key)).clicked(),
+            |ui| !settled && key::key(ui, t(open_key), Role::Plain, true).clicked(),
             |ui, room| {
                 width::cell(ui, egui::vec2(room, Type::Body.line().max(tk::MARK)), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
@@ -314,7 +314,7 @@ impl Win {
             open = !open;
         }
         if let (Some((crate::supplyx::Level::Remote, url)), Some(n)) = (&src.from, src.files) {
-            let (_, again) = width::then_line(ui, |ui| key::link(ui, t(Key::CheckRefetch)).clicked(), |ui, room| paint::line(ui, &fill2(Key::CheckFromAddress, url, &n.to_string()), Type::Small, c(C::Ink2), room));
+            let (_, again) = width::then_line(ui, |ui| key::key(ui, t(Key::CheckRefetch), Role::Plain, true).clicked(), |ui, room| paint::line(ui, &fill2(Key::CheckFromAddress, url, &n.to_string()), Type::Small, c(C::Ink2), room));
             if again {
                 *go = true;
             }

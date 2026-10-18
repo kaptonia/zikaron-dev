@@ -1,23 +1,9 @@
 //! Painting shared by every control: raised surfaces, text by role, and single lines that elide instead of
 //! wrapping.
 
-use crate::palette::{self, c, Lift, C};
+use crate::palette::{self, c, C};
 use crate::tokens::{Radius, Type};
 use egui::{Color32, Painter, Rect};
-
-/// A raised surface: soft shadows, a fill, and the half-point ring of its elevation.
-pub fn surface(p: &Painter, rect: Rect, radius: Radius, fill: Color32, lift: Lift) {
-    let (ring, shadows) = palette::lift(lift);
-    let r = radius.egui();
-    for s in shadows.iter().rev() {
-        if s.color.a() == 0 {
-            continue;
-        }
-        let sh = egui::Shadow { offset: [0, s.y.round() as i8], blur: s.blur.round().clamp(0.0, 255.0) as u8, spread: 0, color: s.color };
-        p.add(sh.as_shape(rect, r));
-    }
-    p.rect(rect, r, fill, egui::Stroke::new(0.5_f32, ring), egui::StrokeKind::Outside);
-}
 
 /// A flat surface: fill and a one-point line.
 pub fn flat(p: &Painter, rect: Rect, radius: Radius, fill: Color32, line: Color32) {
@@ -114,7 +100,7 @@ pub fn qr(ui: &mut egui::Ui, modules: &[Vec<bool>], side: f32) -> Rect {
     let n = modules.len();
     let (plate, _) = ui.allocate_exact_size(egui::vec2(side + 2.0 * QR_PAD, side + 2.0 * QR_PAD), egui::Sense::hover());
     let p = ui.painter_at(plate.expand(24.0));
-    surface(&p, plate, Radius::Sheet, palette::QR_PLATE, Lift::Card);
+    crate::material::plate(&p, plate, Radius::Sheet, palette::QR_PLATE);
     crate::probe::qr(ui.ctx(), plate);
     if n < 21 {
         return plate;

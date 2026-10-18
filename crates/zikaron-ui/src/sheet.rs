@@ -7,7 +7,7 @@
 
 use crate::motion::{self, Curve};
 use crate::paint;
-use crate::palette::{c, Lift, C};
+use crate::palette::{c, C};
 use crate::tokens::{self, Radius, Type};
 use egui::{pos2, vec2, Rect};
 
@@ -132,7 +132,7 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
             crate::layer::body(ui, card);
             ui.multiply_opacity(enter);
             ui.set_clip_rect(card.expand(64.0));
-            paint::surface(ui.painter(), card, Radius::Sheet, c(C::Surface), Lift::Float);
+            crate::material::paint(ui.painter(), card, Radius::Sheet, crate::material::Level::Sheet, 0.0);
             let inner_clip = card;
             // The body: scrolls inside what the foot leaves.
             let body_room = (card_h - foot_h).max(0.0);

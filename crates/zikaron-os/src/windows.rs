@@ -1172,3 +1172,78 @@ pub fn lock_now(file: &std::fs::File) -> bool {
 pub fn lock_wait(file: &std::fs::File) -> bool {
     lock_with(file, LOCKFILE_EXCLUSIVE_LOCK)
 }
+
+// ───────────────────────── The window's backdrop (Windows 11: Mica) ─────────────────────────
+
+/// The four margins `DwmExtendFrameIntoClientArea` takes (all -1: the whole window).
+#[repr(C)]
+struct Margins {
+    left: i32,
+    right: i32,
+    top: i32,
+    bottom: i32,
+}
+
+/// `RTL_OSVERSIONINFOW`, enough of it for the build number.
+#[repr(C)]
+struct OsVersion {
+    size: u32,
+    major: u32,
+    minor: u32,
+    build: u32,
+    platform: u32,
+    service_pack: [u16; 128],
+}
+
+#[link(name = "dwmapi")]
+unsafe extern "system" {
+    fn DwmSetWindowAttribute(hwnd: isize, attribute: u32, value: *const c_void, size: u32) -> i32;
+    fn DwmExtendFrameIntoClientArea(hwnd: isize, margins: *const Margins) -> i32;
+}
+
+#[link(name = "ntdll")]
+unsafe extern "system" {
+    fn RtlGetVersion(info: *mut OsVersion) -> i32;
+}
+
+/// `DWMWA_USE_IMMERSIVE_DARK_MODE`, `DWMWA_SYSTEMBACKDROP_TYPE` and its `DWMSBT_MAINWINDOW` (Mica).
+const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
+const DWMWA_SYSTEMBACKDROP_TYPE: u32 = 38;
+const DWMSBT_MAINWINDOW: i32 = 2;
+/// The first build with `DWMWA_SYSTEMBACKDROP_TYPE` (Windows 11 22H2).
+const MICA_BUILD: u32 = 22621;
+
+fn build() -> u32 {
+    let mut v = OsVersion { size: std::mem::size_of::<OsVersion>() as u32, major: 0, minor: 0, build: 0, platform: 0, service_pack: [0; 128] };
+    if unsafe { RtlGetVersion(&mut v) } == 0 { v.build } else { 0 }
+}
+
+pub fn backdrop_available() -> bool {
+    build() >= MICA_BUILD
+}
+
+fn set_dark(hwnd: isize, dark: bool) {
+    let on: i32 = dark as i32;
+    unsafe { DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &on as *const i32 as *const c_void, 4) };
+}
+
+pub fn backdrop(w: crate::Window, dark: bool) -> crate::Backdrop {
+    let crate::Window::Win32(hwnd) = w else { return crate::Backdrop::Tint };
+    if hwnd == 0 || !backdrop_available() {
+        return crate::Backdrop::Tint;
+    }
+    set_dark(hwnd, dark);
+    let whole = Margins { left: -1, right: -1, top: -1, bottom: -1 };
+    let kind = DWMSBT_MAINWINDOW;
+    let extended = unsafe { DwmExtendFrameIntoClientArea(hwnd, &whole) };
+    let set = unsafe { DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &kind as *const i32 as *const c_void, 4) };
+    if extended >= 0 && set >= 0 { crate::Backdrop::Mica } else { crate::Backdrop::Tint }
+}
+
+pub fn backdrop_appearance(w: crate::Window, dark: bool) {
+    if let crate::Window::Win32(hwnd) = w {
+        if hwnd != 0 {
+            set_dark(hwnd, dark);
+        }
+    }
+}

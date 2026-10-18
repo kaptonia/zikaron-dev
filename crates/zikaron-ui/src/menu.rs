@@ -15,7 +15,7 @@ use crate::icons::{self, Glyph};
 use crate::mark;
 use crate::motion::{self, Curve};
 use crate::paint;
-use crate::palette::{self, c, Lift, Tone, C};
+use crate::palette::{self, c, Tone, C};
 use crate::tokens::{self, Radius, Type};
 use egui::{pos2, vec2, Rect};
 
@@ -207,7 +207,7 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
         guarded = crate::layer::under(ui, crate::layer::Under::Guard);
         crate::layer::body(ui, rect);
         ui.multiply_opacity(e);
-        paint::surface(ui.painter(), rect, Radius::Menu, c(C::Surface), Lift::Menu);
+        crate::material::paint(ui.painter(), rect, Radius::Menu, crate::material::Level::Float, 0.0);
         let mut y = rect.top() + 5.0;
         for (i, it) in items.iter().enumerate() {
             match it {

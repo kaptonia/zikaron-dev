@@ -35,7 +35,7 @@ impl Appearance {
 
 /// Install everything once: sizes, spacing and the colors of the current blend.
 pub fn apply(ctx: &egui::Context) {
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.global_style()).clone();
     install_colors(&mut style.visuals);
     use egui::{FontFamily as F, FontId, TextStyle as T};
     style.text_styles = [
@@ -123,7 +123,7 @@ pub fn follow(ctx: &egui::Context, a: Appearance) -> f32 {
     let b = crate::motion::to(ctx, egui::Id::new("zikaron-appearance"), if dark { 1.0 } else { 0.0 }, tokens::SLOW, crate::motion::Curve::Ease);
     palette::set_blend(b);
     if (b - before).abs() > f32::EPSILON {
-        let mut style = (*ctx.style()).clone();
+        let mut style = (*ctx.global_style()).clone();
         install_colors(&mut style.visuals);
         ctx.set_style_of(egui::Theme::Light, style.clone());
         ctx.set_style_of(egui::Theme::Dark, style);
@@ -160,7 +160,7 @@ pub struct Installed {
 }
 
 pub fn installed(ctx: &egui::Context) -> Installed {
-    let s = ctx.style();
+    let s = ctx.global_style();
     let size = |t: egui::TextStyle| s.text_styles.get(&t).map(|f| f.size).unwrap_or(0.0);
     let body = size(egui::TextStyle::Body);
     let small = size(egui::TextStyle::Small);

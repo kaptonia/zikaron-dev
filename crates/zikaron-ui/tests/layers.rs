@@ -626,12 +626,12 @@ fn a_press_on_a_cover_reaches_nothing_under_it() {
     for _ in 0..3 {
         f.run(0.1, vec![], |ctx| {
             got |= page_key(ctx);
-            full::cover(ctx, "t-cover", |ui, _| ui.label("盖着"));
+            full::cover(ctx, "t-cover", 0.0, |ui, _| ui.label("盖着"));
         });
     }
     f.run(0.1, press_at(on_key), |ctx| {
         got |= page_key(ctx);
-        full::cover(ctx, "t-cover", |ui, _| ui.label("盖着"));
+        full::cover(ctx, "t-cover", 0.0, |ui, _| ui.label("盖着"));
     });
     assert!(!got, "the key under the cover is untouched");
 }

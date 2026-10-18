@@ -12,7 +12,7 @@ use egui::{pos2, vec2, Rect};
 
 /// The rail panel's frame: rail ground, 10 across, 46 kept at the top for the window's buttons.
 pub fn panel_frame() -> egui::Frame {
-    egui::Frame::new().fill(c(C::Rail)).inner_margin(egui::Margin { left: tokens::RAIL_PAD as i8, right: tokens::RAIL_PAD as i8, top: tokens::RAIL_TOP as i8, bottom: tokens::RAIL_PAD as i8 })
+    egui::Frame::new().fill(crate::material::rail_ground()).inner_margin(egui::Margin { left: tokens::RAIL_PAD as i8, right: tokens::RAIL_PAD as i8, top: tokens::RAIL_TOP as i8, bottom: tokens::RAIL_PAD as i8 })
 }
 
 /// The one-point line between the rail and the page.
@@ -129,7 +129,7 @@ fn paint_block(p: &egui::Painter, block: Rect, alpha: f32) {
     if alpha <= 0.0 {
         return;
     }
-    p.add(egui::Shadow { offset: [0, 1], blur: 2, spread: 0, color: egui::Color32::from_black_alpha(15).gamma_multiply(alpha) }.as_shape(block, egui::CornerRadius::same(8)));
+    p.add(crate::material::small(block, egui::CornerRadius::same(8), alpha));
     p.rect(block, egui::CornerRadius::same(8), c(C::Surface).gamma_multiply(alpha), egui::Stroke::new(0.5_f32, egui::Color32::from_black_alpha(10).gamma_multiply(alpha)), egui::StrokeKind::Outside);
 }
 

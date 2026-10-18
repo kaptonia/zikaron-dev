@@ -77,7 +77,7 @@ impl Win {
                     // Fetched from a publish address: name the source, with "fetch again".
                     if let crate::verifyx::Source::Remote(b) = &x.source {
                         let n = x.kit.as_ref().map(|k| k.entries + k.files + k.proofs + 1).unwrap_or(0);
-                        let (_, again) = width::then(ui, |ui| key::link(ui, t(Key::CheckRefetch)).clicked(), |ui, room| paint::line(ui, &fill2(Key::CheckFromAddress, b.as_str(), &n.to_string()), Type::Small, c(C::Ink2), room));
+                        let (_, again) = width::then(ui, |ui| key::key(ui, t(Key::CheckRefetch), Role::Plain, true).clicked(), |ui, room| paint::line(ui, &fill2(Key::CheckFromAddress, b.as_str(), &n.to_string()), Type::Small, c(C::Ink2), room));
                         if again {
                             go = true;
                         }

@@ -142,7 +142,7 @@ fn each_word_names_one_judgement() {
     assert!(cells.contains("Key::LedgerUnconfirmed") && !cells.contains("Key::ItemUnanchored"), "{cells}");
 }
 
-/// The window's own files carry no page of this product: no file the family's component registry lists under
+/// The window's own files carry no page of this product: no app source file the family's component registry lists under
 /// the window kit (`ui-kit`'s home in `family-components.json`, read as it stands) writes a route, place, view,
 /// settings section, history, old page, tab or wizard step of this product. The shell reaches them only through
 /// this product's table (`window/pages.rs`, `crate::nav`); the product's drivers and probes live in
@@ -155,7 +155,8 @@ fn the_ui_kit_files_name_no_page_of_this_product() {
     let home = &registry[at..];
     let home = &home[home.find("\"home\"").expect("its home")..];
     let home = &home[..home.find(']').expect("its home's end")];
-    let files: Vec<&str> = home.split('"').filter(|x| x.starts_with("crates/app/") && x.ends_with(".rs")).collect();
+    // The kit's shipped source: its test files (in the home too, with the tests that pin it) name pages freely.
+    let files: Vec<&str> = home.split('"').filter(|x| x.starts_with("crates/app/src/") && x.ends_with(".rs")).collect();
     assert!(files.contains(&"crates/app/src/window/chrome.rs") && files.contains(&"crates/app/src/window/mod.rs"), "{files:?}");
     for f in files {
         let code = super::code_only(&std::fs::read_to_string(root.join(f)).expect(f));

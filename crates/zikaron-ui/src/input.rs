@@ -78,6 +78,12 @@ pub fn search(ui: &mut egui::Ui, text: &mut String, hint: &str, w: f32) -> egui:
 /// it is, its hint, and its place among fields with that same kind and hint in that layout this pass. An id
 /// counted from the widgets drawn before it would change when a line or a table above it comes or goes, and
 /// the field would lose focus in the middle of typing.
+/// A text edit's frame when the kit paints the field itself: nothing painted, the text inset by egui's default
+/// text margin (4 across, 2 down), as an unframed text edit has always been laid out.
+fn unframed() -> egui::Frame {
+    egui::Frame::new().inner_margin(egui::Margin::symmetric(4, 2))
+}
+
 fn field_id(ui: &egui::Ui, kind: &str, hint: &str) -> egui::Id {
     let base = ui.id().with((kind, hint));
     let pass = ui.ctx().cumulative_pass_nr();
@@ -119,17 +125,20 @@ pub fn field(ui: &mut egui::Ui, text: &mut String, hint: &str, w: f32, look: Loo
     // the frame's edge.
     let hint = crate::width::elide_to(ui, hint, t.font(), (inner.width() - HINT_SLACK).max(0.0));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    let resp = child.add(
-        egui::TextEdit::singleline(text)
-            .id(id)
-            .font(t.font())
-            .text_color(c(C::Ink))
-            .hint_text(egui::RichText::new(hint).font(t.font()).color(c(C::Ink3)))
-            .frame(false)
-            .desired_width(inner.width())
-            .horizontal_align(if look.centred { egui::Align::Center } else { egui::Align::Min })
-            .vertical_align(egui::Align::Center),
-    );
+    // A centred field's hint is drawn here, on the field's middle: the text edit lays a hint out from its start.
+    let edit = egui::TextEdit::singleline(text)
+        .id(id)
+        .font(t.font())
+        .text_color(c(C::Ink))
+        .frame(unframed())
+        .desired_width(inner.width())
+        .horizontal_align(if look.centred { egui::Align::Center } else { egui::Align::Min })
+        .vertical_align(egui::Align::Center);
+    let edit = if look.centred { edit } else { edit.hint_text(egui::RichText::new(hint.clone()).font(t.font()).color(c(C::Ink3))) };
+    let resp = child.add(edit);
+    if look.centred && text.is_empty() {
+        ui.painter().text(resp.rect.center(), egui::Align2::CENTER_CENTER, hint, t.font(), c(C::Ink3));
+    }
     let edge = if look.bad {
         Edge::Bad
     } else if resp.has_focus() {
@@ -168,7 +177,7 @@ fn area_ex(ui: &mut egui::Ui, text: &mut String, rows: usize, hint: &str, t: Typ
                 .hint_text(egui::RichText::new(hint).font(t.font()).color(c(C::Ink3)))
                 .desired_rows(rows)
                 .desired_width(f32::INFINITY)
-                .frame(false),
+                .frame(unframed()),
         )
     });
     let edge = if shown.inner.has_focus() { Edge::Focus } else { Edge::Rest };
@@ -221,7 +230,7 @@ fn secret_field(ui: &mut egui::Ui, text: &mut crate::secret::Secret, hint: &str,
             .text_color(c(C::Ink))
             .hint_text(egui::RichText::new(hint).color(c(C::Ink3)))
             .password(true)
-            .frame(false)
+            .frame(unframed())
             .desired_width(inner.width())
             .vertical_align(egui::Align::Center),
     );

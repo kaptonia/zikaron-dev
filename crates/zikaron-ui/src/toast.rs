@@ -15,8 +15,7 @@
 use crate::button::{self, Key, Role};
 use crate::icons::{self, Glyph};
 use crate::motion::{self, Curve};
-use crate::paint;
-use crate::palette::{self, c, Lift, C};
+use crate::palette::{self, c, C};
 use crate::tokens::{self, Radius, Type};
 use egui::{pos2, vec2, Rect};
 
@@ -293,7 +292,7 @@ fn paint_slip(ctx: &egui::Context, s: &Slip, center_x: f32, screen: Rect, labels
         let (r, _) = ui.allocate_exact_size(rect.size(), egui::Sense::hover());
         let p = ui.painter();
         let radius = if two { Radius::Sheet } else { Radius::Pill };
-        paint::surface(p, r, radius, c(C::Surface), Lift::Toast);
+        crate::material::paint(p, r, radius, crate::material::Level::Float, 0.0);
         // The icon and the keys share one height, by one judgement: on the first line when there is more than
         // one, so opening the details below never moves them; centred on a one-line pill.
         let line_y = if two { r.top() + pad_y + 10.0 } else { r.center().y };
@@ -325,7 +324,7 @@ fn paint_slip(ctx: &egui::Context, s: &Slip, center_x: f32, screen: Rect, labels
             let kr = Rect::from_min_size(pos2(kx, line_y - 10.0), vec2(kw, 20.0));
             let resp = ui.interact(kr, egui::Id::new(("zikaron-toast-key", s.id, *which)), egui::Sense::click());
             let colour = if *which == 201 { c(C::Ink2) } else { c(C::AccentInk) };
-            let k = Key::new(label, Role::Link);
+            let k = Key::new(label, Role::Plain);
             if *which == 201 {
                 ui.painter().text(kr.left_center(), egui::Align2::LEFT_CENTER, label, crate::button::key_font(), colour);
                 if resp.hovered() {

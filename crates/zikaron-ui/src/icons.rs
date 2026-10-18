@@ -409,7 +409,7 @@ pub fn glyph_path(k: Glyph) -> Vec<Vec<(f32, f32)>> {
 pub fn draw_glyph_turned(p: &egui::Painter, k: Glyph, rect: egui::Rect, colour: egui::Color32, turn: f32) {
     let (s, co) = turn.sin_cos();
     let c = rect.center();
-    let stroke = egui::Stroke::new(crate::tokens::ICON_STROKE, colour);
+    let stroke = pen(rect.width(), colour);
     for path in glyph_path(k) {
         let pts: Vec<egui::Pos2> = path
             .iter()
@@ -435,8 +435,14 @@ pub fn draw_glyph(p: &egui::Painter, k: Glyph, rect: egui::Rect, colour: egui::C
     strokes(p, &glyph_path(k), rect, colour);
 }
 
+/// The pen for a glyph drawn `side` points wide: `ICON_STROKE` at 16, in proportion around it (within 0.85 to
+/// 1.35 of it), so every glyph reads with one weight whatever its size.
+pub fn pen(side: f32, colour: egui::Color32) -> egui::Stroke {
+    egui::Stroke::new(crate::tokens::ICON_STROKE * (side / 16.0).clamp(0.85, 1.35), colour)
+}
+
 fn strokes(p: &egui::Painter, paths: &[Vec<(f32, f32)>], rect: egui::Rect, colour: egui::Color32) {
-    let stroke = egui::Stroke::new(crate::tokens::ICON_STROKE, colour);
+    let stroke = pen(rect.width(), colour);
     for stroke_path in paths {
         let pts: Vec<egui::Pos2> = stroke_path
             .iter()
