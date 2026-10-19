@@ -1,15 +1,21 @@
-//! Sheets: a white card centered over a dimming scrim, 440, 520 or 640 wide. It grows from 0.96 and fades in
-//! over 200 ms, and leaves the same way backwards (200 ms, back to 0.96). A click outside does nothing; Esc
-//! is cancel (unless a menu, list or calendar opened over it is still up: that one takes the Esc first). A
-//! sheet with steps slides from one step to the next inside the same card, the card's height easing along.
-//! The content scrolls inside the card; the keys at the bottom stay put. Sheets lie above the first-run
-//! wizard and the passcode gate.
+//! Sheets: a white card centered over a dimming scrim, 460, 520 or 640 wide. It condenses out of the place it
+//! was opened from: from 0.92 about the press, to its own size in 0.44 s, its card and scrim coming in over
+//! 200 ms and its content after them (from 0.07 s, over 0.24 s). It leaves quickly: back to 0.97, fading, in
+//! 0.14 s. Under reduced motion it only fades. A click outside does nothing; Esc is cancel (unless a menu,
+//! list or calendar opened over it is still up: that one takes the Esc first).
+//!
+//! Its height follows its content in place, on the curve every height in the library follows (0.3 s): a step,
+//! a tab, a row shown or a file chosen inside it changes its height smoothly, never by reopening or jumping. A
+//! sheet with steps slides from one step to the next inside the same card; after any step or tab change the
+//! new content fades in once the height is on its way. The content scrolls inside the card; the keys at the
+//! bottom stay put and the content passes under them. Groups inside a sheet lay no ground of their own: rows
+//! with a fine line between them ([`inside`]). Sheets lie above the first-run wizard and the passcode gate.
 
 use crate::motion::{self, Curve};
 use crate::paint;
 use crate::palette::{c, C};
 use crate::tokens::{self, Radius, Type};
-use egui::{pos2, vec2, Rect};
+use egui::{pos2, vec2, Color32, Rect};
 
 /// How a step change moves.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -62,8 +68,24 @@ struct StepState {
     step: u64,
     slide: Slide,
     t0: f64,
-    from_h: f32,
-    shown_h: f32,
+}
+
+/// How the sheet condenses: the scale it grows from, over how long; its content's delay and fade; and how it
+/// leaves.
+const GROW_FROM: f32 = 0.92;
+const GROW: f32 = 0.44;
+const CONTENT_DELAY: f32 = 0.07;
+const CONTENT_IN: f32 = 0.24;
+const LEAVE_TO: f32 = 0.97;
+const LEAVE: f32 = 0.14;
+
+pub(crate) fn inside_id() -> egui::Id {
+    egui::Id::new("zikaron-sheet-inside")
+}
+
+/// Whether what is being drawn now lies in a sheet's body (groups there lay no ground of their own).
+pub fn inside(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(inside_id())).unwrap_or(false)
 }
 
 /// Whether any sheet was drawn this pass or the last (drop zones and page keys under a sheet stay still).
@@ -81,8 +103,17 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
     let pass = ctx.cumulative_pass_nr();
     ctx.data_mut(|d| d.insert_temp(egui::Id::new("zikaron-sheet-up"), pass));
     let screen = ctx.content_rect();
-    let enter = crate::layer::entrance(ctx, &[id.with("card-keep")], id.with("age"), tokens::MID);
+    let grow = crate::layer::entrance(ctx, &[id.with("card-keep")], id.with("age"), GROW);
     let age = motion::age(ctx, id.with("age"), 0);
+    let enter = Curve::Ease.at((age / tokens::MID).clamp(0.0, 1.0)).max(grow);
+    let content = Curve::Ease.at(((age - CONTENT_DELAY) / CONTENT_IN).clamp(0.0, 1.0)).max(if grow >= 1.0 { 1.0 } else { 0.0 });
+    // Where it condenses from: the press that opened it (the pointer when it first shows), else its centre.
+    let origin_id = id.with("origin");
+    if age <= 0.0 {
+        let at = ctx.input(|i| i.pointer.latest_pos()).filter(|p| screen.contains(*p)).unwrap_or(screen.center());
+        ctx.data_mut(|d| d.insert_temp(origin_id, at));
+    }
+    let origin = ctx.data(|d| d.get_temp::<egui::Pos2>(origin_id)).unwrap_or(screen.center());
     let layer = egui::LayerId::new(egui::Order::Foreground, id.with("card"));
     crate::layer::place(ctx, layer, None);
 
@@ -93,34 +124,34 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
     let foot_h = ctx.data(|d| d.get_temp::<f32>(foot_id)).unwrap_or(66.0);
     let body_h = ctx.data(|d| d.get_temp::<f32>(body_id)).unwrap_or(0.0);
     let natural = (body_h + foot_h).min(max_h).max(foot_h + 40.0);
-    // Height: eases only across a step change; otherwise follows the content.
     let st_id = id.with("step");
     // A sheet opened anew starts on its step with no slide (the last opening's step is forgotten).
     let fresh = age <= 0.0;
     let st = ctx.data_mut(|d| {
-        let s = d.get_temp_mut_or_insert_with(st_id, || StepState { step: spec.step, slide: spec.slide, t0: f64::NEG_INFINITY, from_h: natural, shown_h: natural });
+        let s = d.get_temp_mut_or_insert_with(st_id, || StepState { step: spec.step, slide: spec.slide, t0: f64::NEG_INFINITY });
         if fresh {
-            *s = StepState { step: spec.step, slide: spec.slide, t0: f64::NEG_INFINITY, from_h: natural, shown_h: natural };
+            *s = StepState { step: spec.step, slide: spec.slide, t0: f64::NEG_INFINITY };
         }
         if s.step != spec.step {
-            s.from_h = s.shown_h;
             s.step = spec.step;
             s.slide = spec.slide;
             s.t0 = now;
         }
-        let p = ((now - s.t0) as f32 / tokens::STEP).clamp(0.0, 1.0);
-        s.shown_h = if p < 1.0 { s.from_h + (natural - s.from_h) * Curve::Ease.at(p) } else { natural };
         *s
     });
-    let step_p = ((now - st.t0) as f32 / tokens::STEP).clamp(0.0, 1.0);
-    if step_p < 1.0 {
+    let since = if now >= st.t0 { (now - st.t0) as f32 } else { f32::INFINITY };
+    let step_p = (since / tokens::STEP).clamp(0.0, 1.0);
+    // The new content after a step or tab change: fades in once the height is on its way.
+    let step_in = Curve::Ease.at(((since - CONTENT_DELAY) / CONTENT_IN).clamp(0.0, 1.0));
+    if step_p < 1.0 || step_in < 1.0 {
         ctx.request_repaint();
     }
-    let card_h = st.shown_h.round();
+    // Height: follows the content in place, always (the library's one height curve).
+    let card_h = crate::flow::height(ctx, id.with("card-h"), natural, w).round();
     let shake = motion::shake_at(ctx, spec.shake_at, 0.36);
     let card = Rect::from_center_size(screen.center(), vec2(w, card_h)).translate(vec2(shake, 0.0));
-    let scale = 0.96 + 0.04 * enter;
-    ctx.set_transform_layer(layer, egui::emath::TSTransform { scaling: scale, translation: card.center().to_vec2() * (1.0 - scale) });
+    let scale = 1.0 - (1.0 - GROW_FROM) * (1.0 - grow) * motion::travel(ctx);
+    ctx.set_transform_layer(layer, egui::emath::TSTransform { scaling: scale, translation: origin.to_vec2() * (1.0 - scale) });
     let esc = crate::layer::esc(ctx, id);
     let out = crate::layer::over(ctx, layer)
         .show(ctx, |ui| {
@@ -133,6 +164,8 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
             ui.multiply_opacity(enter);
             ui.set_clip_rect(card.expand(64.0));
             crate::material::paint(ui.painter(), card, Radius::Sheet, crate::material::Level::Sheet, 0.0);
+            // The content comes after the card.
+            ui.multiply_opacity(if enter > 0.0 { (content / enter).min(1.0) } else { 0.0 });
             let inner_clip = card;
             // The body: scrolls inside what the foot leaves.
             let body_room = (card_h - foot_h).max(0.0);
@@ -144,7 +177,8 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
                 Slide::Back if step_p < 1.0 => -24.0 * (1.0 - Curve::Ease.at(step_p)),
                 _ => 0.0,
             };
-            let slide_a = if matches!(st.slide, Slide::Forward | Slide::Back) && step_p < 1.0 { Curve::Ease.at(step_p) } else { 1.0 };
+            let slide_a = if matches!(st.slide, Slide::Forward | Slide::Back) && step_p < 1.0 { Curve::Ease.at(step_p).min(step_in.max(Curve::Ease.at(step_p))) } else { step_in };
+            let slide_x = slide_x * motion::travel(ctx);
             let (b, content_h) = crate::scroll::nested(
                 &mut bui,
                 egui::ScrollArea::vertical()
@@ -156,7 +190,11 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
                     let r = egui::Frame::new().inner_margin(egui::Margin { left: 24, right: 24, top: 22, bottom: 4 }).show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.spacing_mut().item_spacing.y = tokens::S3;
-                        motion::shifted(ui, vec2(slide_x, 0.0), slide_a, |ui| body(ui, state))
+                        let was = inside(ui.ctx());
+                        ui.ctx().data_mut(|d| d.insert_temp(inside_id(), true));
+                        let b = motion::shifted(ui, vec2(slide_x, 0.0), slide_a, |ui| body(ui, state));
+                        ui.ctx().data_mut(|d| d.insert_temp(inside_id(), was));
+                        b
                     });
                     (r.inner, r.response.rect.height())
                 })
@@ -168,8 +206,9 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
             }
             // The foot: pinned under the body.
             let foot_rect = Rect::from_min_max(pos2(card.left(), card.bottom() - foot_h), card.max);
+            foot_band(ui.painter(), foot_rect, Radius::Sheet.px());
             let mut fui = ui.new_child(egui::UiBuilder::new().max_rect(foot_rect).layout(egui::Layout::top_down(egui::Align::Min)));
-            let fr = egui::Frame::new().inner_margin(egui::Margin { left: 24, right: 24, top: 14, bottom: 18 }).show(&mut fui, |ui| {
+            let fr = egui::Frame::new().inner_margin(egui::Margin { left: 24, right: 24, top: FOOT_ABOVE as i8, bottom: 22 }).show(&mut fui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.allocate_ui_with_layout(vec2(ui.available_width(), tokens::KEY_H), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = tokens::S2;
@@ -187,8 +226,31 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
             Out { body: b, foot: fr.inner, esc }
         })
         .inner;
-    crate::layer::keep(ctx, id.with("card-keep"), layer, tokens::MID, 0.96, card.center(), egui::Vec2::ZERO);
+    crate::layer::keep(ctx, id.with("card-keep"), layer, LEAVE, 1.0 - (1.0 - LEAVE_TO) * motion::travel(ctx), card.center(), egui::Vec2::ZERO);
     out
+}
+
+/// Room between the body's last block and the keys (the body keeps 4 at its own foot).
+const FOOT_ABOVE: f32 = 34.0;
+
+/// The foot's band: the sheet's glass again under the keys, fading in over its first 16, so what scrolls under
+/// the keys passes behind a lighter band (its lower corners the sheet's).
+fn foot_band(p: &egui::Painter, foot: Rect, radius: f32) {
+    let glass = c(C::Glass);
+    let fade = 16.0;
+    let mut mesh = egui::Mesh::default();
+    let top = foot.top();
+    let mid = (top + fade).min(foot.bottom());
+    mesh.colored_vertex(pos2(foot.left(), top), Color32::TRANSPARENT);
+    mesh.colored_vertex(pos2(foot.right(), top), Color32::TRANSPARENT);
+    mesh.colored_vertex(pos2(foot.right(), mid), glass);
+    mesh.colored_vertex(pos2(foot.left(), mid), glass);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(egui::Shape::mesh(mesh));
+    let r = radius.round().clamp(0.0, 255.0) as u8;
+    let corners = egui::CornerRadius { nw: 0, ne: 0, sw: r, se: r };
+    p.rect_filled(Rect::from_min_max(pos2(foot.left(), mid), foot.max), corners, glass);
 }
 
 /// A sheet's title (17/24 semibold) and an optional line under it.
@@ -200,7 +262,8 @@ pub fn title(ui: &mut egui::Ui, s: &str, sub: &str) {
             paint::text(ui, sub, Type::Note, c(C::Ink2));
         }
     });
-    ui.add_space((tokens::S4 - ui.spacing().item_spacing.y).max(0.0));
+    // 6 under the title before the body's first block (the body lays its blocks 12 apart).
+    ui.add_space(6.0 - tokens::S3);
 }
 
 /// A line saying work is under way: a small turning ring, then the words on one line (elided to fit), at the

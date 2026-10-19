@@ -105,7 +105,7 @@ fn boxed(ui: &mut egui::Ui, fill: egui::Color32, line: egui::Color32, add: impl 
     egui::Frame::new()
         .fill(fill)
         .stroke(egui::Stroke::new(1.0_f32, line))
-        .corner_radius(Radius::Menu.egui())
+        .corner_radius(Radius::Tag.egui())
         .inner_margin(egui::Margin::symmetric(14, 10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -118,7 +118,7 @@ fn boxed(ui: &mut egui::Ui, fill: egui::Color32, line: egui::Color32, add: impl 
 pub fn note_box(ui: &mut egui::Ui, s: &str) {
     egui::Frame::new()
         .fill(c(C::Rail))
-        .corner_radius(Radius::Ctl.egui())
+        .corner_radius(Radius::Tag.egui())
         .inner_margin(egui::Margin::symmetric(14, 12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -152,7 +152,7 @@ pub fn banner<R>(ui: &mut egui::Ui, kind: Banner, s: &str, key: impl FnOnce(&mut
     egui::Frame::new()
         .fill(fill)
         .stroke(egui::Stroke::new(if kind == Banner::Ok { 0.0_f32 } else { 1.0_f32 }, line))
-        .corner_radius(Radius::Menu.egui())
+        .corner_radius(Radius::Tag.egui())
         .inner_margin(pad)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -290,7 +290,7 @@ pub struct Answer<'a> {
 pub fn answers(ui: &mut egui::Ui, rows: &[Answer]) {
     egui::Frame::new()
         .stroke(egui::Stroke::new(1.0_f32, c(C::Line)))
-        .corner_radius(Radius::Menu.egui())
+        .corner_radius(Radius::Tag.egui())
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = 0.0;

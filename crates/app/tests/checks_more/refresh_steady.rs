@@ -56,6 +56,7 @@ fn settle(shell: &mut Shell) {
         shell.drain();
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
+    shell.drain();
 }
 
 /// A home with a first entry, a record and that record deleted here (an entry type the core does not know, which
@@ -138,6 +139,12 @@ fn frames(mut shell: Shell, place: Place, n: usize) -> (Shell, Vec<Frame>) {
     let steps = (0..n).map(|_| (0.1, Vec::new())).collect();
     let (mut shell, _) = app::window::probe_shell_input(&ctx, shell, place, steps, 1180.0, 760.0);
     settle(&mut shell);
+    // The window's own clock may have started another read meanwhile (it looks at the disk), which leaves the
+    // held one behind; what is current is read once more, as the next frame would.
+    if !shell.rows_current() {
+        let _ = apply(&mut shell, Action::ReadLedger);
+        settle(&mut shell);
+    }
     let frames = seen.lock().unwrap().clone();
     (shell, frames)
 }
@@ -184,7 +191,7 @@ fn the_ledger_state_holds_its_conclusion_while_a_new_report_is_paired() {
     for place in [LEDGER, Place::Home] {
         let (back, frames) = frames(shell, place, 30);
         shell = back;
-        assert!(shell.rows_current() && shell.ledger_ok == Some(true), "{place:?}: the held reading landed and the state was judged again");
+        assert!(shell.rows_current() && shell.ledger_ok == Some(true), "{place:?}: the held reading landed and the state was judged again (current {}, ok {:?}, flying {:?}, gen {})", shell.rows_current(), shell.ledger_ok, shell.tasks.flying(), shell.rows_gen);
         for (i, f) in frames.iter().enumerate().skip(SETTLE) {
             assert!(!f.iter().any(|x| x.contains(t(Key::V2Abnormal))), "{place:?} frame {i}: never \"problems\": {f:?}");
             assert!(f.iter().any(|x| x.contains(t(Key::V2Normal))), "{place:?} frame {i}: \"normal\" throughout");

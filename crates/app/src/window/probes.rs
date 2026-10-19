@@ -85,9 +85,20 @@ pub fn run_at(start: Start) -> i32 {
                     ux.nav.land(crate::nav::history_of(place, shell.settings.role));
                     ux.wizard_forced = wizard;
                 }
+                Start::Scene(scene) => {
+                    if let Scene::Page(p) | Scene::Sheet(p, _) | Scene::Data(p, _) = scene {
+                        ux.nav.land(crate::nav::history_of(p, shell.settings.role));
+                    }
+                    ux.wizard_asked = true;
+                }
             }
             let typed = Typed { home: root, ..Default::default() };
             let mut win = fresh_win(shell, typed, ux);
+            if let Start::Scene(scene) = &start {
+                let scene = *scene;
+                stage(&mut win, scene);
+            }
+            win.asks_motion = true;
             // The system's material under the window, in the app's appearance, where the system has one.
             if zikaron_os::backdrop_available() {
                 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -785,7 +796,7 @@ pub fn probe_wizard_adopt(ctx: &egui::Context, shell: Shell, dir: &str, width: f
     let out = settle(&mut win, &mut run);
     reading.key_drawn = press(&mut win, &mut run, &out, t(Key::AdoptGroup));
     let out = settle(&mut win, &mut run);
-    reading.sheet_drawn = win.ux.confirm_adopt && texts_of(&out).iter().any(|d| d.text == t(Key::WizAdoptNote));
+    reading.sheet_drawn = win.ux.confirm_adopt && texts_of(&out).iter().any(|d| d.text == t(Key::WizAdoptFolder));
     win.ux.wiz_adopt = dir.to_string();
     let out = settle(&mut win, &mut run);
     let told = win.shell.faults.len();
@@ -973,12 +984,12 @@ pub fn probe_cli_sheet(ctx: &egui::Context, shell: Shell, width: f32, height: f3
     let key = |k: egui::Key| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
     let drawn = settle(&mut win, &mut run);
     let gas_said = drawn.iter().any(|d| d.text == t(Key::SetCliAloneGas));
-    // The days cell is the field before the word "days": its middle sits half a cell and the gap left of the word.
+    // The days cell is the number before the word "days": its middle sits half a number and the gap left of the word.
     let unit = drawn.iter().find(|d| d.text == t(Key::CliLastsDays)).map(|d| d.rect);
     let toggle = drawn.iter().find(|d| d.text == t(Key::CliLastsNever)).map(|d| d.rect.center());
     let mut reading = CliSheet { gas_said, ..Default::default() };
     let (Some(unit), Some(toggle)) = (unit, toggle) else { return (win.shell, reading) };
-    let cell = egui::pos2(unit.left() - tk::S2 - settings::CLI_CELL_W / 2.0, unit.center().y);
+    let cell = egui::pos2(unit.left() - settings::CLI_SPAN_GAP - settings::CLI_SPAN_NUM_W / 2.0, unit.center().y);
     let said_has = |texts: &[Drawn], s: &str| texts.iter().any(|d| d.text == s);
     let until = crate::lang::fill1(Key::CliAloneUntil, "");
     let _ = run(&mut win, click(cell));
@@ -1310,6 +1321,44 @@ pub enum Scene {
     Sheet(Place, SheetScene),
     Gate(GateScene),
     IdMenu,
+    /// A page or a sheet in a state of its data that the plain readings do not reach (the places a small blue
+    /// link became a plain key).
+    Data(Place, DataScene),
+}
+
+/// The data states the geometry reading sets up beyond the ordinary scenes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DataScene {
+    /// The check page after a grant was checked with no node set: "go to settings" and the source row's key.
+    CheckNoNode,
+    /// The same with the source row open.
+    CheckSourceOpen,
+    /// Record verification after a kit of this home's records was verified.
+    VerifyKit,
+    /// Others' records after this home's own ledger was read as another's.
+    OthersRead,
+    /// The same on its entry list.
+    OthersList,
+    /// One entry of that reading, on its own page.
+    OtherEntry,
+    /// The new-record sheet holding a batch of files: the "clear" key under them.
+    NewRecordBatch,
+    /// The import sheet listing an earlier anchor of this key: the "select all" key.
+    AdoptListed,
+    /// A grant's detail page (this home's grant).
+    GrantDetail,
+    /// My grants holding one grant.
+    HeldListed,
+    /// A held grant's detail page.
+    HeldDetail,
+    /// A record's detail page (the first record of the ledger).
+    WorkDetail,
+    /// A ledger entry's detail page (the ledger's first entry that is not a grant).
+    EntryDetail,
+    /// The detail page of the first entry waiting to go on chain.
+    PendingDetail,
+    /// The record kit page with its export sheet up (where the kit lands).
+    KitExport,
 }
 
 /// A sheet the geometry reading opens, each in a state its ordinary content needs.
@@ -1348,6 +1397,14 @@ pub enum SheetScene {
     WizExit,
     CreateLedger,
     WizardAdopt,
+    NetEdit,
+    ReadNet,
+    PublishCheck,
+    DataFolder,
+    Snapshot,
+    GrantFile,
+    Badge,
+    HeldUpstream,
 }
 
 /// The passcode gate's states.
@@ -1370,6 +1427,7 @@ impl Scene {
             Scene::Sheet(p, s) => format!("sheet {s:?} over {}", crate::nav::Route::Root(*p).name()),
             Scene::Gate(g) => format!("gate {g:?}"),
             Scene::IdMenu => "menu identity".into(),
+            Scene::Data(p, d) => format!("data {d:?} over {}", crate::nav::Route::Root(*p).name()),
         }
     }
 }
@@ -1410,6 +1468,10 @@ pub fn scenes(role: crate::roles::Role) -> Vec<Scene> {
         (Place::Home, SheetScene::WizExit),
         (Place::Home, SheetScene::CreateLedger),
         (Place::Home, SheetScene::WizardAdopt),
+        (Place::Settings(Section::Network), SheetScene::NetEdit),
+        (Place::Settings(Section::Network), SheetScene::ReadNet),
+        (Place::Settings(Section::Network), SheetScene::PublishCheck),
+        (data, SheetScene::DataFolder),
     ];
     match role {
         Role::Author => sheets.extend([
@@ -1427,13 +1489,46 @@ pub fn scenes(role: crate::roles::Role) -> Vec<Scene> {
             (Place::View(View::Works, 0), SheetScene::DeleteRecord),
             (Place::View(View::Grants, 0), SheetScene::Revoke),
             (Place::View(View::Works, 2), SheetScene::KitPick),
+            (Place::View(View::Grants, 0), SheetScene::GrantFile),
         ]),
-        Role::Grantee => sheets.push((Place::View(View::MyGrants, 0), SheetScene::AddGrant)),
+        Role::Grantee => sheets.extend([
+            (Place::View(View::MyGrants, 0), SheetScene::AddGrant),
+            (Place::View(View::MyGrants, 0), SheetScene::Badge),
+            (Place::View(View::MyGrants, 0), SheetScene::HeldUpstream),
+            (Place::View(View::Verify, crate::nav::tab::VERIFY_OTHERS), SheetScene::Snapshot),
+        ]),
     }
     out.extend(sheets.into_iter().map(|(p, s)| Scene::Sheet(p, s)));
     out.extend([GateScene::Unlock, GateScene::RecoverWords, GateScene::RecoverFile, GateScene::RecoverNone, GateScene::LockedOut, GateScene::RestoreLocked].map(Scene::Gate));
     out.push(Scene::IdMenu);
+    let check = Place::View(View::Verify, crate::nav::tab::VERIFY_CHECK);
+    out.extend([Scene::Data(check, DataScene::CheckNoNode), Scene::Data(check, DataScene::CheckSourceOpen)]);
+    out.extend([
+        Scene::Data(Place::View(View::Verify, crate::nav::tab::VERIFY_WORK), DataScene::VerifyKit),
+        Scene::Data(Place::View(View::Verify, crate::nav::tab::VERIFY_OTHERS), DataScene::OthersRead),
+        Scene::Data(Place::View(View::Verify, crate::nav::tab::VERIFY_OTHERS), DataScene::OthersList),
+        Scene::Data(Place::View(View::Verify, crate::nav::tab::VERIFY_OTHERS), DataScene::OtherEntry),
+    ]);
+    if role == Role::Author {
+        out.extend([Scene::Data(Place::Home, DataScene::NewRecordBatch), Scene::Data(log, DataScene::AdoptListed)]);
+        out.push(Scene::Data(Place::View(View::Grants, 0), DataScene::GrantDetail));
+        out.extend([
+            Scene::Data(Place::View(View::Works, 0), DataScene::WorkDetail),
+            Scene::Data(log, DataScene::EntryDetail),
+            Scene::Data(Place::View(View::Works, 1), DataScene::PendingDetail),
+            Scene::Data(Place::View(View::Works, 2), DataScene::KitExport),
+        ]);
+    } else {
+        let mine = Place::View(View::MyGrants, 0);
+        out.extend([Scene::Data(mine, DataScene::HeldListed), Scene::Data(mine, DataScene::HeldDetail)]);
+    }
     out
+}
+
+/// A scene by its name (`Scene::name`, or a sheet's own name such as `NetEdit`), among both seats' scenes.
+pub fn scene_named(name: &str) -> Option<Scene> {
+    let all = [crate::roles::Role::Author, crate::roles::Role::Grantee].into_iter().flat_map(scenes);
+    all.into_iter().find(|s| s.name() == name || matches!(s, Scene::Sheet(_, x) if format!("{x:?}") == name))
 }
 
 /// One widget of a still frame: its layer's order (`Background`, `Middle`, `Foreground`, `Tooltip`, `Debug`), its
@@ -1452,6 +1547,14 @@ pub struct GeoWidget {
 pub struct Geometry {
     pub widgets: Vec<GeoWidget>,
     pub texts: Vec<(String, egui::Rect)>,
+    /// Controls (widgets that take clicks or drags) inside a card made of rows but in none of its rows.
+    pub strays: Vec<egui::Rect>,
+    /// The cards made of rows (their layer's order and rectangle), and their rows and parts (alike): what a
+    /// reading of alignment measures against.
+    pub cards: Vec<(String, egui::Rect)>,
+    pub rows: Vec<(String, egui::Rect)>,
+    /// The lit blocks seen with the pointer on each control that takes a click, one by one.
+    pub lits: Vec<zikaron_ui::probe::Lit>,
 }
 
 /// Draw `scene` in windowless frames until it is still (entrances, sheet openings and the appearance's blend
@@ -1460,7 +1563,7 @@ pub struct Geometry {
 pub fn probe_geometry(ctx: &egui::Context, shell: Shell, scene: Scene, width: f32, height: f32) -> (Shell, Geometry) {
     let role = shell.settings.role;
     let place = match scene {
-        Scene::Page(p) | Scene::Sheet(p, _) => p,
+        Scene::Page(p) | Scene::Sheet(p, _) | Scene::Data(p, _) => p,
         _ => Place::Home,
     };
     let mut ux = Ux::default();
@@ -1471,7 +1574,9 @@ pub fn probe_geometry(ctx: &egui::Context, shell: Shell, scene: Scene, width: f3
     win.faults_told = usize::MAX;
     // What a scene changes in the shell, put back after the reading.
     let kept = (win.shell.vault.clone(), win.shell.anchor.clone(), win.shell.rooted, win.shell.machine.backup.clone(), win.shell.primary.clone(), win.shell.backup_peek.clone(), win.shell.gas, win.shell.vault_recoverable);
+    let kept_data = (win.shell.checked.clone(), win.shell.key_anchors.clone(), win.shell.held.clone(), win.shell.verified.clone(), win.shell.book.clone(), win.shell.diligence.clone());
     stage(&mut win, scene);
+    stage_memory(ctx, scene);
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
     let mut t = 0.0;
     let mut out = None;
@@ -1483,7 +1588,31 @@ pub fn probe_geometry(ctx: &egui::Context, shell: Shell, scene: Scene, width: f3
         let input = egui::RawInput { screen_rect: Some(screen), time: Some(t), ..Default::default() };
         out = Some(ctx.run_ui(input, |ui| win.draw(ui)));
     }
+    // What the scene started in the background lands before the reading (a reading never depends on how fast
+    // this machine ran it), then a few frames more draw it.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !win.shell.tasks.flying().is_empty() && std::time::Instant::now() < until {
+        win.shell.drain();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    for _ in 0..6 {
+        t += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(t), ..Default::default() };
+        out = Some(ctx.run_ui(input, |ui| win.draw(ui)));
+    }
     let out = out.expect("frames ran");
+    // Every control in a card made of rows lies in one of the rows (on its own layer).
+    let (parts, boxes) = (zikaron_ui::probe::parts(ctx), zikaron_ui::probe::boxes(ctx));
+    let strays: Vec<egui::Rect> = ctx.viewport(|v| {
+        v.prev_pass
+            .widgets
+            .layers()
+            .flat_map(|(layer, ws)| ws.iter().filter(|w| w.sense.senses_click() || w.sense.senses_drag()).map(move |w| (*layer, w.rect)))
+            .filter(|(layer, r)| r.is_finite() && boxes.iter().any(|(l, b)| l == layer && b.expand(0.5).contains_rect(*r)))
+            .filter(|(layer, r)| !parts.iter().any(|(l, p)| l == layer && p.expand(0.5).contains_rect(*r)))
+            .map(|(_, r)| r)
+            .collect()
+    });
     let mut widgets: Vec<GeoWidget> = ctx.viewport(|v| {
         v.prev_pass
             .widgets
@@ -1503,11 +1632,210 @@ pub fn probe_geometry(ctx: &egui::Context, shell: Shell, scene: Scene, width: f3
     for c in &out.shapes {
         walk(&c.shape, &mut texts);
     }
+    // The pointer on each control that takes a click, a frame each: the block it lights, as drawn.
+    let mut lits: Vec<zikaron_ui::probe::Lit> = Vec::new();
+    for w in widgets.iter().filter(|w| w.click) {
+        let at = w.rect.center();
+        if let Scene::IdMenu = scene {
+            zikaron_ui::menu::set(ctx, egui::Id::new("zikaron-id-menu"), true);
+        }
+        t += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(t), events: vec![egui::Event::PointerMoved(at)], ..Default::default() };
+        let _ = ctx.run_ui(input, |ui| win.draw(ui));
+        for l in zikaron_ui::probe::lits(ctx) {
+            if !lits.iter().any(|k| k.block == l.block) {
+                lits.push(l);
+            }
+        }
+    }
+    let input = egui::RawInput { screen_rect: Some(screen), time: Some(t + 0.1), events: vec![egui::Event::PointerGone], ..Default::default() };
+    let _ = ctx.run_ui(input, |ui| win.draw(ui));
     zikaron_ui::menu::set(ctx, egui::Id::new("zikaron-id-menu"), false);
     let mut shell = win.shell;
     (shell.vault, shell.anchor, shell.rooted, shell.machine.backup, shell.primary, shell.backup_peek, shell.gas, shell.vault_recoverable) = kept;
-    (shell, Geometry { widgets, texts })
+    (shell.checked, shell.key_anchors, shell.held, shell.verified, shell.book, shell.diligence) = kept_data;
+    let cards = boxes.iter().map(|(l, r)| (format!("{:?}", l.order), *r)).collect();
+    let rows = parts.iter().map(|(l, r)| (format!("{:?}", l.order), *r)).collect();
+    (shell, Geometry { widgets, texts, strays, cards, rows, lits })
 }
+
+/// Set the window's data for a data scene: a real check of this home's grant (no node set, so its gaps name the
+/// missing node), a kit of this home's records verified, this home's ledger read as another's (its overview, its
+/// list, one entry), a batch of two files, an earlier anchor of this key listed.
+fn stage_data(win: &mut Win, d: DataScene) {
+    match d {
+        DataScene::CheckNoNode | DataScene::CheckSourceOpen => {
+            let rows = win.shell.rows.as_ref().map(|(r, _)| r.clone()).unwrap_or_default();
+            let grant = rows.iter().find(|r| r.kind == zikaron::tokens::EntryType::Grant).map(|r| r.id.clone()).unwrap_or_default();
+            let (bytes, ledger) = match win.shell.home.as_ref() {
+                Some(h) => (crate::ledgerx::detail(h, &grant).map(|x| x.bytes).unwrap_or_default(), h.dir(crate::home::Slot::Ledger).display().to_string()),
+                None => (Vec::new(), String::new()),
+            };
+            win.typed.ck_typed = zikaron_kit::badge::encode(&[bytes]).unwrap_or_default();
+            win.typed.ck_ledgers = ledger;
+            win.typed.ck_endpoints = String::new();
+            win.typed.ck_registry = String::new();
+            let a = win.check_action();
+            let _ = crate::action::apply(&mut win.shell, a);
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            while win.shell.tasks.in_flight(crate::task::Kind::Check) && std::time::Instant::now() < until {
+                win.shell.drain();
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            win.shell.drain();
+            win.ux.u3.ck_source_open = (d == DataScene::CheckSourceOpen).then_some(0);
+        }
+        DataScene::VerifyKit => {
+            // A whole kit of this home's records, every one anchored and matching (the geometry home reads no
+            // chain, so the reading is laid from its own ledger).
+            let rows = win.shell.rows.as_ref().map(|(r, _)| r.clone()).unwrap_or_default();
+            let works: Vec<&crate::ledgerx::Row> = rows.iter().filter(|r| r.kind == zikaron::tokens::EntryType::History).collect();
+            let at = win.shell.home.as_ref().map(|h| h.dir(crate::home::Slot::Kits).join("kit-geometry")).unwrap_or_default();
+            win.typed.vf_path = at.display().to_string();
+            let n = works.len();
+            let records = works
+                .iter()
+                .map(|r| crate::verifyx::RecordRow {
+                    id: r.id.clone(),
+                    content: r.work.clone().unwrap_or_default(),
+                    name: r.facts.note.clone(),
+                    original: crate::verifyx::Original::Match,
+                    chain: crate::verifyx::OnChain::Anchored { first_at: r.anchored_at.unwrap_or(GEO_TIME) },
+                    first: None,
+                })
+                .collect();
+            let depth = zikaron::json::parse(format!(r#"{{"valid":true,"label":"COMPLETE","found":true,"earliest":{GEO_TIME},"deepest":4,"continuity":{{"anchored":{n},"span":{n}}}}}"#).as_bytes()).ok();
+            win.shell.verified = Some(crate::verifyx::Verified {
+                path: win.typed.vf_path.clone(),
+                source: crate::verifyx::Source::Kit(at),
+                kit: Some(crate::verifyx::KitFacts { ok: true, entries: rows.len(), files: n, proofs: n, kit_id: works.first().map(|r| r.id.clone()).unwrap_or_default(), verdict: String::new(), subject: String::new(), invalid: Vec::new() }),
+                entries: rows.len(),
+                rejected: Vec::new(),
+                review: Ok(crate::verifyx::AnchorReview { label: zikaron::tokens::Label::Complete.as_str().to_string(), anchors: n, asked: n, unanchored: Vec::new(), anchored: n, unread: Vec::new() }),
+                work: String::new(),
+                depth,
+                mismatches: Vec::new(),
+                records,
+                not_added: None,
+                missed: Vec::new(),
+                read: vec![31337],
+                filed: None,
+            });
+        }
+        DataScene::OthersRead => stage_others(win),
+        DataScene::OthersList => {
+            stage_others(win);
+            win.ux.u3.others_tab = 1;
+        }
+        DataScene::OtherEntry => {
+            stage_others(win);
+            let seq = win.shell.rows.as_ref().and_then(|(r, _)| r.iter().find(|x| x.kind == zikaron::tokens::EntryType::History).map(|x| x.seq)).unwrap_or(0);
+            win.push(Route::Other(seq), 0.0);
+        }
+        DataScene::NewRecordBatch => {
+            win.u3_new_anchor_open();
+            win.typed.batch_files = vec!["/geometry/one.txt".into(), "/geometry/two.txt".into()];
+        }
+        DataScene::AdoptListed => {
+            win.u3_form_open(U3Form::Adopt);
+            win.ux.u3.adopt_asked = Some(String::new());
+            let row = crate::adoptx::AnchorRow { chain_id: 1, tx: format!("0x{}", "ab".repeat(32)), payload_kind: "single".into(), content: format!("0x{}", "cd".repeat(32)) };
+            win.shell.key_anchors = Some((String::new(), vec![crate::adoptx::KeyAnchor { row, block: 100, time: 1_760_000_000, in_ledger: false, proof: None }]));
+        }
+        DataScene::GrantDetail => {
+            let grant = win.shell.grants.as_ref().and_then(|g| g.first().map(|r| r.id.clone())).unwrap_or_default();
+            win.push(crate::nav::Route::Grant(grant), 0.0);
+        }
+        DataScene::HeldListed | DataScene::HeldDetail => {
+            // One held grant, as the vault lists it, issued to this seat by another key.
+            let now = (win.shell.clock)();
+            let me = win.shell.anchor.map(|a| a.hex()).unwrap_or_default();
+            let h = crate::vaultx::Held {
+                id: format!("0x{}", "66".repeat(32)),
+                bytes: Vec::new(),
+                author: format!("0x{}", "7b".repeat(20)),
+                grantee: me,
+                work: format!("0x{}", "44".repeat(32)),
+                terms: format!("0x{}", "55".repeat(32)),
+                window: Some((now.saturating_sub(10 * 86_400), now + 44 * 86_400)),
+                upstream: None,
+                seq: 1,
+            };
+            let id = h.id.clone();
+            win.shell.held = Some(vec![h]);
+            if d == DataScene::HeldDetail {
+                win.push(crate::nav::Route::Held(id), 0.0);
+            }
+        }
+        DataScene::WorkDetail | DataScene::EntryDetail => {
+            use zikaron::tokens::EntryType as E;
+            let rows = win.shell.rows.as_ref().map(|(r, _)| r.clone()).unwrap_or_default();
+            if d == DataScene::WorkDetail {
+                if let Some(r) = rows.iter().find(|r| r.kind == E::History) {
+                    win.push(crate::nav::Route::Work(r.id.clone()), 0.0);
+                }
+            } else if let Some(r) = rows.iter().find(|r| r.kind != E::Grant) {
+                win.push(crate::nav::Route::Entry(r.id.clone()), 0.0);
+            }
+        }
+        DataScene::PendingDetail => {
+            if let Some(q) = win.shell.queue.items.first() {
+                let id = q.id.clone();
+                win.push(crate::nav::Route::Pending(id), 0.0);
+            }
+        }
+        // The sheet itself is kept in the window's memory (`stage_memory`).
+        DataScene::KitExport => {}
+    }
+}
+
+/// Set what a scene keeps in the window's memory rather than in its state: the record kit's export sheet.
+fn stage_memory(ctx: &egui::Context, scene: Scene) {
+    let up = matches!(scene, Scene::Data(_, DataScene::KitExport));
+    super::kit::kit_export_up(ctx, up);
+}
+
+/// This home's own ledger, read by its author's address as another's would be (laid from the ledger itself: the
+/// geometry home reads no chain).
+fn stage_others(win: &mut Win) {
+    let who = win.shell.anchor.map(|a| a.hex()).unwrap_or_default();
+    let timeline = win.shell.rows.as_ref().map(|(r, _)| r.clone()).unwrap_or_default();
+    let grants = win.shell.grants.clone().unwrap_or_default();
+    let anchors = timeline.iter().filter(|r| r.lamp == crate::ledgerx::Lamp::Anchored).count();
+    let label = zikaron::tokens::Label::Complete.as_str().to_string();
+    let from = Some((crate::supplyx::Level::Local, win.shell.home.as_ref().map(|h| h.dir(crate::home::Slot::Ledger).display().to_string()).unwrap_or_default()));
+    let entries = timeline.len();
+    if win.shell.settings.role == crate::roles::Role::Grantee {
+        win.typed.dg_address = who.clone();
+        win.shell.diligence = Some(crate::diligx::Read {
+            who,
+            anchors,
+            asked: anchors,
+            entries,
+            label,
+            timeline,
+            grants,
+            work: String::new(),
+            depth: None,
+            window: None,
+            clash: Vec::new(),
+            successions: Vec::new(),
+            lineage: Vec::new(),
+            now: Some(GEO_TIME),
+            latest: Some(GEO_TIME),
+            from,
+            files: None,
+            misses: Vec::new(),
+            missed: Vec::new(),
+        });
+    } else {
+        win.typed.rd_address = who.clone();
+        win.shell.book = Some(Done::Book { who, anchors, asked: anchors, entries, label, timeline, grants, latest: Some(GEO_TIME), from, files: None, misses: Vec::new(), missed: Vec::new() });
+    }
+}
+
+/// The time the data scenes' readings stand at.
+const GEO_TIME: u64 = 1_760_500_000;
 
 /// Set the window's state for `scene`, as the scene's own opener does.
 fn stage(win: &mut Win, scene: Scene) {
@@ -1517,6 +1845,7 @@ fn stage(win: &mut Win, scene: Scene) {
     let id = win.shell.identities.as_ref().and_then(|r| r.current.clone().map(|(i, _)| i));
     match scene {
         Scene::Page(_) | Scene::IdMenu => {}
+        Scene::Data(_, d) => stage_data(win, d),
         Scene::Wizard(step) => {
             match step {
                 Step::Pin => win.shell.vault = Vault::Read(State::Absent),
@@ -1562,7 +1891,15 @@ fn stage(win: &mut Win, scene: Scene) {
                 SheetScene::NewRecord => win.u3_new_anchor_open(),
                 SheetScene::NewRecordConfirm => {
                     win.u3_new_anchor_open();
-                    win.typed.batch_files = vec!["/geometry/one.txt".into()];
+                    // One file chosen, its fingerprint already taken.
+                    let bytes = b"geometry one";
+                    win.shell.content = Some(crate::anchorx::Content {
+                        source: crate::anchorx::Source::File,
+                        digest: crate::anchorx::file_digest(bytes),
+                        subject: "/geometry/one.txt".into(),
+                        detail: format!("{} bytes", bytes.len()),
+                        size: Some(bytes.len() as u64),
+                    });
                     win.ux.u3.new_anchor = Some(1);
                 }
                 SheetScene::Send => {
@@ -1642,7 +1979,133 @@ fn stage(win: &mut Win, scene: Scene) {
                     win.wizard_open(Step::Genesis);
                     win.ux.confirm_adopt = true;
                 }
+                SheetScene::NetEdit => win.net_edit_open(),
+                SheetScene::ReadNet => win.read_net_new_open(),
+                SheetScene::PublishCheck => win.ux.publish_sheet = true,
+                SheetScene::DataFolder => win.dir_open(settings::DirSheet::Home),
+                SheetScene::Snapshot => win.snapshot_open(),
+                SheetScene::GrantFile => {
+                    win.sheets_clear();
+                    win.out_open(grants::OutSheet::GrantFile(grant));
+                }
+                SheetScene::Badge | SheetScene::HeldUpstream => {
+                    win.sheets_clear();
+                    let held = win.shell.held.as_ref().and_then(|h| h.first().map(|x| x.id.clone())).unwrap_or_default();
+                    win.out_open(if s == SheetScene::Badge { grants::OutSheet::Badge(held) } else { grants::OutSheet::Upstream(held) });
+                }
             }
         }
     }
+}
+
+/// What the alerts page and the rail's count read with given watch rows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AlertsReading {
+    /// The rail's count.
+    pub count: usize,
+    /// Every text the page drew under its toolbar (the page body), in drawing order.
+    pub texts: Vec<String>,
+}
+
+/// Draw the alerts page with `rows` as the watch's reading (in place of the shell's) in a few windowless frames;
+/// what the page drew and the rail's count.
+pub fn probe_alerts(ctx: &egui::Context, shell: Shell, rows: Vec<crate::watchx::Row>, width: f32, height: f32) -> (Shell, AlertsReading) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::View(crate::nav::View::Alerts, 0), role));
+    ux.wizard_asked = true;
+    ux.watch_rows = Some(rows);
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut out = None;
+    let mut t = 0.0;
+    for _ in 0..6 {
+        t += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(t), ..Default::default() };
+        out = Some(ctx.run_ui(input, |ui| win.draw(ui)));
+    }
+    let out = out.expect("frames ran");
+    let texts = texts_of(&out).into_iter().filter(|d| d.rect.top() > zikaron_ui::tokens::TOOLBAR_H && d.rect.left() > zikaron_ui::tokens::RAIL_W).map(|d| d.text).collect();
+    let count = win.alert_count();
+    (win.shell, AlertsReading { count, texts })
+}
+
+/// A still frame of a scene as it would be painted: its tessellated shapes and every texture they sample, at
+/// `ppp` physical pixels per point (test drivers turn it into a picture without a window).
+pub struct Picture {
+    pub prims: Vec<egui::ClippedPrimitive>,
+    pub textures: std::collections::HashMap<egui::TextureId, egui::ColorImage>,
+    pub ppp: f32,
+}
+
+/// Draw `scene` the way [`probe_geometry`] does (windowless frames until still, background tasks landed) and keep
+/// what a painter would need for its last frame.
+pub fn probe_picture(ctx: &egui::Context, shell: Shell, scene: Scene, width: f32, height: f32, ppp: f32) -> (Shell, Picture) {
+    let role = shell.settings.role;
+    let place = match scene {
+        Scene::Page(p) | Scene::Sheet(p, _) | Scene::Data(p, _) => p,
+        _ => Place::Home,
+    };
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(place, role));
+    ux.wizard_asked = true;
+    ux.lang_applied = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let kept = (win.shell.vault.clone(), win.shell.anchor.clone(), win.shell.rooted, win.shell.machine.backup.clone(), win.shell.primary.clone(), win.shell.backup_peek.clone(), win.shell.gas, win.shell.vault_recoverable);
+    let kept_data = (win.shell.checked.clone(), win.shell.key_anchors.clone(), win.shell.held.clone(), win.shell.verified.clone(), win.shell.book.clone(), win.shell.diligence.clone());
+    stage(&mut win, scene);
+    stage_memory(ctx, scene);
+    ctx.set_pixels_per_point(ppp);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut textures: std::collections::HashMap<egui::TextureId, egui::ColorImage> = std::collections::HashMap::new();
+    let mut take = |out: &egui::FullOutput| {
+        for (id, delta) in &out.textures_delta.set {
+            let egui::epaint::ImageData::Color(img) = &delta.image;
+            match delta.pos {
+                None => {
+                    textures.insert(*id, (**img).clone());
+                }
+                Some([x, y]) => {
+                    if let Some(t) = textures.get_mut(id) {
+                        for row in 0..img.size[1] {
+                            for col in 0..img.size[0] {
+                                let (tx, ty) = (x + col, y + row);
+                                if tx < t.size[0] && ty < t.size[1] {
+                                    t.pixels[ty * t.size[0] + tx] = img.pixels[row * img.size[0] + col];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    let mut t = 0.0;
+    let mut out = None;
+    for i in 0..20 {
+        t += 0.1;
+        if let Scene::IdMenu = scene {
+            zikaron_ui::menu::set(ctx, egui::Id::new("zikaron-id-menu"), true);
+        }
+        if i == 14 {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            while !win.shell.tasks.flying().is_empty() && std::time::Instant::now() < until {
+                win.shell.drain();
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        }
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(t), ..Default::default() };
+        let o = ctx.run_ui(input, |ui| win.draw(ui));
+        take(&o);
+        out = Some(o);
+    }
+    let out = out.expect("frames ran");
+    let prims = ctx.tessellate(out.shapes, out.pixels_per_point);
+    zikaron_ui::menu::set(ctx, egui::Id::new("zikaron-id-menu"), false);
+    let mut shell = win.shell;
+    (shell.vault, shell.anchor, shell.rooted, shell.machine.backup, shell.primary, shell.backup_peek, shell.gas, shell.vault_recoverable) = kept;
+    (shell.checked, shell.key_anchors, shell.held, shell.verified, shell.book, shell.diligence) = kept_data;
+    (shell, Picture { prims, textures, ppp: out.pixels_per_point })
 }

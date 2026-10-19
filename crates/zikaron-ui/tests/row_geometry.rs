@@ -1,7 +1,8 @@
 //! Where things land in a row, read in headless egui frames: a widget put in a row of `width::then` sits on the
 //! row's middle line as the key at its end does (GALEED's probe, 2026-10-16: `states::okline` hung 9 points low,
-//! its top on the row's middle), every widget of the library that stands in rows likewise; and the first row
-//! under a table's head keeps its top corners square on the head's rule.
+//! its top on the row's middle), every widget of the library that stands in rows likewise; and a
+//! table's lit row keeps one gap to the lines and the card's edge around it, square where it meets a line, the
+//! card's corner less the gap where it faces the card's edge.
 
 use zikaron_ui::egui::{self, Pos2, Rect};
 use zikaron_ui::{button, card, mark, pin, states, table, width};
@@ -107,18 +108,37 @@ fn hovered_ground(row: usize, head: bool) -> egui::CornerRadius {
     out.shapes
         .iter()
         .find_map(|cs| match &cs.shape {
-            egui::Shape::Rect(r) if r.fill.a() > 0 && r.rect.contains(pointer) && (r.rect.height() - zikaron_ui::tokens::ROW_H).abs() < 0.5 => Some(r.corner_radius),
+            egui::Shape::Rect(r) if r.fill.a() > 0 && r.rect.contains(pointer) && r.rect.height() <= zikaron_ui::tokens::ROW_H + 0.5 => Some(r.corner_radius),
             _ => None,
         })
         .expect("the hovered row's ground is painted")
 }
 
 #[test]
-fn the_first_row_under_a_head_keeps_its_top_corners_square() {
-    let round = zikaron_ui::tokens::Radius::Ctl.egui();
-    let first = hovered_ground(0, true);
-    assert_eq!((first.nw, first.ne), (0, 0), "the first row's top corners meet the head's rule square");
-    assert_eq!((first.sw, first.se), (round.sw, round.se), "its bottom corners stay round");
-    assert_eq!(hovered_ground(1, true), round, "a row below the first is round all round");
-    assert_eq!(hovered_ground(0, false), round, "with no head, the first row is round all round");
+fn a_tables_lit_row_meets_lines_square_and_the_cards_edge_round() {
+    let round = (zikaron_ui::tokens::Radius::Card.px() - zikaron_ui::band::GAP) as u8;
+    let sq = egui::CornerRadius::ZERO;
+    assert_eq!(hovered_ground(0, true), sq, "under the head's rule and over a line: square");
+    assert_eq!(hovered_ground(1, true), sq, "between two lines: square");
+    assert_eq!(hovered_ground(2, true), egui::CornerRadius { nw: 0, ne: 0, sw: round, se: round }, "the last row: round at the card's foot");
+    assert_eq!(hovered_ground(0, false), egui::CornerRadius { nw: round, ne: round, sw: 0, se: 0 }, "with no head, the first row: round at the card's top");
+}
+
+/// A lit block keeps one gap to every side that bounds it, its corners are the card's less that gap where it
+/// faces the card's edge, and it has none where it meets a line; a side that reaches the next row keeps no gap.
+#[test]
+fn a_lit_block_keeps_one_gap_and_the_cards_corner() {
+    use zikaron_ui::band::{block, Bound, GAP};
+    let slot = egui::Rect::from_min_max(egui::pos2(100.0, 200.0), egui::pos2(600.0, 256.0));
+    let r = 16.0;
+    let want = (r - GAP) as u8;
+    for (top, bottom) in [(Bound::Edge, Bound::Line), (Bound::Line, Bound::Line), (Bound::Line, Bound::Edge), (Bound::Edge, Bound::Edge)] {
+        let (b, c) = block(slot, r, top, bottom);
+        assert_eq!((b.left() - slot.left(), slot.right() - b.right(), b.top() - slot.top(), slot.bottom() - b.bottom()), (GAP, GAP, GAP, GAP), "{top:?} {bottom:?}");
+        let at = |s: Bound| if s == Bound::Line { 0 } else { want };
+        assert_eq!((c.nw, c.ne, c.sw, c.se), (at(top), at(top), at(bottom), at(bottom)), "{top:?} {bottom:?}");
+    }
+    let (b, c) = block(slot, r, Bound::Row, Bound::Row);
+    assert_eq!((b.top(), b.bottom()), (slot.top(), slot.bottom()), "a side at the next row keeps no gap");
+    assert_eq!(c.nw, want);
 }

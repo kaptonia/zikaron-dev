@@ -79,6 +79,16 @@ pub fn keep(ctx: &Context, key: Id, layer: LayerId, dur: f32, to_scale: f32, cen
     });
 }
 
+/// Turn the leaving of a recorded layer (`key`) toward `moved`: the offset it reaches at the end of its leaving
+/// (a wizard step's card leaves toward the side it is left on, known only when the next one comes).
+pub fn steer(ctx: &Context, key: Id, moved: Vec2) {
+    ctx.data_mut(|d| {
+        if let Some(t) = d.get_temp_mut_or_default::<Vec<(Id, Snap)>>(table_id()).iter_mut().find(|(k, _)| *k == key) {
+            t.1.moved = moved;
+        }
+    });
+}
+
 /// How far a recorded layer's leaving has played back: its opacity now (1 just left, 0 gone), or `None` when it
 /// is not leaving.
 fn leaving_alpha(s: &Snap, now: f64) -> Option<f32> {
@@ -259,13 +269,16 @@ pub fn drop_card(ctx: &Context, anchor: Rect, bounds: Rect, size: Vec2, left: bo
     let x = x.clamp(room_l + 8.0, (room_r - size.x - 8.0).max(room_l + 8.0));
     let below = anchor.bottom() + 6.0;
     let above = anchor.top() - 6.0 - size.y;
-    // Under the anchor when it fits there; else above when it fits there; fitting neither side, on the side with
-    // more room, held inside the window (over the anchor if it must): never past an edge.
+    // Under the anchor when it fits there, or when what the anchor scrolls in can scroll it there (the card's
+    // owner then takes the page along: [`follow`]); else above when it fits there; fitting neither side, on the
+    // side with more room, held inside the window (over the anchor if it must): never past an edge.
     let room_below = screen.bottom() - 8.0 - below;
     let room_above = anchor.top() - 6.0 - (screen.top() + 8.0);
-    let up = if size.y <= room_below { false } else if size.y <= room_above { true } else { room_above > room_below };
+    let scroll = crate::scroll::room_below(ctx, anchor).min((anchor.top() - bounds.top().max(screen.top())).max(0.0));
+    let carried = size.y > room_below && size.y + REVEAL_FOOT - 8.0 <= room_below + scroll;
+    let up = if size.y <= room_below || carried { false } else if size.y <= room_above { true } else { room_above > room_below };
     let y = if up { above } else { below };
-    let y = y.clamp(screen.top() + 8.0, (screen.bottom() - 8.0 - size.y).max(screen.top() + 8.0));
+    let y = if carried { y } else { y.clamp(screen.top() + 8.0, (screen.bottom() - 8.0 - size.y).max(screen.top() + 8.0)) };
     let rect = Rect::from_min_size(egui::pos2(x, y), size);
     let origin = match (left, up) {
         (true, false) => rect.left_top(),
@@ -274,6 +287,43 @@ pub fn drop_card(ctx: &Context, anchor: Rect, bounds: Rect, size: Vec2, left: bo
         (false, true) => rect.right_bottom(),
     };
     Drop { rect, origin, moved: egui::vec2(0.0, if up { 4.0 } else { -4.0 }) }
+}
+
+/// How far above the window's bottom a card that took its page along ends.
+pub const REVEAL_FOOT: f32 = 32.0;
+
+fn card_rect_id(id: Id) -> Id {
+    id.with("zikaron-card-at")
+}
+
+/// Record where a floating card under `id` lies this frame (its owner reads it in [`follow`]).
+pub fn card_at(ctx: &Context, id: Id, rect: Rect) {
+    ctx.data_mut(|d| d.insert_temp(card_rect_id(id), rect));
+}
+
+/// A floating card stays with its anchor (call it from the anchor's own `ui`, after the card is drawn, while it
+/// is open): the wheel turned anywhere off the card scrolls what the anchor scrolls in, and the card, placed from
+/// its anchor each frame, goes along; a card that hangs past the window's foot takes the page along until it ends
+/// [`REVEAL_FOOT`] above it (never taking the anchor past the top); and once the anchor has scrolled out of view
+/// the card closes. Returns whether it should close.
+pub fn follow(ui: &egui::Ui, id: Id, anchor: Rect) -> bool {
+    let ctx = ui.ctx();
+    let Some(card) = ctx.data(|d| d.get_temp::<Rect>(card_rect_id(id))) else { return false };
+    let view = ui.clip_rect();
+    if !view.intersects(anchor) {
+        return true;
+    }
+    let over_card = ctx.pointer_hover_pos().map(|p| card.contains(p)).unwrap_or(false);
+    let wheel = ctx.input(|i| i.smooth_scroll_delta);
+    if !over_card && wheel != Vec2::ZERO {
+        ui.scroll_with_delta_animation(wheel, egui::style::ScrollAnimation::none());
+        ctx.input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
+    }
+    let screen = ctx.content_rect();
+    if card.top() >= anchor.bottom() && card.bottom() + REVEAL_FOOT > screen.bottom() + 0.5 {
+        ui.scroll_to_rect(Rect::from_min_max(anchor.min, egui::pos2(anchor.right(), card.bottom() + REVEAL_FOOT)), None);
+    }
+    false
 }
 
 /// Whether `ui`'s layer is the one on top at `at`'s centre: the topmost layer there that takes presses (egui's

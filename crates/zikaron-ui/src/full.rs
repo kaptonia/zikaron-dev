@@ -111,7 +111,7 @@ pub fn steps(ui: &mut egui::Ui, steps: &[Step], current: usize) -> Option<usize>
         let on = i == current;
         let done = motion::flag(ui.ctx(), id.with(("done", i)), s.done, tokens::MID);
         let lit = motion::flag(ui.ctx(), id.with(("on", i)), on, tokens::MID);
-        let hot = motion::flag(ui.ctx(), id.with(("hot", i)), s.reachable && resp.hovered(), tokens::FAST);
+        let hot = motion::states(ui.ctx(), id.with(("step", i)), resp.hovered(), resp.is_pointer_button_down_on(), resp.has_focus(), s.reachable).hover;
         let edge = crate::palette::mix(crate::palette::mix(c(C::Line), c(C::Accent), lit), c(C::Ok), done);
         p.circle_filled(bc, 11.0, crate::palette::mix(c(C::Surface), c(C::Ok), done));
         if s.later && !s.done {
@@ -163,9 +163,14 @@ pub fn radio_row(ui: &mut egui::Ui, id: egui::Id, on: bool, title: &str, pill: O
     let lit = motion::flag(ui.ctx(), id.with("on"), on, tokens::FAST);
     let dot = motion::to(ui.ctx(), id.with("dot"), if on { 1.0 } else { 0.0 }, tokens::FAST, Curve::Spring);
     let p = ui.painter().clone();
-    let fill = crate::palette::mix(c(C::Surface), c(C::Sel), lit);
-    let edge = crate::palette::mix(c(C::Line), c(C::Accent), lit);
-    p.rect(rect, crate::tokens::Radius::Menu.egui(), fill, egui::Stroke::new(1.0_f32, edge), egui::StrokeKind::Inside);
+    // A grey tone at rest; chosen, the selection ground with a blue edge and the soft blue ring.
+    let fill = crate::palette::mix(c(C::Tone), c(C::Sel), lit);
+    let round = crate::tokens::Radius::Menu;
+    if lit > 0.0 {
+        p.rect_stroke(rect.expand(2.0), egui::CornerRadius::same(round.px() as u8 + 2), egui::Stroke::new(4.0_f32, c(C::Focus).gamma_multiply(lit)), egui::StrokeKind::Middle);
+    }
+    p.rect(rect, round.egui(), fill, egui::Stroke::new(1.0_f32, c(C::Accent).gamma_multiply(0.7 * lit)), egui::StrokeKind::Inside);
+    let edge = crate::palette::mix(c(C::Dash), c(C::Accent), lit);
     let rc = pos2(rect.left() + 14.0 + 8.0, rect.center().y);
     p.circle_stroke(rc, 7.5, egui::Stroke::new(1.5_f32, edge));
     if dot > 0.0 {
@@ -173,7 +178,8 @@ pub fn radio_row(ui: &mut egui::Ui, id: egui::Id, on: bool, title: &str, pill: O
     }
     let x = rect.left() + text_x;
     let ty = rect.center().y - lines_h / 2.0;
-    let tr = p.text(pos2(x, ty), egui::Align2::LEFT_TOP, title, crate::tokens::Type::Strong.font(), c(C::Ink));
+    // The title centred in its line, whatever the face's own height (Latin and Chinese faces differ).
+    let tr = p.text(pos2(x, ty + crate::tokens::Type::Strong.line() / 2.0), egui::Align2::LEFT_CENTER, title, crate::tokens::Type::Strong.font(), c(C::Ink));
     if let Some(s) = pill {
         let pw = crate::mark::pill_w(ui, s, false);
         let pr = Rect::from_min_size(pos2(tr.right() + 8.0, tr.center().y - tokens::PILL_H / 2.0), vec2(pw, tokens::PILL_H));

@@ -867,3 +867,9 @@ pub fn backdrop(w: Window, dark: bool) -> Backdrop {
 pub fn backdrop_appearance(w: Window, dark: bool) {
     imp::backdrop_appearance(w, dark)
 }
+
+/// Whether the system asks apps to reduce motion (macOS: Accessibility › Display › Reduce motion; Windows:
+/// "Animation effects" off; Linux: GNOME's animations off). The window asks every few seconds.
+pub fn reduce_motion() -> bool {
+    imp::reduce_motion()
+}

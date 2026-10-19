@@ -167,7 +167,7 @@ impl Win {
             });
         rail::edge(ctx, panel.response.rect);
         if let Some(r) = chip {
-            self.id_menu(ctx, r, now);
+            self.id_menu(ctx, r, panel.response.rect, now);
         }
         if lock {
             self.lock_now(now);
@@ -208,9 +208,10 @@ impl Win {
         }
     }
 
-    /// The identity menu under the chip: switch identity (each "kind · name", the current one marked), new
-    /// identity, import key, identity keys. No lock here (the rail has its own).
-    fn id_menu(&mut self, ctx: &egui::Context, anchor: egui::Rect, now: f64) {
+    /// The identity menu under the chip: switch identity (each identity's name over its kind, the one in use
+    /// saying so), new identity, import key, identity keys. No lock here (the rail has its own).
+    /// It stays inside the rail: as far from the rail's right edge as the chip is from its left, a long name cut.
+    fn id_menu(&mut self, ctx: &egui::Context, anchor: egui::Rect, rail: egui::Rect, now: f64) {
         let id = egui::Id::new("zikaron-id-menu");
         if !menu::is_open(ctx, id) {
             return;
@@ -218,9 +219,11 @@ impl Win {
         let rows: Vec<crate::identity::Row> = self.shell.identities.as_ref().map(|r| r.rows.clone()).unwrap_or_default();
         let current = self.shell.identities.as_ref().and_then(|r| r.now().map(|(x, _)| x.id.clone()));
         let primary = self.shell.primary.as_ref().map(|(p, _)| p.clone());
+        // The menu's width less its own 10 of padding; a row takes its label and 24 more.
+        let min_w = (rail.width() - 2.0 * (anchor.left() - rail.left()).max(0.0) - 10.0).max(120.0);
         // The identity list: each identity is two lines, its name and its
         // kind, with "primary" and "in use" at the end of the second line.
-        let names: Vec<&str> = rows.iter().map(|r| if r.label.trim().is_empty() { t(Key::Unnamed) } else { r.label.as_str() }).collect();
+        let names: Vec<String> = rows.iter().map(|r| elide_in(ctx, if r.label.trim().is_empty() { t(Key::Unnamed) } else { r.label.as_str() }, Type::Key.font(), min_w - 24.0)).collect();
         let tags: Vec<Vec<&str>> = rows
             .iter()
             .map(|r| {
@@ -234,18 +237,18 @@ impl Win {
                 v
             })
             .collect();
-        // The identity lens menu: a title, the identities (the one in use under the blue lens), then the
-        // actions in two groups.
+        // A title, the identities (arrows and return move among them and pick one), then the actions in two
+        // groups.
         let mut items: Vec<menu::Item> = vec![menu::Item::Head(t(Key::IdSwitchTitle))];
         for (i, r) in rows.iter().enumerate() {
-            items.push(menu::Item::Who(menu::Who { name: names[i], kind: t(id_kind_key(r.kind())), tags: &tags[i], current: current.as_deref() == Some(r.id.as_str()) }));
+            items.push(menu::Item::Who(menu::Who { name: &names[i], kind: t(id_kind_key(r.kind())), tags: &tags[i], current: current.as_deref() == Some(r.id.as_str()) }));
         }
         items.push(menu::Item::Sep);
         items.push(menu::row(t(Key::IdNewTitle)));
         items.push(menu::row(t(Key::IdImportTitle)));
         items.push(menu::Item::Sep);
         items.push(menu::row(t(Key::SetKeys)));
-        if let Some(i) = menu::show(ctx, id, anchor, true, 236.0, &items) {
+        if let Some(i) = menu::show(ctx, id, anchor, true, min_w, &items) {
             let n = rows.len();
             if i >= 1 && i <= n {
                 let r = &rows[i - 1];
@@ -522,4 +525,24 @@ fn grip_acts(ctx: &egui::Context, r: &egui::Response) {
         let maximized = ctx.input(|i| i.viewport().maximized).unwrap_or(false);
         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
     }
+}
+
+/// `s` cut with an ellipsis to fit `max_w` in `font` (for words laid out without a ui of their own).
+fn elide_in(ctx: &egui::Context, s: &str, font: egui::FontId, max_w: f32) -> String {
+    let width = |w: &str| ctx.fonts_mut(|f| f.layout_no_wrap(w.to_string(), font.clone(), egui::Color32::BLACK).size().x);
+    if width(s) <= max_w {
+        return s.to_string();
+    }
+    let cs: Vec<char> = s.chars().collect();
+    let cut = |keep: usize| cs[..keep].iter().collect::<String>() + "\u{2026}";
+    let (mut lo, mut hi) = (0usize, cs.len().saturating_sub(1));
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if width(&cut(mid)) <= max_w {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    cut(lo)
 }

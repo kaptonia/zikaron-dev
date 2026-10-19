@@ -130,7 +130,7 @@ The command line works on plain ledger folders, on the ledgers of the homes the 
 credential), and on the mirror bundles and record packages the app exports.
 
 **A sealed home is written with the credential.** The entry-writing verbs write a home ZIKARON Desk keeps with
-the command line's credential while "With a credential" is on in the desktop (Settings > Command line); section 12 says how,
+the command line's credential while "With a credential" is on in the desktop (Settings > Command line and AI control); section 12 says how,
 and when they are refused.
 
 The base's HARNESS leaves misuse diagnostics to the implementation and only fixes the exit code and
@@ -687,7 +687,7 @@ proof bundles are chosen on the desktop.
 
 ## 12 · With a credential: the credential, the switches, the adopted ledgers
 
-**Two switches** in the desktop (Settings > Command line, the group "Automation level") decide how the command line
+**Two switches** in the desktop (Settings > Command line and AI control, the group "Automation level") decide how the command line
 may write the data ZIKARON Desk keeps sealed. The higher outranks the lower, so there is one way at any time:
 
 | With a credential | Through the desktop app | How the command line writes | The door (section 11) |

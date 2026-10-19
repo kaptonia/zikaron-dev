@@ -74,12 +74,12 @@ impl egui::Plugin for Capture {
     fn input_hook(&mut self, _input: &mut egui::RawInput) {
         if self.seen.released.load(Ordering::SeqCst) && !self.synced {
             let from = std::time::Instant::now();
+            // `returned` is set when the task's thread ends, which is after its outcome was sent: the next frame's
+            // drain receives it, however busy the machine is.
             while !self.seen.returned.load(Ordering::SeqCst) {
                 assert!(from.elapsed() < std::time::Duration::from_secs(20), "the held task never returned");
                 std::thread::yield_now();
             }
-            // The outcome is sent right after the closure returns.
-            std::thread::sleep(std::time::Duration::from_millis(50));
             self.synced = true;
         }
     }
@@ -283,7 +283,7 @@ fn the_send_sheet_names_the_nodes_left_out_of_the_fee_reading() {
             assert!(probe.frame(&ctx), "frame {i}: the send sheet is up");
         }
         let f = last_frame(&seen);
-        assert!(drawn(&f, t(Key::U3SendTitle)), "the send sheet is drawn: {f:?}");
+        assert!(drawn(&f, t(Key::U3SendGo)), "the send sheet is drawn: {f:?}");
         if want {
             let line = fill1(Key::U3FeeLeftNodes, &left.join(" · "));
             assert!(drawn(&f, &line), "the nodes left out are named: {f:?}");
@@ -327,6 +327,20 @@ enum Lands {
 
 /// Open the resend sheet over the ledger page with a receipt check out (an anchoring task the test holds),
 /// press the sheet's key, let the check land with `lands`, and read the frames after.
+/// A flag set when it is dropped.
+struct SetOnDrop(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for SetOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+thread_local! {
+    /// Held by a task's thread until the thread ends.
+    static ENDED: std::cell::RefCell<Option<SetOnDrop>> = const { std::cell::RefCell::new(None) };
+}
+
 fn press_during_check(lands: Lands) -> (app::shell::Shell, Frame, Vec<String>) {
     let ctx = egui::Context::default();
     let mut shell = probe_shell(&ctx);
@@ -345,7 +359,8 @@ fn press_during_check(lands: Lands) -> (app::shell::Shell, Frame, Vec<String>) {
         while !released.load(Ordering::SeqCst) {
             std::thread::yield_now();
         }
-        returned.store(true, Ordering::SeqCst);
+        // Set when this thread ends (thread-local values are dropped then), that is after the outcome is sent.
+        ENDED.with(|e| *e.borrow_mut() = Some(SetOnDrop(returned)));
         Ok(done)
     });
     assert_eq!(started, app::task::Spawned::Started);

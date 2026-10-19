@@ -364,7 +364,7 @@ fn the_overlay_opened_last_lies_on_top() {
 #[test]
 fn one_esc_closes_the_calendar_and_not_the_sheet_under_it() {
     let mut f = Frames::new();
-    let words = datepick::Words { weekdays: ["一", "二", "三", "四", "五", "六", "日"], month: |y, m| format!("{y}年{m}月"), today: "今天", clear: "清除" };
+    let words = datepick::Words { weekdays: ["一", "二", "三", "四", "五", "六", "日"], month: |y, m| format!("{y}年{m}月"), year: |y| format!("{y}年"), month_alone: |m| format!("{m}月"), today: "今天", clear: "清除" };
     let mut date_id = None;
     let mut value = String::new();
     let mut sheet_esc = false;
@@ -740,7 +740,7 @@ fn a_pick_list_and_the_date_card_with_no_room_under_open_above() {
     assert_eq!(ys.len(), 3, "the pick rows are drawn: {ys:?}");
     assert!(ys.iter().all(|y| *y < low.top() && *y > 8.0), "the pick list above its anchor, inside the window: {ys:?}");
     // The date field at the window's foot: its calendar opens above it.
-    let words = datepick::Words { weekdays: ["一", "二", "三", "四", "五", "六", "日"], month: |y, m| format!("{y}年{m}月"), today: "今天", clear: "清除" };
+    let words = datepick::Words { weekdays: ["一", "二", "三", "四", "五", "六", "日"], month: |y, m| format!("{y}年{m}月"), year: |y| format!("{y}年"), month_alone: |m| format!("{m}月"), today: "今天", clear: "清除" };
     let mut f = Frames::new();
     let mut value = String::new();
     let mut field = Rect::NOTHING;
@@ -944,9 +944,10 @@ fn a_row_with_no_line_under_its_title_centres_the_title() {
     let at = |t: &str| drawn.iter().find(|(x, _)| x == t).map(|(_, r)| *r).unwrap_or_else(|| panic!("{t} drawn"));
     let line = Type::Strong.line();
     assert!((rows[0].height() - (24.0 + line)).abs() < 0.5, "one line high: {:?}", rows[0]);
-    // A choice row lays its title from the top of the lines it has: alone, one line centred in the row.
-    assert!((at("Lone title").top() + line / 2.0 - rows[0].center().y).abs() < 0.5, "centred: {:?} in {:?}", at("Lone title"), rows[0]);
-    assert!(at("Two line title").top() + line / 2.0 < rows[1].center().y - 4.0, "with a line under it, the title sits above the middle");
+    // A choice row lays its title in the first of the lines it has, centred in that line: alone, its middle on
+    // the row's middle.
+    assert!((at("Lone title").center().y - rows[0].center().y).abs() < 0.5, "centred: {:?} in {:?}", at("Lone title"), rows[0]);
+    assert!(at("Two line title").center().y < rows[1].center().y - 4.0, "with a line under it, the title sits above the middle");
     // A large row lays a lone title on its middle.
     assert!((at("Big lone title").center().y - rows[2].center().y).abs() < 0.5, "a large row's lone title centred: {:?} in {:?}", at("Big lone title"), rows[2]);
 }

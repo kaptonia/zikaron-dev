@@ -721,6 +721,18 @@ unsafe extern "system" {
 #[link(name = "user32")]
 unsafe extern "system" {
     fn SendMessageTimeoutW(window: Handle, msg: u32, wparam: usize, lparam: isize, flags: u32, timeout: u32, result: *mut usize) -> isize;
+    fn SystemParametersInfoW(action: u32, uparam: u32, pvparam: *mut c_void, winini: u32) -> i32;
+}
+
+/// `SPI_GETCLIENTAREAANIMATION`: whether the system shows animations in windows ("Animation effects").
+const SPI_GETCLIENTAREAANIMATION: u32 = 0x1042;
+
+/// "Animation effects" off: reduce motion.
+pub fn reduce_motion() -> bool {
+    let mut on: i32 = 1;
+    // SAFETY: the call writes one BOOL into `on`.
+    let ok = unsafe { SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &mut on as *mut i32 as *mut c_void, 0) };
+    ok != 0 && on == 0
 }
 
 pub(crate) const HKEY_CURRENT_USER: Handle = 0x8000_0001usize as Handle;

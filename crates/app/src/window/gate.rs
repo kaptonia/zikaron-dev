@@ -6,26 +6,29 @@
 //! The gate only opens the vault; actions that need a key are refused by the action layer either way.
 
 use super::*;
+use zikaron_ui::covers;
+use zikaron_ui::sheetparts as parts;
 
 impl Win {
+    /// The gate is one column in the middle of the window on a soft light: the app's name and the title centred,
+    /// the cells centred under them, the line under the cells, and "forgot passcode" as a small key under it; the
+    /// recovery ways keep their fields in the column, the keys in one row at the bottom (the other ways on the
+    /// left, going back on the right). Once it opens, the window comes back from half its opacity.
     pub(super) fn gate(&mut self, ctx: &egui::Context, now: f64) {
         let state = self.shell.vault.clone();
-        // `Vault::gate_up` decides whether the gate or the shell draws.
-        if !state.gate_up() {
+        // `Vault::gate_up` decides whether the gate or the shell draws (and when the window comes back under it).
+        let up = state.gate_up();
+        covers::app_in(ctx, up);
+        if !up {
             return;
         }
         // The store file exists but cannot be read: show the store's refusal and offer nothing that would build a
         // new store over the keys it holds (no wizard, no passcode cells).
         if let crate::shell::Vault::Damaged(f) = &state {
-            full::cover(ctx, "gate", 0.0, |ui, drop| {
+            let _ = covers::cover(ctx, "gate", covers::Ground::Lit, |ui| {
                 let rect = ui.max_rect();
-                full::centered(ui, "gate", rect, tk::SHEET_W, drop, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.spacing_mut().item_spacing.y = 2.0;
-                        paint::text(ui, t(Key::AppName), Type::Small, c(C::Ink3));
-                        paint::text(ui, t(Key::VaultDamagedTitle), Type::Page, c(C::Ink));
-                        ui.add_space(18.0);
-                    });
+                full::centered(ui, "gate", rect, tk::SHEET_W, 0.0, |ui| {
+                    gate_head(ui, t(Key::VaultDamagedTitle));
                     states::err_box(ui, "gate-damaged", f.human(), &f.next(), t(Key::U3RawError), &f.raw());
                 });
             });
@@ -53,62 +56,51 @@ impl Win {
         let len = crate::keybox::PIN_LEN;
         let mut first_pin = false;
         let mut act: Option<Action> = None;
-        full::cover(ctx, "gate", 0.0, |ui, drop| {
+        let _ = covers::cover(ctx, "gate", covers::Ground::Lit, |ui| {
             let rect = ui.max_rect();
-            full::centered(ui, "gate", rect, tk::SHEET_W, drop, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.spacing_mut().item_spacing.y = 2.0;
-                    paint::text(ui, t(Key::AppName), Type::Small, c(C::Ink3));
-                    let title = if !recover {
-                        Key::PinGateTitle
-                    } else if locked_out {
-                        Key::PinLockedTitle
-                    } else {
-                        Key::PinRecoverTitle
-                    };
-                    paint::text(ui, t(title), Type::Page, c(C::Ink));
-                });
+            full::centered(ui, "gate", rect, tk::SHEET_W, 0.0, |ui| {
+                let title = if !recover {
+                    Key::PinGateTitle
+                } else if locked_out {
+                    Key::PinLockedTitle
+                } else {
+                    Key::PinRecoverTitle
+                };
+                gate_head(ui, t(title));
                 if !recover {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(28.0);
-                        let row = pin::pin_row(ui, "gate-pin", &mut self.ux.pin, len, self.ux.pin_shake, !busy, false);
-                        // Typing again clears the last refusal, except on the reseal path, whose sentence says what
-                        // the next passcode will do.
-                        if row.changed && !self.ux.gate_reseal {
-                            self.ux.gate_trouble = None;
-                        }
-                        if row.full && !busy {
-                            let pin = std::mem::take(&mut self.ux.pin);
-                            act = Some(if self.ux.gate_reseal { Action::Reseal { pin } } else { Action::Unlock { pin } });
-                        }
-                        gate_message(ui, busy, self.ux.gate_trouble.as_deref(), 18.0);
-                        ui.add_space(16.0);
-                        if key::key(ui, t(Key::PinForgot), Role::Plain, true).clicked() {
-                            self.ux.gate_recover = true;
-                            self.ux.gate_trouble = None;
-                        }
-                    });
+                    let row = ui.vertical_centered(|ui| parts::pins(ui, "gate-pin", &mut self.ux.pin, len, self.ux.pin_shake, !busy)).inner;
+                    // Typing again clears the last refusal, except on the reseal path, whose sentence says what
+                    // the next passcode will do.
+                    if row.changed && !self.ux.gate_reseal {
+                        self.ux.gate_trouble = None;
+                    }
+                    if row.full && !busy {
+                        let pin = std::mem::take(&mut self.ux.pin);
+                        act = Some(if self.ux.gate_reseal { Action::Reseal { pin } } else { Action::Unlock { pin } });
+                    }
+                    gate_message(ui, busy, self.ux.gate_trouble.as_deref(), 14.0);
+                    ui.add_space(14.0);
+                    if ui.vertical_centered(|ui| covers::small_key(ui, t(Key::PinForgot), true).clicked()).inner {
+                        self.ux.gate_recover = true;
+                        self.ux.gate_trouble = None;
+                    }
                     return;
                 }
-                ui.vertical_centered(|ui| {
-                    ui.add_space(6.0);
-                    if empty_out {
-                        paint::text(ui, t(Key::PinEmptySay), Type::Note, c(C::Ink2));
-                    } else if by_words || by_file {
-                        let how = t(if by_words { Key::GateByWords } else { Key::GateByFile });
-                        let say = if locked_out { format!("{}{}", t(Key::GateLockedFive), how) } else { how.to_string() };
-                        paint::text(ui, &say, Type::Note, c(C::Ink2));
-                    }
-                });
-                ui.add_space(18.0);
                 if empty_out {
-                    ui.vertical_centered(|ui| {
-                        if key::key(ui, t(Key::PinDoReset), Role::Secondary, true).clicked() {
-                            act = Some(Action::ResetEmptyKeybox);
-                        }
-                        gate_message(ui, false, self.ux.gate_trouble.as_deref(), 12.0);
-                    });
+                    centred_note(ui, t(Key::PinEmptySay));
+                    gate_message(ui, false, self.ux.gate_trouble.as_deref(), 12.0);
+                    ui.add_space(14.0);
+                    // The one key, centred under the words as the unlock gate's is.
+                    if ui.vertical_centered(|ui| key::key(ui, t(Key::PinDoReset), Role::Secondary, true).clicked()).inner {
+                        act = Some(Action::ResetEmptyKeybox);
+                    }
                     return;
+                }
+                if by_words || by_file {
+                    let how = t(if by_words { Key::GateByWords } else { Key::GateByFile });
+                    let say = if locked_out { format!("{}{}", t(Key::GateLockedFive), how) } else { how.to_string() };
+                    centred_note(ui, &say);
+                    ui.add_space(tk::S3);
                 }
                 ui.spacing_mut().item_spacing.y = tk::S3;
                 if by_words {
@@ -123,15 +115,13 @@ impl Win {
                             act = Some(Action::RecoverWords { words: joined(&self.ux.pin_words), pin: self.ux.pin_again.clone(), again: std::mem::take(&mut self.ux.pin) });
                         }
                     }
-                }
-                if by_words {
                     gate_message(ui, busy, self.ux.gate_trouble.as_deref(), 4.0);
                 }
                 // An imported-key primary recovers with the key file it exported and that file's password (shown
                 // open); a recovery-word primary's key files are folded under its words.
-                let by_key_file = |me: &mut Self, ui: &mut egui::Ui, say: Key, password: Key, first_pin: &mut bool, act: &mut Option<Action>| {
+                let by_key_file = |me: &mut Self, ui: &mut egui::Ui, first_pin: &mut bool, act: &mut Option<Action>| {
                     let title = t(if me.ux.pin_again.is_empty() { Key::WizPinTitle } else { Key::PinAgain });
-                    let row = file_way(ui, &mut me.ux.pin_ks_path, &mut me.ux.pin_ks_pw, &mut me.ux.gate_file_ready, &mut me.ux.pin, len, me.ux.pin_shake, t(say), t(password), title, busy);
+                    let row = file_way(ui, &mut me.ux.pin_ks_path, &mut me.ux.pin_ks_pw, &mut me.ux.gate_file_ready, &mut me.ux.pin, len, me.ux.pin_shake, t(Key::GateDropKeyFile), t(Key::GateFilePassword), title, busy);
                     if row.full && me.ux.pin_again.is_empty() {
                         *first_pin = true;
                     } else if row.full && !busy {
@@ -144,24 +134,20 @@ impl Win {
                     }
                 };
                 if by_file && !by_words {
-                    by_key_file(self, ui, Key::GateDropKeyFile, Key::GateFilePassword, &mut first_pin, &mut act);
+                    by_key_file(self, ui, &mut first_pin, &mut act);
                     gate_message(ui, busy, self.ux.gate_trouble.as_deref(), 4.0);
                 }
                 if by_file && by_words {
-                    fold::fold(ui, "gate-keystore", t(Key::PinByFile), |ui| by_key_file(self, ui, Key::PinByFileSay, Key::IdPassword, &mut first_pin, &mut act));
+                    fold::fold(ui, "gate-keystore", t(Key::PinByFile), |ui| by_key_file(self, ui, &mut first_pin, &mut act));
                 }
-                // The third way: restore from a whole-machine backup (new passcode, everything resealed).
-                ui.vertical_centered(|ui| {
-                    from_backup = key::key(ui, t(Key::BackupRestoreTitle), Role::Plain, !busy).clicked();
+                // The third way, restoring a whole-machine backup (new passcode, everything resealed), at the left of
+                // the bottom row; going back to the passcode at its right.
+                gate_keys(ui, |ui| {
+                    if !locked_out && key::key(ui, t(Key::CfBack), Role::Secondary, true).clicked() {
+                        self.ux.gate_back();
+                    }
+                    from_backup = lead_key(ui, t(Key::BackupRestoreTitle), Role::Plain, !busy);
                 });
-                if !locked_out {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(2.0);
-                        if key::key(ui, t(Key::CfBack), Role::Secondary, true).clicked() {
-                            self.ux.gate_back();
-                        }
-                    });
-                }
             });
         });
         if from_backup {
@@ -175,6 +161,27 @@ impl Win {
             self.vault_or(VaultSite::Gate, r, now);
         }
     }
+}
+
+/// The gate's head, centred: the app's name small, the title under it, then the column's room.
+fn gate_head(ui: &mut egui::Ui, title: &str) {
+    ui.spacing_mut().item_spacing.y = 0.0;
+    covers::lock_head(ui, t(Key::AppName), title);
+    ui.add_space(14.0);
+}
+
+/// The gate's bottom row of keys, laid from the right (`add` draws them; [`lead_key`] puts one at the left).
+fn gate_keys(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(tk::S4);
+    ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), tk::KEY_H), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.spacing_mut().item_spacing.x = tk::S2;
+        add(ui)
+    });
+}
+
+/// A key at the left end of the gate's bottom row; whether it was pressed.
+fn lead_key(ui: &mut egui::Ui, text: &str, role: Role, enabled: bool) -> bool {
+    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| key::key(ui, text, role, enabled).clicked()).inner
 }
 
 /// The twelve recovery word cells and, once all twelve are filled, the new passcode row under `title` (taking
@@ -191,7 +198,6 @@ fn words_way(ui: &mut egui::Ui, words: &mut [crate::secret::Secret; 12], was_ful
     let bad = crate::cryptx::strangers(words);
     let phrase = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Paste(x) if x.split_whitespace().count() > 1)));
     let changed = pin::words_grid_marked(ui, "gate-words", words, &bad);
-    hint(ui, t(Key::PinWordsHint));
     let full = words.iter().all(|w| !w.expose().trim().is_empty());
     if changed && phrase && full && !*was_full {
         if let Some(id) = ui.memory(|m| m.focused()) {
@@ -199,25 +205,25 @@ fn words_way(ui: &mut egui::Ui, words: &mut [crate::secret::Secret; 12], was_ful
         }
     }
     *was_full = full;
-    full.then(|| field(ui, title, None, |ui| pin::pin_row(ui, "gate-new-pin", pin, len, shake, row_on, true)))
+    full.then(|| field(ui, title, None, |ui| parts::pins(ui, "gate-new-pin", pin, len, shake, row_on)))
 }
 
-/// The key file way: the file, its password, and the new passcode row under `title`, enabled only once file and
-/// password are both filled (only one row may hold focus, or the two entries would split between rows and never
-/// match); `ready` keeps whether they are. Focus goes to the row only when the user says so, never because the
-/// password field holds something (its length says nothing of being done): Enter in the password field lets it go
-/// and the enabled row takes it, Tab moves on to the row, a click on the row takes it.
-fn file_way(ui: &mut egui::Ui, path: &mut String, password: &mut crate::secret::Secret, ready: &mut bool, pin: &mut crate::secret::Secret, len: usize, shake: Option<f64>, say: &str, password_title: &str, title: &str, busy: bool) -> pin::PinRow {
+/// The key file way: the file (`file_title`), its password (`password_title`), and the new passcode row under
+/// `title`, enabled only once file and password are both filled (only one row may hold focus, or the two entries
+/// would split between rows and never match); `ready` keeps whether they are. Focus goes to the row only when the
+/// user says so, never because the password field holds something (its length says nothing of being done): Enter
+/// in the password field lets it go and the enabled row takes it, Tab moves on to the row, a click on the row takes
+/// it.
+fn file_way(ui: &mut egui::Ui, path: &mut String, password: &mut crate::secret::Secret, ready: &mut bool, pin: &mut crate::secret::Secret, len: usize, shake: Option<f64>, file_title: &str, password_title: &str, title: &str, busy: bool) -> pin::PinRow {
     ui.spacing_mut().item_spacing.y = tk::S3;
-    paint::text(ui, say, Type::Note, c(C::Ink2));
-    pick_path(ui, path, crate::platform::Pick::File);
+    field(ui, file_title, None, |ui| pick_path(ui, path, crate::platform::Pick::File));
     field(ui, password_title, None, |ui| input::secret_line(ui, password, ""));
     *ready = !path.trim().is_empty() && !password.is_empty();
-    field(ui, title, None, |ui| pin::pin_row(ui, "gate-file-pin", pin, len, shake, *ready && !busy, true))
+    field(ui, title, None, |ui| parts::pins(ui, "gate-file-pin", pin, len, shake, *ready && !busy))
 }
 
-/// The line under the gate's cells: nothing (no height), "verifying…", or the refusal in a grey box.
-/// It opens and closes by animating its height.
+/// The line under the gate's cells: nothing (no height), "verifying…", or the refusal in a grey box, at the
+/// column's left. It opens and closes by animating its height.
 fn gate_message(ui: &mut egui::Ui, busy: bool, trouble: Option<&str>, gap: f32) {
     let id = ui.id().with("gate-message");
     let on = busy || trouble.is_some();
@@ -231,12 +237,12 @@ fn gate_message(ui: &mut egui::Ui, busy: bool, trouble: Option<&str>, gap: f32) 
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, shown_h), egui::Sense::hover());
     let inner = egui::Rect::from_min_size(egui::pos2(rect.left(), rect.top() + gap * open), egui::vec2(w, full_h));
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Center)));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
     child.multiply_opacity(open);
-    let r = child.vertical_centered(|ui| {
+    let r = child.vertical(|ui| {
         if busy {
-            sheet::busy_note(ui, t(Key::VaultBusy), true);
+            sheet::busy_note(ui, t(Key::VaultBusy), false);
         } else if let Some(s) = trouble {
             states::note_box(ui, s);
         }
@@ -413,4 +419,15 @@ mod tests {
             assert_eq!(f.password.expose(), "hunter2-long", "{k:?}");
         }
     }
+}
+
+/// A note under the gate's centred title, centred too, each wrapped line on the column's middle.
+fn centred_note(ui: &mut egui::Ui, s: &str) {
+    let w = ui.available_width();
+    let mut job = egui::text::LayoutJob::single_section(s.to_string(), egui::TextFormat { font_id: Type::Note.font(), color: c(C::Ink2), line_height: Some(Type::Note.line()), ..Default::default() });
+    job.wrap.max_width = w;
+    job.halign = egui::Align::Center;
+    let g = ui.fonts_mut(|f| f.layout_job(job));
+    let (r, _) = ui.allocate_exact_size(egui::vec2(w, g.size().y), egui::Sense::hover());
+    ui.painter().galley(egui::pos2(r.center().x, r.top()), g, c(C::Ink2));
 }

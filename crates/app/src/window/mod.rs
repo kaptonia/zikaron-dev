@@ -31,7 +31,7 @@ use zikaron_ui::mark::Mark;
 use zikaron_ui::palette::{c, Tone as PillTone, C};
 use zikaron_ui::toast::{Toasts, Tone};
 use zikaron_ui::tokens::{self as tk, Type};
-use zikaron_ui::{card, datepick, drop, fold, full, input, kv, mark, menu, motion, page, paint, pick, pin, rail, seg, sheet, skin, states, table, toggle, width};
+use zikaron_ui::{card, datepick, drop, fields, fold, full, input, kv, mark, menu, motion, page, paint, pick, pin, rail, seg, sheet, skin, states, table, toggle, width};
 
 /// Initial window size.
 pub const W: f32 = 1180.0;
@@ -149,6 +149,11 @@ struct Win {
     /// The native window the system's material lies under, and whether that material is in the dark appearance
     /// now (`None`: no material, the app paints its own ground).
     backdrop: Option<(zikaron_os::Window, bool)>,
+    /// Whether this window follows the system's "reduce motion" (the real window does; a headless frame keeps
+    /// full motion, so its readings do not depend on the machine it runs on), what it said last, and when.
+    asks_motion: bool,
+    reduced: bool,
+    motion_asked: Option<f64>,
 }
 
 /// The four kinds of written output: the landing toast says where each went and, when that differs from the
@@ -172,6 +177,30 @@ impl Win {
     /// One frame, in the root `ui`. `App::ui` only calls this and does not use `eframe::Frame`, so tests can run
     /// the same code in a headless frame (`probe_face`).
     fn draw(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        // The system's "reduce motion", asked now and then (moves and scales then arrive at once; fades stay).
+        let now = ctx.input(|i| i.time);
+        if self.asks_motion && self.motion_asked.map(|at| now < at || now - at > 2.0).unwrap_or(true) {
+            self.motion_asked = Some(now);
+            self.reduced = zikaron_os::reduce_motion();
+        }
+        zikaron_ui::motion::set_reduced(&ctx, self.reduced);
+        let spoke = crate::lang::lang();
+        self.draw_frame(ui);
+        // A value copied from a row (its copy key) is said once, shortened.
+        if let Some(v) = ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new("zikaron-copied"))) {
+            let n = v.chars().count();
+            let shown = if n > 24 { format!("{}\u{2026}{}", v.chars().take(10).collect::<String>(), v.chars().skip(n - 8).collect::<String>()) } else { v };
+            self.toasts.say(&crate::lang::fill1(Key::SaidCopied, &shown), Tone::Note, now);
+        }
+        // The words changed language this frame: the changed words cross-fade in place, keys and labels grow or
+        // shrink to their new words (one place for the whole window and the first-run wizard).
+        if crate::lang::lang() != spoke {
+            zikaron_ui::flow::retext(&ctx);
+        }
+    }
+
+    fn draw_frame(&mut self, ui: &mut egui::Ui) {
         let ctx = &ui.ctx().clone();
         zikaron_ui::probe::begin(ctx);
         let now = ctx.input(|i| i.time);
@@ -508,20 +537,18 @@ impl Win {
 
     /// The number of the entry just written, as written ("#12"): another writer may have moved the head
     /// meanwhile, so it is never guessed beforehand.
-    fn new_seq(&self) -> String {
-        self.shell.landed.as_ref().map(|(_, n)| format!("#{n}")).unwrap_or_default()
-    }
-
-    /// An entry named for a toast: "#seq" when the table knows it, else a short id.
+    /// An entry named for a toast: what it is in words when the table knows it (never its sequence number), else
+    /// a short id.
     fn entry_say(&self, id: &str) -> String {
         self.shell
             .rows
             .as_ref()
-            .and_then(|(rows, _)| rows.iter().find(|r| r.id.eq_ignore_ascii_case(id)).map(|r| format!("#{}", r.seq)))
+            .and_then(|(rows, _)| rows.iter().find(|r| r.id.eq_ignore_ascii_case(id)).map(human_summary))
             .unwrap_or_else(|| crate::ledgerx::short(id))
     }
 
-    /// A record named by its content fingerprint: "#seq · name" when this ledger anchored it.
+    /// A record named by its content fingerprint: its name when this ledger anchored it (a toast names things in
+    /// words, never by sequence number).
     fn work_seq_say(&self, work: &str) -> String {
         self.shell
             .rows
@@ -529,7 +556,7 @@ impl Win {
             .and_then(|(rows, _)| {
                 rows.iter()
                     .find(|r| r.kind == zikaron::tokens::EntryType::History && r.work.as_deref().map(|w| w.eq_ignore_ascii_case(work)).unwrap_or(false))
-                    .map(|r| format!("#{} · {}", r.seq, human_summary(r)))
+                    .map(human_summary)
             })
             .unwrap_or_else(|| t(Key::UnnamedRecord).to_string())
     }
@@ -639,20 +666,18 @@ impl Win {
                 (String::new(), Tone::Note)
             }
             Applied::Annotated(_) => {
-                let seq = self.new_seq();
                 // An entry was written, so the table is stale: clear it to reread.
                 self.shell.stale_rows();
-                (fill1(Key::SaidAnnotated, &seq), Tone::Note)
+                (t(Key::SaidAnnotated).to_string(), Tone::Note)
             }
             Applied::Retracted { queued, local, .. } => {
-                let seq = self.new_seq();
                 self.shell.stale_rows();
                 self.shell.stale_grants();
                 if local {
                     // Never published: the pair stays local and is not anchored.
-                    (fill1(Key::SaidRetractedLocal, &seq), Tone::Note)
+                    (t(Key::SaidRetractedLocal).to_string(), Tone::Note)
                 } else {
-                    (fill2(Key::SaidRetracted, &seq, &queued.to_string()), Tone::Note)
+                    (fill1(Key::SaidRetracted, &queued.to_string()), Tone::Note)
                 }
             }
             Applied::Basis { chain } => (fill1(Key::SaidBasis, &chain.to_string()), Tone::Note),
@@ -660,9 +685,8 @@ impl Win {
             // The fingerprint is computed quietly; the chosen file shows only its name and size.
             Applied::Took { .. } => (String::new(), Tone::Note),
             Applied::Recorded { queued, .. } => {
-                let seq = self.new_seq();
                 self.shell.stale_rows();
-                (fill2(Key::SaidQueued, &seq, &queued.to_string()), Tone::Note)
+                (fill1(Key::SaidQueued, &queued.to_string()), Tone::Note)
             }
             Applied::RecordedBatch { ids, stopped, queued, .. } => {
                 self.shell.stale_rows();
@@ -688,17 +712,15 @@ impl Win {
             Applied::Since { grew, .. } => (fill1(Key::SaidSincePlain, &grew.map(|n| n.to_string()).unwrap_or_else(|| t(Key::RepoUnknown).to_string())), Tone::Note),
             Applied::Gas { gas, .. } => (fill1(Key::SaidGas, &gas.to_string()), Tone::Note),
             Applied::Picked { items, pulled } => (fill2(Key::SaidPicked, &items.to_string(), &pulled.to_string()), Tone::Note),
-            Applied::Queued { id, queued, .. } => {
-                let seq = self.entry_say(&id);
+            Applied::Queued { queued, .. } => {
                 self.shell.stale_rows();
-                (fill2(Key::SaidQueued, &seq, &queued.to_string()), Tone::Note)
+                (fill1(Key::SaidQueued, &queued.to_string()), Tone::Note)
             }
             Applied::Granted { queued, .. } => {
-                let seq = self.new_seq();
                 self.shell.stale_rows();
                 self.shell.stale_grants();
                 self.ux.u4.relicense_signed = true;
-                (fill2(Key::SaidGranted, &seq, &queued.to_string()), Tone::Note)
+                (fill1(Key::SaidGranted, &queued.to_string()), Tone::Note)
             }
             Applied::GrantFileExported { path, why, hops, terms, .. } => {
                 // When the location differs from the choice, a second sentence says where it went.
@@ -720,19 +742,18 @@ impl Win {
             Applied::Ticked { step, next } => (fill2(Key::SaidTicked, step, next.unwrap_or(t(Key::WizardDone))), Tone::Note),
             Applied::Restarted => (t(Key::SaidRestarted).to_string(), Tone::Note),
             Applied::Revoked { queued, .. } => {
-                let seq = self.ux.u3.revoking.take().unwrap_or_default();
+                let _ = self.ux.u3.revoking.take();
                 self.shell.stale_rows();
-                (fill2(Key::SaidRevoked, &seq, &queued.to_string()), Tone::Note)
+                (fill1(Key::SaidRevoked, &queued.to_string()), Tone::Note)
             }
-            Applied::Storied { grant, revocations } => (fill2(Key::SaidStoried, &self.entry_say(&grant), &revocations.to_string()), Tone::Note),
+            Applied::Storied { grant: _, revocations } => (fill1(Key::SaidStoried, &revocations.to_string()), Tone::Note),
             // A claim was read or signed: the result is on the sheet.
             Applied::ClaimRead => (String::new(), Tone::Note),
             Applied::Attested { .. } => (t(Key::SaidAttestedPlain).to_string(), Tone::Note),
             Applied::Cosigned { .. } => (t(Key::SaidCosignedPlain).to_string(), Tone::Note),
             Applied::Adopted { cosigned, .. } => {
-                let seq = self.new_seq();
                 self.shell.stale_rows();
-                (fill2(Key::SaidAdopted2, &seq, t(if cosigned { Key::Yes } else { Key::NotYet })), Tone::Note)
+                (fill1(Key::SaidAdopted2, t(if cosigned { Key::Yes } else { Key::NotYet })), Tone::Note)
             }
             Applied::Succeeded { queued, .. } => {
                 self.shell.stale_rows();
@@ -1069,6 +1090,8 @@ pub enum Start {
     Page(Page),
     /// A place; `true` in the second field opens the wizard at start (used by test drivers).
     Place(Place, bool),
+    /// One of the geometry reading's scenes, staged as that reading stages it (used by test drivers).
+    Scene(Scene),
 }
 
 /// Layout readings of one face at a given viewport, for layout tests (the judgment is made elsewhere).
@@ -1128,6 +1151,9 @@ struct WorkLine {
 /// Interface-side state of the window. Never written to disk.
 #[derive(Default)]
 struct Ux {
+    /// Watch rows given by a headless reading in place of the shell's (the alerts page and the rail's count read
+    /// these when set); never set by the window itself.
+    watch_rows: Option<Vec<crate::watchx::Row>>,
     /// Where the wizard was opened from (seat, stack, place); its way out returns there.
     wiz_from: Option<(crate::roles::Role, Stack, Option<Place>, Option<History>)>,
     /// The wizard's "exit?" card is up (new words not yet checked).
@@ -1185,16 +1211,23 @@ struct Ux {
     /// This frame's interface time.
     now: f64,
     /// Inputs opened in settings sections.
-    open_home: bool,
-    open_grant_dir: bool,
-    open_nodes: bool,
-    /// The settings publication field was filled once from the settings file.
-    publish_seeded: bool,
+    /// The data page's folder sheet, and whether it waits for the move it started.
+    dir_sheet: Option<settings::DirSheet>,
+    dir_waiting: bool,
+    /// The usage limit the data page's cell was last filled from.
+    cap_seed: Option<u64>,
+    /// The network sheet is open; a check it started is out.
+    net_sheet: bool,
+    basis_waiting: bool,
+    /// The "check publication" sheet is open; the publish address's sheet is open.
+    publish_sheet: bool,
+    publish_edit: bool,
     /// "Enter one" is picked for the proxy and not yet saved (the address line shows).
     proxy_manual: bool,
     /// The proxy address line was filled once from the machine settings.
     proxy_seeded: bool,
-    open_cadence: bool,
+    /// The saved intervals the notify page's cells were last filled from.
+    cadence_seed: Option<(u64, u64)>,
     /// Background tasks the user started (one per kind, may repeat). Only these toast when they land.
     asked: Vec<crate::task::Kind>,
     /// How each kind of task last landed: whether it went well, and when (long keys read it).
@@ -1220,8 +1253,8 @@ struct Ux {
     basis_chain: String,
     basis_registry: String,
     basis_from: String,
-    /// Which preset filled the network editor's cells (0: by hand; see `settings::preset_menu`).
-    basis_preset: usize,
+    /// "Custom" is chosen on the network sheet (its cells may still equal mainnet's).
+    basis_custom: bool,
     /// The read-only networks being edited on the settings' network page.
     readnet: settings::ReadNetUx,
     /// State of the author pages.
@@ -1301,6 +1334,12 @@ struct Ux {
     sizes: std::collections::BTreeMap<String, Option<u64>>,
     /// The file names each record was signed from (the local records index), read once per entry.
     files_of: std::collections::BTreeMap<String, Vec<String>>,
+    /// The "save snapshot" sheet on the others' ledgers page is up.
+    snapshot_sheet: bool,
+    /// The folder sheet open over a grant's page (grant file, credential, upstream folder).
+    out_sheet: Option<grants::OutSheet>,
+    /// That sheet's long action is running; the sheet closes when it lands.
+    out_waiting: bool,
 }
 
 /// Where a passcode task started. When it lands, the answer returns to that place.

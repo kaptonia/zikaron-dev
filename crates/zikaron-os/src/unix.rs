@@ -712,6 +712,12 @@ mod appkit {
         unsafe { f(obj, sel(s), b) }
     }
 
+    /// `[obj sel]` answering a BOOL.
+    pub unsafe fn send_bool_ret(obj: Id, s: &str) -> bool {
+        let f: unsafe extern "C" fn(Id, Id) -> i8 = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
+        unsafe { f(obj, sel(s)) != 0 }
+    }
+
     /// `[obj sel]` answering an NSRect.
     pub unsafe fn send_rect(obj: Id, s: &str) -> Rect {
         let f: unsafe extern "C" fn(Id, Id) -> Rect = unsafe { std::mem::transmute(objc_msgSend as *const ()) };
@@ -795,10 +801,47 @@ pub fn backdrop(w: crate::Window, dark: bool) -> crate::Backdrop {
         }
         send_bool(window, "setOpaque:", false);
         send_id(window, "setBackgroundColor:", send(class("NSColor"), "clearColor"));
+        // macOS 26 gives a window with a toolbar its own, rounder corners: an empty unified toolbar (no items, the
+        // title bar still transparent) makes this window one, so its corners follow that system's measure.
+        if kind == crate::Backdrop::Glass {
+            let bar = send_id(send(class("NSToolbar"), "alloc"), "initWithIdentifier:", string("zikaron-window"));
+            if !bar.is_null() {
+                send_id(window, "setToolbar:", bar);
+                // NSWindowToolbarStyleUnified.
+                send_int(window, "setToolbarStyle:", 3);
+            }
+        }
         // Behind the content view (NSWindowBelow), inside the window's frame view: the app's surfaces lie over it.
         add_subview(frame_view, effect, -1, content);
         kind
     }
+}
+
+/// `[[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceMotion]`.
+#[cfg(target_os = "macos")]
+pub fn reduce_motion() -> bool {
+    use appkit::*;
+    unsafe {
+        let ws = send(class("NSWorkspace"), "sharedWorkspace");
+        if ws.is_null() {
+            return false;
+        }
+        send_bool_ret(ws, "accessibilityDisplayShouldReduceMotion")
+    }
+}
+
+/// GNOME's `enable-animations` set to false, read once (a process is started for it; a desktop without
+/// `gsettings` reduces nothing).
+#[cfg(not(target_os = "macos"))]
+pub fn reduce_motion() -> bool {
+    static ONCE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ONCE.get_or_init(|| {
+        std::process::Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "enable-animations"])
+            .output()
+            .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "false")
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(target_os = "macos")]

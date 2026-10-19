@@ -43,15 +43,6 @@ impl Win {
         crate::home::landing(given).is_ok()
     }
 
-    /// The shared location row: "save to" on the left (132), the chosen folder's name, "choose folder…" on
-    /// the right; the whole path is on hover. Choosing writes into `slot`; cancelling changes nothing.
-    pub(super) fn place_row(ui: &mut egui::Ui, label: Key, slot: &mut String) {
-        let asked = path_row(ui, t(label), slot, t(Key::PickFolder), t(Key::PickNone));
-        if let Some(p) = path_answer(ui.ctx(), ui.id().with(("zikaron-place-row", label as u32)), asked, crate::platform::Pick::Folder) {
-            *slot = p;
-        }
-    }
-
     /// The row the wizard's network step has selected now: the one clicked, else the one already chosen
     /// ([`wiz_network_chosen`](Self::wiz_network_chosen)), else the sheet's default.
     pub(super) fn wiz_network_pick(&self) -> String {
@@ -218,8 +209,10 @@ pub(super) fn lamp_pill(l: crate::ledgerx::Lamp) -> (PillTone, bool) {
     match l {
         Lamp::Anchored | Lamp::Remembered => (PillTone::Ok, false),
         Lamp::RememberedStale => (PillTone::Grey, false),
-        Lamp::Submitted => (PillTone::Warn, !receipts_stalled()),
-        Lamp::Included | Lamp::Queued => (PillTone::Warn, false),
+        Lamp::Submitted if receipts_stalled() => (PillTone::Warn, false),
+        Lamp::Submitted => (PillTone::Blue, true),
+        Lamp::Included => (PillTone::Blue, false),
+        Lamp::Queued => (PillTone::Grey, false),
         Lamp::Landed | Lamp::Deleted | Lamp::LocalDeletion | Lamp::ChainUnread => (PillTone::Grey, false),
         Lamp::Reverted | Lamp::Refused => (PillTone::Bad, false),
     }
@@ -341,6 +334,9 @@ pub(super) fn fresh_win(shell: Shell, typed: Typed, ux: Ux) -> Win {
         ux,
         asker: crate::platform::ask_path,
         backdrop: None,
+        asks_motion: false,
+        reduced: false,
+        motion_asked: None,
     }
 }
 
@@ -424,10 +420,13 @@ pub fn probe_paths(ctx: &egui::Context, shell: Shell, asker: crate::platform::As
         t += 0.1;
         let input = egui::RawInput { screen_rect: Some(screen), time: Some(t), ..Default::default() };
         let mut took = Vec::new();
+        // A frame laid out again (a second pass) carries no input: a place asks, as a click does, in the first.
         let _ = ctx.run_ui(input, |ui| {
             let c = &ui.ctx().clone();
-            for (n, kind) in &f.ask {
-                let _ = path_answer(c, site(n), true, *kind);
+            if c.current_pass_index() == 0 {
+                for (n, kind) in &f.ask {
+                    let _ = path_answer(c, site(n), true, *kind);
+                }
             }
             win.draw(ui);
         });
@@ -437,8 +436,10 @@ pub fn probe_paths(ctx: &egui::Context, shell: Shell, asker: crate::platform::As
         let _ = ctx.run_ui(input, |ui| {
             let c = &ui.ctx().clone();
             win.draw(ui);
-            for n in &f.take {
-                took.push((*n, path_answer(c, site(n), false, crate::platform::Pick::File)));
+            if c.current_pass_index() == 0 {
+                for n in &f.take {
+                    took.push((*n, path_answer(c, site(n), false, crate::platform::Pick::File)));
+                }
             }
         });
         out.push(PathRead { took, faults: win.shell.faults.clone(), open: win.shell.tasks.in_flight(crate::task::Kind::Path) });

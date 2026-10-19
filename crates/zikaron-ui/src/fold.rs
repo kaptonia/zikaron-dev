@@ -1,5 +1,8 @@
 //! The fold: a quiet title with a caret that turns a quarter when open; the body grows to its height and fades
-//! in over 200 ms. Raw values (addresses, digests, paths, error codes) live only inside folds.
+//! in over 0.3 s (the curve every height in the library follows), and shuts the same way. Opened with too little
+//! room below, it takes the page (or the sheet) along as it grows, so the body ends up seen whole, 32 above the
+//! bottom, without the head going past the top. Raw values (addresses, digests, paths, error codes) live only
+//! inside folds.
 
 use crate::icons::{self, Glyph};
 use crate::motion;
@@ -34,10 +37,14 @@ pub fn fold_ex<R>(ui: &mut egui::Ui, id_salt: &str, title: &str, first_open: boo
     let (head, resp) = ui.allocate_exact_size(vec2(head_w, 26.0), egui::Sense::click());
     if resp.clicked() {
         open = !open;
+        if open {
+            let now = ui.input(|i| i.time);
+            ui.data_mut(|d| d.insert_temp(id.with("opened-at"), now));
+        }
     }
     ui.data_mut(|d| d.insert_temp(id, open));
-    let t = motion::flag(ui.ctx(), id.with("t"), open, tokens::MID);
-    let hot = motion::flag(ui.ctx(), id.with("hot"), resp.hovered(), tokens::FAST);
+    let t = motion::flag(ui.ctx(), id.with("t"), open, tokens::SLOW);
+    let hot = motion::states(ui.ctx(), id.with("head"), resp.hovered(), resp.is_pointer_button_down_on(), resp.has_focus(), true).hover;
     let p = ui.painter();
     let turn = t * std::f32::consts::FRAC_PI_2;
     icons::draw_glyph_turned(p, Glyph::Chev, Rect::from_center_size(pos2(head.left() + 6.0, head.center().y), vec2(12.0, 12.0)), c(C::Ink3), turn);
@@ -69,5 +76,25 @@ pub fn fold_ex<R>(ui: &mut egui::Ui, id_salt: &str, title: &str, first_open: boo
     }
     let take = if t >= 1.0 { measured } else { measured.min(full.max(measured) * t) };
     ui.advance_cursor_after_rect(Rect::from_min_size(top, vec2(w, take.max(0.0))));
+    // Opened by a press just now: the page follows the body as it grows (its foot 32 above the bottom; the
+    // scroll never takes the head past the top).
+    let now = ui.input(|i| i.time);
+    let opened = ui.data(|d| d.get_temp::<f64>(id.with("opened-at")));
+    if open && opened.map(|at| now >= at && ((now - at) as f32) < tokens::SLOW + 0.05).unwrap_or(false) {
+        reveal(ui, Rect::from_min_max(head.min, pos2(head.right(), top.y + take + REVEAL_FOOT)));
+    }
     Some(r)
+}
+
+/// How far above the bottom a body opened into view ends.
+pub const REVEAL_FOOT: f32 = 32.0;
+
+/// Bring `want` into view in the area `ui` scrolls in, at once (the caller runs it each frame of its own
+/// growth): no scroll when it is in view; else the least scroll that shows it, never taking its top past the
+/// top of the view.
+pub fn reveal(ui: &egui::Ui, want: Rect) {
+    let view = ui.clip_rect();
+    if want.bottom() > view.bottom() + 0.5 && want.top() > view.top() {
+        ui.scroll_to_rect_animation(want, None, egui::style::ScrollAnimation::none());
+    }
 }

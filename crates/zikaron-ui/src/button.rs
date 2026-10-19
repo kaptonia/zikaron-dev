@@ -1,9 +1,13 @@
-//! Keys: one shape (34 high, 14 text, 16 across, corner 8), six roles, and the four phases of a long action.
+//! Keys: one shape (34 high, 14 text, 16 across, a capsule), five roles, and the four phases of a long action.
 //!
-//! Color tells the role: blue primary (at most one per screen, `page::Page`), white secondary, white with
-//! cinnabar words for keys that lead to a confirmation card (`page::Guide`), solid cinnabar for the key that
-//! commits on a confirmation card (`page::Pen`), a link, and a plain key without a frame. There are no sizes:
-//! a key is as wide as its words.
+//! Color tells the role: blue primary (at most one per screen, `page::Page`), white secondary, a pale cinnabar
+//! wash with cinnabar words for keys that lead to a confirmation card (`page::Guide`), solid cinnabar for the key
+//! that commits on a confirmation card (`page::Pen`), and a plain key without a frame. There are no sizes: a key
+//! is as wide as its words.
+//!
+//! A white key sits a hair above its card: a half-point edge and a one-point shadow; under the pointer it rises
+//! a touch (a longer shadow, a lit edge), pressed it sinks. A solid key has a faint shade along its foot, a
+//! half-point dark rim and a short shadow; pressed, the shade moves to its top and the shadow goes.
 //!
 //! A long action runs in four phases: pressed (shrinks to 0.97), in progress (the words give way to a bar
 //! inside the key, filled by its fraction or sweeping when there is none), done (a check springs in and stays
@@ -15,7 +19,7 @@ use crate::palette::{self, c, C};
 use crate::tokens::{self, Radius, Type};
 use egui::{pos2, vec2, Color32, Rect};
 
-/// The five roles. Closed.
+/// The six roles. Closed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {
     Primary,
@@ -23,21 +27,25 @@ pub enum Role {
     Guide,
     Commit,
     Plain,
+    /// A deletion: the bad ink on its pale wash with a half-point bad edge.
+    Danger,
 }
 
 impl Role {
-    pub const ALL: [Role; 5] = [Role::Primary, Role::Secondary, Role::Guide, Role::Commit, Role::Plain];
+    pub const ALL: [Role; 6] = [Role::Primary, Role::Secondary, Role::Guide, Role::Commit, Role::Plain, Role::Danger];
 
     fn solid(self) -> bool {
         matches!(self, Role::Primary | Role::Commit)
     }
 }
 
-/// A key's colors at rest and on hover.
+/// A key's colors at rest, on hover and pressed.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Face {
     pub fill: Color32,
     pub hover: Color32,
+    pub press: Color32,
+    /// The half-point edge (white and guide keys; solid keys take a dark rim of their own).
     pub line: Color32,
     pub text: Color32,
     pub hover_text: Color32,
@@ -46,13 +54,30 @@ pub struct Face {
 /// The only source of key faces.
 pub fn face(r: Role) -> Face {
     match r {
-        Role::Primary => Face { fill: c(C::Accent), hover: c(C::AccentPress), line: c(C::Accent), text: palette::ON_SOLID, hover_text: palette::ON_SOLID },
-        Role::Commit => Face { fill: c(C::Pen), hover: c(C::PenPress), line: c(C::Pen), text: palette::ON_SOLID, hover_text: palette::ON_SOLID },
-        Role::Secondary => Face { fill: c(C::Surface), hover: c(C::Hover), line: c(C::Line), text: c(C::Ink), hover_text: c(C::Ink) },
-        Role::Guide => Face { fill: c(C::Surface), hover: c(C::PenWash), line: c(C::PenEdge), text: c(C::Pen), hover_text: c(C::Pen) },
-        Role::Plain => Face { fill: Color32::TRANSPARENT, hover: c(C::Hover), line: Color32::TRANSPARENT, text: c(C::Ink2), hover_text: c(C::Ink) },
+        Role::Primary => Face { fill: c(C::Accent), hover: c(C::AccentPress), press: c(C::AccentPress), line: Color32::TRANSPARENT, text: palette::ON_SOLID, hover_text: palette::ON_SOLID },
+        Role::Commit => Face { fill: c(C::Pen), hover: c(C::PenPress), press: c(C::PenPress), line: Color32::TRANSPARENT, text: palette::ON_SOLID, hover_text: palette::ON_SOLID },
+        Role::Secondary => Face { fill: c(C::KeyFace), hover: c(C::KeyFaceHover), press: c(C::KeyFacePress), line: c(C::KeyEdge), text: c(C::Ink), hover_text: c(C::Ink) },
+        Role::Guide => {
+            let hover = palette::mix(c(C::PenWash), c(C::PenEdge), 0.3);
+            Face { fill: c(C::PenWash), hover, press: hover, line: c(C::PenEdge), text: c(C::Pen), hover_text: c(C::Pen) }
+        }
+        Role::Plain => Face { fill: Color32::TRANSPARENT, hover: c(C::Hover), press: c(C::Hover), line: Color32::TRANSPARENT, text: c(C::Ink2), hover_text: c(C::Ink) },
+        Role::Danger => {
+            let hover = palette::mix(c(C::BadWash), c(C::BadEdge), 0.3);
+            Face { fill: c(C::BadWash), hover, press: hover, line: c(C::BadEdge), text: c(C::BadInk), hover_text: c(C::BadInk) }
+        }
     }
 }
+
+/// A solid key's shades at rest, lit and pressed: the foot's shade, the dark rim, the drop under it (alphas).
+struct Solid {
+    foot: [u8; 2],
+    top: u8,
+    rim: [u8; 2],
+}
+
+const PRIMARY: Solid = Solid { foot: [36, 41], top: 36, rim: [20, 26] };
+const COMMIT: Solid = Solid { foot: [41, 46], top: 41, rim: [26, 31] };
 
 /// The fill of the primary key and of the commit key: counting blocks of these colors counts those keys.
 pub fn primary_fill() -> Color32 {
@@ -108,11 +133,13 @@ pub struct Key<'a> {
     /// What the key says while it is busy, after a small turning ring, in place of the bar inside the key
     /// (a key whose work has no measure of its own: an estimate, a fingerprint, a copy).
     pub busy_text: Option<&'a str>,
+    /// Why a disabled key cannot be pressed now: shown on hover, never written beside the key.
+    pub why: Option<&'a str>,
 }
 
 impl<'a> Key<'a> {
     pub fn new(text: &'a str, role: Role) -> Key<'a> {
-        Key { text, role, enabled: true, phase: Phase::Idle, lead: None, trail: None, busy_text: None }
+        Key { text, role, enabled: true, phase: Phase::Idle, lead: None, trail: None, busy_text: None, why: None }
     }
 
     pub fn enabled(mut self, on: bool) -> Self {
@@ -128,6 +155,14 @@ impl<'a> Key<'a> {
     /// Say `t` with a turning ring while busy (see [`Key::busy_text`]).
     pub fn busy_text(mut self, t: &'a str) -> Self {
         self.busy_text = Some(t);
+        self
+    }
+
+    /// Say `t` on hover while the key is disabled (what is still missing).
+    pub fn why(mut self, t: &'a str) -> Self {
+        if !t.is_empty() {
+            self.why = Some(t);
+        }
         self
     }
 
@@ -172,17 +207,28 @@ pub fn key(ui: &mut egui::Ui, text: &str, role: Role, enabled: bool) -> egui::Re
     show(ui, Key::new(text, role).enabled(enabled))
 }
 
-/// Draw a key. A disabled key and a key in progress take no clicks.
+/// Draw a key. A disabled key and a key in progress take no clicks. Its size follows its words (growing or
+/// shrinking to new words when the language changes: [`motion::size`]).
 pub fn show(ui: &mut egui::Ui, k: Key) -> egui::Response {
-    let want = size_of(ui, &k);
+    show_w(ui, k, 0.0)
+}
+
+/// [`show`] at least `min_w` wide (the keys of one card share the widest one's width).
+pub fn show_w(ui: &mut egui::Ui, k: Key, min_w: f32) -> egui::Response {
+    let natural = size_of(ui, &k);
+    let want = motion::size(ui.ctx(), ui.next_auto_id().with("zikaron-key-size"), vec2(natural.x.max(min_w), natural.y));
     let now = ui.input(|i| i.time);
     let phase = k.phase.now(now);
     let live = k.enabled && !phase.busy();
     let sense = if live { egui::Sense::click() } else { egui::Sense::hover() };
     let (rect, resp) = ui.allocate_exact_size(want, sense);
+    let start = crate::flow::mark(ui.ctx(), ui.layer_id());
     paint(ui, rect, &resp, &k, phase);
+    crate::flow::note(ui, motion::key_of(&("key", k.text)), rect, start);
     if live {
         resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else if let Some(w) = k.why.filter(|_| !k.enabled) {
+        crate::layer::tip(resp, w)
     } else {
         resp
     }
@@ -196,10 +242,12 @@ pub fn paint(ui: &egui::Ui, rect: Rect, resp: &egui::Response, k: &Key, phase: P
     let f = face(k.role);
     let down = k.enabled && resp.is_pointer_button_down_on();
     let hot = k.enabled && resp.hovered();
-    let press = motion::to(ctx, id.with("press"), if down { tokens::KEY_PRESS } else { 1.0 }, tokens::FAST, Curve::Ease);
-    let hover = motion::flag(ctx, id.with("hover"), hot, tokens::FAST);
+    // One set of states for every control: hover, press, focus and enabled each ease over the same time.
+    let st = motion::states(ctx, id, hot, down, resp.has_focus(), k.enabled || phase.busy());
+    let press = 1.0 + (tokens::KEY_PRESS - 1.0) * st.press;
+    let hover = st.hover;
     let p = ui.painter();
-    let alpha = if k.enabled || phase.busy() { 1.0 } else { tokens::OFF };
+    let alpha = tokens::OFF + (1.0 - tokens::OFF) * st.enabled;
     let dim = |col: Color32| col.gamma_multiply(alpha);
 
     // Failed: red and one shake.
@@ -207,46 +255,79 @@ pub fn paint(ui: &egui::Ui, rect: Rect, resp: &egui::Response, k: &Key, phase: P
         Phase::Fail { at } => (true, motion::shake_at(ctx, Some(at), 0.36)),
         _ => (false, 0.0),
     };
+    // Hovered, the key rises: its shadow deepens (the key and its words stay where they are laid); pressed, it
+    // sinks.
+    let lift = st.lift();
+    let sink = st.press;
     let r = crate::paint::scaled(rect, press).translate(vec2(shake, 0.0));
-    let radius = Radius::Ctl.egui();
-    let mut fill = palette::mix(f.fill, f.hover, hover);
-    let mut line = f.line;
+    let radius = Radius::Key.egui();
+    let rk = Radius::Key.px();
+    let mut fill = palette::mix(palette::mix(f.fill, f.hover, hover), f.press, sink);
     let mut text = palette::mix(f.text, f.hover_text, hover);
+    let solid = k.role.solid() || fail;
     if fail {
         fill = c(C::Bad);
-        line = c(C::Bad);
         text = palette::ON_SOLID;
     }
-    if k.enabled && !matches!(k.role, Role::Plain) {
-        p.add(crate::material::small(r, radius, 1.0));
-    }
-    if k.role.solid() || fail {
-        p.add(crate::material::solid(r, Radius::Ctl.px(), dim(fill)));
-        p.rect_stroke(r, radius, egui::Stroke::new(1.0_f32, dim(line)), egui::StrokeKind::Inside);
+    let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    let ink = crate::material::ink;
+    if solid {
+        let sh = if k.role == Role::Primary { PRIMARY } else { COMMIT };
+        // The short drop: 0 1 1.5 at rest, 0 2 6 lit, gone pressed.
+        let (y, blur, a) = (lerp(1.0, 2.0, lift), lerp(1.5, 6.0, lift), lerp(46.0, 41.0, lift) * (1.0 - sink));
+        if a > 0.5 {
+            p.add(crate::material::drop(r, radius, y, blur, dim(ink(a))));
+        }
+        p.add(crate::material::solid(r, rk, dim(fill)));
+        let foot = lerp(sh.foot[0] as f32, sh.foot[1] as f32, lift) * (1.0 - sink);
+        if foot > 0.5 {
+            p.add(crate::material::inset_edge(r, rk, -1.0, dim(Color32::from_black_alpha(foot.round() as u8)), false));
+        }
+        if sink > 0.0 {
+            p.add(crate::material::inset_edge(r, rk, 1.0, dim(Color32::from_black_alpha((sh.top as f32 * sink).round() as u8)), true));
+        }
+        let rim = lerp(sh.rim[0] as f32, sh.rim[1] as f32, lift.max(sink));
+        p.add(crate::material::rim(r, radius, dim(Color32::from_black_alpha(rim.round() as u8))));
+    } else if k.role == Role::Plain {
+        p.rect_filled(r, radius, dim(fill));
+    } else if matches!(k.role, Role::Guide | Role::Danger) {
+        p.add(crate::material::drop(r, radius, 1.0, 1.0, dim(c(C::KeyDrop))));
+        p.rect_filled(r, radius, dim(fill));
+        p.add(crate::material::rim(r, radius, dim(f.line)));
     } else {
-        p.rect(r, radius, dim(fill), egui::Stroke::new(1.0_f32, dim(line)), egui::StrokeKind::Inside);
+        // The near drop (0 1 1 at rest, 0 1 2 lit, 0 0 1 pressed) and the soft one (0 1 3, 0 3 8, gone pressed).
+        let near = (lerp(lerp(1.0, 1.0, lift), 0.0, sink), lerp(lerp(1.0, 2.0, lift), 1.0, sink));
+        let far = (lerp(1.0, 3.0, lift), lerp(3.0, 8.0, lift), 1.0 - sink);
+        if far.2 > 0.0 {
+            p.add(crate::material::drop(r, radius, far.0, far.1, dim(c(C::KeyDrop2).gamma_multiply(far.2))));
+        }
+        p.add(crate::material::drop(r, radius, near.0, near.1, dim(c(C::KeyDrop))));
+        p.rect_filled(r, radius, dim(fill));
+        p.add(crate::material::rim(r, radius, dim(palette::mix(f.line, c(C::KeyEdgeHover), hover.max(sink)))));
     }
-    if k.enabled && !k.role.solid() && !matches!(k.role, Role::Plain) && !fail {
-        // The inset lip under white keys.
-        let span = (r.left() + 8.0)..=(r.right() - 8.0);
-        p.hline(span, r.bottom() - 1.5, egui::Stroke::new(1.0_f32, Color32::from_black_alpha(10)));
+    // The light under the pointer: the accent at 4 % on a white key, white at 10 % on a solid one.
+    let (glow, at) = crate::material::glow_at(ui, id, r, k.enabled && !phase.busy() && !fail);
+    if glow > 0.0 {
+        let tint = if k.role.solid() { Color32::from_white_alpha(26) } else { c(C::Accent).gamma_multiply(0.04) };
+        crate::material::glow(p, r, rk, at, tint.gamma_multiply(glow));
     }
-    if resp.has_focus() {
-        p.rect_stroke(r.expand(3.0), egui::CornerRadius::same(11), egui::Stroke::new(3.0_f32, c(C::Focus)), egui::StrokeKind::Inside);
+    if st.focus > 0.0 {
+        p.rect_stroke(r.expand(3.0), egui::CornerRadius::same((rk + 3.0) as u8), egui::Stroke::new(3.0_f32, c(C::Focus).gamma_multiply(st.focus)), egui::StrokeKind::Inside);
     }
 
     // The words, and what replaces them while busy, done or failed.
-    let busy = motion::flag(ctx, id.with("busy"), phase.busy(), tokens::FAST);
-    let done = motion::flag(ctx, id.with("done"), matches!(phase, Phase::Done { .. }), tokens::FAST);
-    let mark_in = match phase {
+    // Pressed into a long action, the words fade out (0.16 s) for the flowing bar.
+    let busy = motion::flag(ctx, id.with("busy"), phase.busy(), WORDS_OUT);
+    let done = motion::flag(ctx, id.with("done"), matches!(phase, Phase::Done { .. }), WORDS_OUT);
+    let since = match phase {
         Phase::Done { at } | Phase::Fail { at } => {
-            let q = (((now - at) as f32) / tokens::MID).clamp(0.0, 1.0);
-            if q < 1.0 {
+            let s = (now - at) as f32;
+            if s < CHECK_SPRING {
                 ctx.request_repaint();
             }
-            q
+            Some(s.max(0.0))
         }
-        _ => 0.0,
+        _ => None,
     };
     let words = (1.0 - busy.max(done)).min(if fail { 0.0 } else { 1.0 });
     if words > 0.0 {
@@ -288,6 +369,8 @@ pub fn paint(ui: &egui::Ui, rect: Rect, resp: &egui::Response, k: &Key, phase: P
             (Color32::from_white_alpha(77), Color32::WHITE)
         } else if k.role == Role::Guide {
             (c(C::Line), c(C::Pen))
+        } else if k.role == Role::Danger {
+            (c(C::Line), c(C::BadInk))
         } else {
             (c(C::Line), c(C::Accent))
         };
@@ -308,17 +391,27 @@ pub fn paint(ui: &egui::Ui, rect: Rect, resp: &egui::Response, k: &Key, phase: P
             }
         }
     }
-    // The check or the cross.
-    if mark_in > 0.0 {
-        let k2 = 0.5 + 0.5 * Curve::Spring.at(mark_in);
+    // The check, drawn as a pen draws it (0.34 s) with one light spring (0.42 s); or the cross.
+    if let Some(s) = since {
         let colour = if fail || k.role.solid() { palette::ON_SOLID } else { c(C::Ok) };
-        let g = if fail { Glyph::No } else { Glyph::Ok };
-        icons::glyph_at(p, g, r.center(), 16.0 * k2, colour.gamma_multiply(mark_in.min(1.0)));
+        let spring = motion::keys(&[(0.0, 0.86), (0.55, 1.06), (1.0, 1.0)], Curve::Ease.at((s / CHECK_SPRING).clamp(0.0, 1.0)));
+        let size = 16.0 * (1.0 + (spring - 1.0) * motion::travel(ctx));
+        if fail {
+            let a = Curve::Ease.at((s / tokens::MID).clamp(0.0, 1.0));
+            icons::glyph_at(p, Glyph::No, r.center(), size, colour.gamma_multiply(a));
+        } else {
+            icons::glyph_drawn(p, Glyph::Ok, r.center(), size, colour, Curve::Ease.at((s / CHECK_DRAW).clamp(0.0, 1.0)));
+        }
     }
 }
 
-/// An icon key in the toolbar and the rail: 26 (or `size`) square, the glyph in the second ink, hover ground,
-/// pressed to 0.94.
+/// How long a long action's words take to fade out for its bar, its check to be drawn, and its check's spring.
+const WORDS_OUT: f32 = 0.16;
+const CHECK_DRAW: f32 = 0.34;
+const CHECK_SPRING: f32 = 0.42;
+
+/// An icon key in the toolbar and the rail: 26 (or `size`) across and round, the glyph in the second ink, a grey
+/// tone on hover, pressed to 0.94.
 pub fn icon_key(ui: &mut egui::Ui, g: Glyph, size: f32, enabled: bool, tip: &str) -> egui::Response {
     let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
     let (rect, resp) = ui.allocate_exact_size(vec2(size, size), sense);
@@ -332,15 +425,32 @@ pub fn icon_key(ui: &mut egui::Ui, g: Glyph, size: f32, enabled: bool, tip: &str
 }
 
 pub fn paint_icon_key(ui: &egui::Ui, rect: Rect, resp: &egui::Response, g: Glyph, enabled: bool) {
+    paint_icon_key_at(ui, rect, resp, g, enabled, Radius::Pill.px());
+}
+
+/// [`paint_icon_key`] with its own corners (a copy key at the end of a row is a rounded square, 6).
+pub fn paint_icon_key_at(ui: &egui::Ui, rect: Rect, resp: &egui::Response, g: Glyph, enabled: bool, corner: f32) {
+    paint_icon_key_sized(ui, rect, resp, g, enabled, corner, 14.0);
+}
+
+/// [`paint_icon_key_at`] with its glyph `size` (the toolbar's history arrows draw theirs at 18).
+pub fn paint_icon_key_sized(ui: &egui::Ui, rect: Rect, resp: &egui::Response, g: Glyph, enabled: bool, corner: f32, size: f32) {
     let ctx = ui.ctx();
-    let hot = motion::flag(ctx, resp.id.with("hover"), enabled && resp.hovered(), tokens::FAST);
-    let press = motion::to(ctx, resp.id.with("press"), if enabled && resp.is_pointer_button_down_on() { 0.94 } else { 1.0 }, tokens::FAST, Curve::Ease);
+    let st = motion::states(ctx, resp.id, resp.hovered(), resp.is_pointer_button_down_on(), resp.has_focus(), enabled);
+    let hot = st.hover;
+    let press = 1.0 + (0.94 - 1.0) * st.press;
     let r = crate::paint::scaled(rect, press);
     let p = ui.painter();
+    let corner = corner.min(r.width() / 2.0).min(r.height() / 2.0);
+    let round = egui::CornerRadius::same(corner.round().clamp(0.0, 255.0) as u8);
     if hot > 0.0 {
-        p.rect_filled(r, egui::CornerRadius::same(7), c(C::Hover).gamma_multiply(hot));
+        p.rect_filled(r, round, palette::mix(c(C::Tone), c(C::TonePress), st.press).gamma_multiply(hot));
     }
-    let alpha = if enabled { 1.0 } else { 0.35 };
+    let (glow, at) = crate::material::glow_at(ui, resp.id, r, enabled);
+    if glow > 0.0 {
+        crate::material::glow(p, r, corner, at, c(C::Accent).gamma_multiply(0.04 * glow));
+    }
+    let alpha = 0.35 + 0.65 * st.enabled;
     let colour = palette::mix(c(C::Ink2), c(C::Ink), hot).gamma_multiply(alpha);
-    icons::glyph_at(p, g, r.center(), 14.0 * press, colour);
+    icons::glyph_at(p, g, r.center(), size * press, colour);
 }

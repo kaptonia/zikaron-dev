@@ -1,8 +1,17 @@
-//! Motion: easing curves, values that ease to a new target, entrance ages, keyframes and loops.
+//! Motion: easing curves, values that ease to a new target, entrance ages, keyframes and loops, and the one set
+//! of transitions every control's states share.
 //!
 //! Everything here asks for the next frame only while something is moving; an idle window draws nothing.
 //! Times come from egui's frame clock (`input.time`), so a headless frame with a given time moves the same
-//! way as the window.
+//! way as the window. A clock that runs backwards (a headless reader starting a new scene at zero) finds every
+//! value already where it was going.
+//!
+//! **Interruptible.** A value whose target changes while it is still moving goes on from where it is and at the
+//! speed it has: the new run starts at the current value with the current velocity, which then gives way to the
+//! curve, so a reversed or redirected move never jumps or stops dead ([`to`]).
+//!
+//! **Reduced motion.** When the system asks for less motion ([`set_reduced`]), whatever moves things from place
+//! to place or scales them ([`glide`], [`travel`]) arrives at once; fades stay.
 
 use crate::tokens;
 use egui::{Context, Id, Vec2};
@@ -20,6 +29,16 @@ pub enum Curve {
 }
 
 impl Curve {
+    /// The slope at the start (d value / d progress at 0).
+    fn slope0(self) -> f32 {
+        match self {
+            Curve::Ease => 4.0,
+            Curve::Spring => 5.0,
+            Curve::InOut => 0.0,
+            Curve::Linear => 1.0,
+        }
+    }
+
     pub fn at(self, t: f32) -> f32 {
         let t = t.clamp(0.0, 1.0);
         match self {
@@ -77,24 +96,51 @@ struct Tween {
     t0: f64,
     dur: f32,
     curve: Curve,
+    /// The velocity (units a second) it was moving at when it was redirected, beyond what the curve itself
+    /// starts with; it gives way over the run (zero for a run started at rest).
+    carry: f32,
 }
 
 impl Tween {
+    fn progress(&self, now: f64) -> f32 {
+        if self.dur <= 0.0 || now < self.t0 {
+            return 1.0;
+        }
+        ((now - self.t0) as f32 / self.dur).clamp(0.0, 1.0)
+    }
+
     fn value(&self, now: f64) -> f32 {
-        if self.dur <= 0.0 {
+        let p = self.progress(now);
+        if p >= 1.0 {
             return self.to;
         }
-        let p = ((now - self.t0) as f32 / self.dur).clamp(0.0, 1.0);
-        self.from + (self.to - self.from) * self.curve.at(p)
+        // p(1-p)²: starts at the carried velocity, gone (with its slope) by the end.
+        self.from + (self.to - self.from) * self.curve.at(p) + self.carry * self.dur * p * (1.0 - p) * (1.0 - p)
+    }
+
+    fn velocity(&self, now: f64) -> f32 {
+        if self.progress(now) >= 1.0 {
+            return 0.0;
+        }
+        let h = 1.0 / 240.0;
+        (self.value(now + h) - self.value(now - h)) / (2.0 * h as f32)
     }
 
     fn moving(&self, now: f64) -> bool {
-        ((now - self.t0) as f32) < self.dur
+        self.progress(now) < 1.0
+    }
+
+    /// A new run to `to` from where this one stands at `now`, keeping its velocity when it is moving.
+    fn redirect(&self, now: f64, to: f32, dur: f32, curve: Curve) -> Tween {
+        let cur = self.value(now);
+        let carry = if self.moving(now) && dur > 0.0 { self.velocity(now) - (to - cur) * curve.slope0() / dur } else { 0.0 };
+        Tween { from: cur, to, t0: now, dur, curve, carry }
     }
 }
 
-/// A value that eases to `target` over `dur` whenever the target changes. The first call starts at the
-/// target (nothing moves on first sight; entrances use [`age`]).
+/// A value that eases to `target` over `dur` whenever the target changes, interruptibly (a change mid-run goes
+/// on from the current value and velocity). The first call starts at the target (nothing moves on first sight;
+/// entrances use [`age`]).
 pub fn to(ctx: &Context, id: Id, target: f32, dur: f32, curve: Curve) -> f32 {
     to_from(ctx, id, target, target, dur, curve)
 }
@@ -103,10 +149,9 @@ pub fn to(ctx: &Context, id: Id, target: f32, dur: f32, curve: Curve) -> f32 {
 pub fn to_from(ctx: &Context, id: Id, target: f32, start: f32, dur: f32, curve: Curve) -> f32 {
     let t = now(ctx);
     let (v, moving) = ctx.data_mut(|d| {
-        let tw = d.get_temp_mut_or_insert_with(id, || Tween { from: start, to: target, t0: t, dur, curve });
+        let tw = d.get_temp_mut_or_insert_with(id, || Tween { from: start, to: target, t0: t, dur, curve, carry: 0.0 });
         if tw.to != target {
-            let cur = tw.value(t);
-            *tw = Tween { from: cur, to: target, t0: t, dur, curve };
+            *tw = tw.redirect(t, target, dur, curve);
         }
         (tw.value(t), tw.moving(t))
     });
@@ -114,6 +159,89 @@ pub fn to_from(ctx: &Context, id: Id, target: f32, start: f32, dur: f32, curve: 
         ctx.request_repaint();
     }
     v
+}
+
+/// Whether the value under `id` is still on its way.
+pub fn moving(ctx: &Context, id: Id) -> bool {
+    let t = now(ctx);
+    ctx.data(|d| d.get_temp::<Tween>(id)).map(|tw| tw.moving(t)).unwrap_or(false)
+}
+
+/// Settle the value under `id` at `target` at once (no run).
+pub fn snap(ctx: &Context, id: Id, target: f32) {
+    let t = now(ctx);
+    ctx.data_mut(|d| d.insert_temp(id, Tween { from: target, to: target, t0: t, dur: 0.0, curve: Curve::Ease, carry: 0.0 }));
+}
+
+fn reduced_id() -> Id {
+    Id::new("zikaron-reduced-motion")
+}
+
+/// Follow the system's "reduce motion" (the window asks the system and says it here each frame).
+pub fn set_reduced(ctx: &Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(reduced_id(), on));
+}
+
+/// Whether motion is reduced: moves and scales arrive at once, fades stay.
+pub fn reduced(ctx: &Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(reduced_id())).unwrap_or(false)
+}
+
+/// How much of a move or a scale to show: 1, or 0 under reduced motion (multiply offsets and scale deltas by it).
+pub fn travel(ctx: &Context) -> f32 {
+    if reduced(ctx) {
+        0.0
+    } else {
+        1.0
+    }
+}
+
+/// [`to`] for a value that moves something from place to place or sizes it: under reduced motion it arrives
+/// at once.
+pub fn glide(ctx: &Context, id: Id, target: f32, dur: f32, curve: Curve) -> f32 {
+    if reduced(ctx) {
+        snap(ctx, id, target);
+        return target;
+    }
+    to(ctx, id, target, dur, curve)
+}
+
+/// One control's states, eased the same way everywhere: hover, press, focus and enabled each go from one
+/// state to the next over [`tokens::FAST`]. `lift` is how far a hovered control rises (shadow and one point up),
+/// gone again while it is pressed.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct States {
+    pub hover: f32,
+    pub press: f32,
+    pub focus: f32,
+    pub enabled: f32,
+}
+
+impl States {
+    pub fn lift(&self) -> f32 {
+        (self.hover * (1.0 - self.press)).clamp(0.0, 1.0)
+    }
+}
+
+/// The eased states of the control under `id`.
+pub fn states(ctx: &Context, id: Id, hovered: bool, pressed: bool, focused: bool, enabled: bool) -> States {
+    States {
+        hover: flag(ctx, id.with("st-hover"), hovered && enabled, tokens::FAST),
+        press: flag(ctx, id.with("st-press"), pressed && enabled, tokens::FAST),
+        focus: flag(ctx, id.with("st-focus"), focused, tokens::FAST),
+        enabled: to_from(ctx, id.with("st-enabled"), if enabled { 1.0 } else { 0.0 }, if enabled { 1.0 } else { 0.0 }, tokens::FAST, Curve::Ease),
+    }
+}
+
+/// A size that follows `want` over [`tokens::SLOW`] while [`crate::flow::morphing`] (the words changed language
+/// and keys and labels grow or shrink to their new words); otherwise it is `want` at once.
+pub fn size(ctx: &Context, id: Id, want: Vec2) -> Vec2 {
+    if !crate::flow::morphing(ctx) {
+        snap(ctx, id.with("sz-x"), want.x);
+        snap(ctx, id.with("sz-y"), want.y);
+        return want;
+    }
+    egui::vec2(glide(ctx, id.with("sz-x"), want.x, tokens::SLOW, Curve::Ease), glide(ctx, id.with("sz-y"), want.y, tokens::SLOW, Curve::Ease))
 }
 
 /// 0 or 1 eased: a hover, press or open state.
@@ -137,6 +265,9 @@ pub fn age(ctx: &Context, id: Id, key: u64) -> f32 {
         let s = d.get_temp_mut_or_insert_with(id, || Seen { key, t0: t, pass });
         if s.key != key || s.pass + 1 < pass {
             *s = Seen { key, t0: t, pass };
+        } else if t < s.t0 {
+            // The clock ran backwards (a headless reader's new scene): long since entered.
+            s.t0 = t - 3600.0;
         }
         s.pass = pass;
         (t - s.t0) as f32
@@ -236,17 +367,19 @@ pub fn shake_at(ctx: &Context, at: Option<f64>, dur: f32) -> f32 {
     }
 }
 
-/// How a page enters. Pages only enter; the page that leaves is simply gone.
+/// How a page enters: the whole page grows from a little smaller and fades in, moving only a little. Pages
+/// only enter; the page that leaves is simply gone.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Entry {
-    /// Changing view from the rail: from 8 below, fading in, 200 ms.
+    /// Changing view from the rail: from 0.985 and 4 below, fading in, 200 ms.
     #[default]
     Root,
-    /// Into a detail: from 24 to the right, 240 ms.
+    /// Into a detail: from 0.99 and 12 to the right, 240 ms.
     Push,
-    /// Back: from 24 to the left, 240 ms.
+    /// Back: from 0.99 and 12 to the left, 240 ms.
     Pop,
-    /// The same page redrawn with new content: fade only.
+    /// The same page with other content (a tab): the content fades in rising from 6 below; the title and the
+    /// tabs above it stay.
     Fade,
 }
 
@@ -255,10 +388,20 @@ impl Entry {
     pub fn at(self, p: f32) -> (Vec2, f32) {
         let q = 1.0 - p;
         match self {
-            Entry::Root => (egui::vec2(0.0, 8.0 * q), p),
-            Entry::Push => (egui::vec2(24.0 * q, 0.0), p),
-            Entry::Pop => (egui::vec2(-24.0 * q, 0.0), p),
-            Entry::Fade => (Vec2::ZERO, p),
+            Entry::Root => (egui::vec2(0.0, 4.0 * q), p),
+            Entry::Push => (egui::vec2(12.0 * q, 0.0), p),
+            Entry::Pop => (egui::vec2(-12.0 * q, 0.0), p),
+            Entry::Fade => (egui::vec2(0.0, 6.0 * q), p),
+        }
+    }
+
+    /// The page's scale at eased progress `p`.
+    pub fn scale(self, p: f32) -> f32 {
+        let q = 1.0 - p;
+        match self {
+            Entry::Root => 1.0 - 0.015 * q,
+            Entry::Push | Entry::Pop => 1.0 - 0.01 * q,
+            Entry::Fade => 1.0,
         }
     }
 

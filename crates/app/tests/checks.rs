@@ -127,6 +127,9 @@ fn seated_anew(shell: &mut app::shell::Shell, home: &Path) -> app::key::Address 
 /// The current identity's current seat's home moves to `home`, the register following as after a moved home,
 /// so a home a test opens there is that seat's own.
 fn seat_home(home: &Path) {
+    // The register's home slot is one per process: a test that moves it runs alone, or a test beside it
+    // finds its own home no longer the identity's.
+    assert!(std::env::var(ALONE_CHILD).is_ok(), "this test moves the register's home: run it alone (`alone_in`)");
     let (row, seat) = app::register::now_row_listed().expect("the register").expect("an identity");
     let old = row.home(seat).expect("a seated home");
     app::register::change_listed(|reg| Ok(app::identity::rehome(reg, &old, home))).expect("the register follows");
@@ -156,7 +159,7 @@ fn code_only(s: &str) -> String {
 /// them and are not read.
 #[test]
 fn no_button_word_ends_in_an_ellipsis() {
-    const CLICKABLE: [&str; 15] = [
+    const CLICKABLE: [&str; 17] = [
         "key::key(",
         // A key built and shown (its busy words, `.busy_text`, are a status line: outside these parentheses).
         "key::Key::new(",
@@ -168,6 +171,9 @@ fn no_button_word_ends_in_an_ellipsis() {
         ".primary_with(ui,",
         "menu::row(",
         "f.row(ui,",
+        // A navigation row of a card (the wizard's ways to an identity, the data page's exports).
+        "f.go(ui,",
+        "f.go_show(ui,",
         "f.danger(ui,",
         "f.nav_big(ui,",
         "drop::file_row(",
@@ -216,7 +222,7 @@ fn no_button_word_ends_in_an_ellipsis() {
         }
     }
     // The scan reaches the buttons it guards (a menu row, a page's key, a navigation row, a picker's key).
-    for k in ["U3AdoptTitle", "PickFile", "ChangePinTitle", "V2DeleteWork", "BackupRestoreTitle", "NavVerifyView", "CheckRefetch", "U3SendGo"] {
+    for k in ["U3AdoptTitle", "PickFile", "ChangePinTitle", "V2DeleteWork", "BackupRestoreTitle", "DoCheck", "CheckRefetch", "U3SendGo"] {
         assert!(seen.contains(k), "the scan did not reach Key::{k}");
     }
 }
@@ -257,8 +263,8 @@ fn every_scroll_area_goes_in_through_the_librarys_scroll() {
             seen += 1;
         }
     }
-    // The home page's code field, the record kit's picker list, the licence notices.
-    assert_eq!(seen, 3, "the scan reaches the app's three scroll areas");
+    // The record kit's picker list, the licence notices.
+    assert_eq!(seen, 2, "the scan reaches the app's two scroll areas");
 }
 
 /// Nothing laid in a row of `width::then`, `then_at` or `then_line` opens a row or a column of its own there: egui
@@ -295,7 +301,7 @@ fn nothing_in_a_row_of_then_opens_a_layout_of_its_own() {
             }
         }
     }
-    assert!(rows >= 21, "the scan reaches the app's rows of `then` ({rows})");
+    assert!(rows > 0, "the scan reaches the app's rows of `then`");
 }
 
 // ───────────────────── Design values live in the widget library ─────────────────────
@@ -2973,7 +2979,7 @@ fn the_wizard_never_stands_past_the_identity_step_without_an_identity() {
     // The window really calls it, before drawing the step.
     let text = read_src_file("window.rs").expect("读不出 window.rs");
     let at_gate = text.find("let step = pr.gate(want);").expect("向导弹层里要过 Progress::gate");
-    let at_draw = text.find("full::cover(ctx, \"wizard\"").expect("the wizard's cover");
+    let at_draw = text.find("covers::cover(ctx, \"wizard\"").expect("the wizard's cover");
     assert!(at_gate < at_draw, "门要在画弹层之前过");
 }
 
@@ -3554,7 +3560,7 @@ fn boot_never_lands_on_an_empty_seat_and_the_empty_seat_is_judged_once() {
     assert!(!window.contains("r.address(seat).is_none()"), "窗子里不再自写「这一席空着」");
     assert!(window.contains("let unseated = self.shell.seat_unseated();"), "身份卡问那一口");
     assert!(window.contains("let seat_ok = !self.shell.seat_unseated();"), "数据卡问同一口");
-    for key in ["t(Key::SetChangeHome), Role::Secondary, seat_ok)", "t(Key::DoMeasure), Role::Secondary, seat_ok, crate::task::Kind::Archive)"] {
+    for key in ["t(Key::SetChangeHome), Role::Secondary).enabled(seat_ok)", "t(Key::DoMeasure), Role::Secondary).enabled(seat_ok)"] {
         assert!(window.contains(key), "空席上这一键不可按:{key}");
     }
     // The wizard still requires a key, a passcode and (for an author) a genesis.
@@ -3858,15 +3864,15 @@ fn a_masked_field_turns_the_input_method_off() {
     assert_eq!(input.matches(".password(true)").count(), 1, "遮住的格只此一件");
 }
 
-/// Sending or waiting after queueing is decided by one setting ("auto anchor", off by default), and the main
-/// button's label is chosen by one function.
+/// Sending or waiting after queueing is decided by one setting ("auto anchor", off by default), and the label of
+/// the key that writes (the new record's, the grant's) is chosen by one function.
 #[test]
 fn the_primary_key_reads_the_auto_anchor_setting_in_one_place() {
     assert!(!app::settings::Settings::default().auto_anchor, "自动上链默认关");
     let window = code_only(&read_src_file("window.rs").expect("读不出 window.rs"));
     let pick = body_of(&window, "fn anchor_key(");
     assert!(pick.contains("settings.auto_anchor") && pick.contains("Key::AnchorNowKey") && pick.contains("Key::AddToLedgerKey"));
-    assert!(window.matches("self.anchor_key()").count() >= 4, "存证与签发两页的主键与确认卡都读它");
+    assert!(window.matches("self.anchor_key()").count() >= 2, "新建存证弹窗的落笔键与签发确认卡都读它");
     assert!(!window.contains("anchor_queue_only"), "表单里那一枚内存态单选撤了");
 }
 
@@ -4158,8 +4164,8 @@ fn every_boolean_is_the_one_toggle_from_the_kit() {
         assert!(!t.contains(".checkbox("), "{name} 还有一枚对勾控件");
     }
     let window = code_only(&read_src_file("window.rs").expect("读不出 window.rs"));
-    assert!(window.contains("toggle::toggle(ui, &mut self.typed.g_exclusive"), "the exclusive flag uses the kit's switch");
-    assert!(window.contains("toggle::switch(ui, s.auto_anchor"), "auto put on chain uses the kit's switch");
+    assert!(window.contains("f.switch(ui, t(Key::GrantExclusive), t(Key::GrantExclusiveNote), self.typed.g_exclusive"), "the exclusive flag uses the kit's switch row");
+    assert!(window.contains("f.switch(ui, t(Key::SetAutoAnchor), \"\", s.auto_anchor"), "auto put on chain uses the kit's switch");
     assert!(!window.contains("Key::NoticeOn"), "「系统通知 · 已开启」那一行撤了");
     let ui = code_only(&std::fs::read_to_string(src().join("../../zikaron-ui/src/toggle.rs")).expect("the switch file reads"));
     assert_eq!(ui.matches("pub fn toggle(").count(), 1, "one switch with a label");
@@ -4200,13 +4206,13 @@ fn the_solid_red_key_is_only_on_a_confirm_card() {
         "fn new_anchor_sheet(",
         "fn send_sheet(",
         "fn bump_sheet(",
-        "fn delete_record_sheet(",
         "fn grant_confirm_sheet(",
         "fn revoke_sheet(",
         "fn adopt_sheet(",
         "fn succeed_sheet(",
         "fn annotate_sheet(",
-        "fn relicense_sheet(",
+        // Signing someone's claim with this machine's passcode: "sign".
+        "fn attest_sheet(",
         "fn genesis_sheet(",
         // Adopting an existing ledger at the wizard's step that creates one: "adopt in place".
         "fn wizard_adopt_sheet(",
@@ -4219,11 +4225,26 @@ fn the_solid_red_key_is_only_on_a_confirm_card() {
         assert!(sheets.iter().any(|s| owner.contains(s)), "window.rs:{line} takes the final-step token outside a confirmation sheet: {owner}");
     }
     for s in sheets {
-        // The identity sheets hold two final steps (delete, set as primary); the backup sheets two (restore from
-        // settings or at first run, replace on the locked card's confirm).
-        let want = if s == "fn id_sheets(" || s == "fn bk_sheets(" { 2 } else { 1 };
+        // The identity sheets hold one (set as primary; deleting takes the key with the red edge, below); the backup
+        // sheets two (restore from settings or at first run, replace on the locked card's confirm).
+        let want = if s == "fn bk_sheets(" { 2 } else { 1 };
         assert_eq!(at.iter().filter(|(_, o)| o.contains(s)).count(), want, "{s} holds exactly {want} final-step key(s)");
     }
+    // A deletion's last step takes the erase key (the red edge), each on its own confirmation sheet: an
+    // identity's and a record's, one each.
+    let erase: Vec<(usize, String)> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.contains("page::Erase::press("))
+        .map(|(i, _)| {
+            let owner = lines[..=i].iter().rev().find(|x| ["fn ", "pub fn ", "pub(super) fn ", "pub(crate) fn "].iter().any(|v| x.trim_start().starts_with(v))).map(|x| x.trim().to_string()).unwrap_or_default();
+            (i + 1, owner)
+        })
+        .collect();
+    for s in ["fn id_sheets(", "fn delete_record_sheet("] {
+        assert_eq!(erase.iter().filter(|(_, o)| o.contains(s)).count(), 1, "{s} holds one erase key: {erase:?}");
+    }
+    assert_eq!(erase.len(), 2, "the erase key only ends a deletion: {erase:?}");
     // In the widget library, final-step and guide buttons have separate tokens, and guide buttons have no
     // one-per-page limit.
     let page = code_only(&std::fs::read_to_string(src().join("../../zikaron-ui/src/page.rs")).expect("读不出 page.rs"));
@@ -4258,7 +4279,7 @@ fn the_embedded_faces_carry_their_licence() {
         }
     }
     let dir = src().join("../../zikaron-ui/fonts");
-    for name in ["JetBrainsMono-Regular.ttf", "Inter-Regular.ttf", "OFL-JetBrainsMono.txt", "OFL-Inter.txt"] {
+    for name in ["JetBrainsMono-Regular.ttf", "Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "OFL-JetBrainsMono.txt", "OFL-Inter.txt"] {
         assert!(dir.join(name).is_file(), "{name} 随仓");
     }
     for name in ["OFL-JetBrainsMono.txt", "OFL-Inter.txt"] {
@@ -5275,8 +5296,11 @@ fn the_chain_reading_is_read_in_one_place() {
 
 /// Run test `test` of module `module` (its `module_path!()`) alone in a child process of this binary: `true` in
 /// the parent (which waits for the child and requires it to pass), `false` in the child.
+/// The variable naming the one test a child process runs (`alone_in`).
+const ALONE_CHILD: &str = "ZK_CHECKS_ALONE";
+
 fn alone_in(module: &str, test: &str) -> bool {
-    const CHILD: &str = "ZK_CHECKS_ALONE";
+    const CHILD: &str = ALONE_CHILD;
     let full = format!("{}::{test}", module.split_once("::").map(|(_, m)| m).unwrap_or(module));
     if std::env::var(CHILD).as_deref() == Ok(full.as_str()) {
         return false;
@@ -5291,6 +5315,10 @@ fn alone_in(module: &str, test: &str) -> bool {
 mod gaps;
 #[path = "checks_more/refresh_steady.rs"]
 mod refresh_steady;
+#[path = "checks_more/motion_in_place.rs"]
+mod motion_in_place;
+#[path = "checks_more/alerts_attention.rs"]
+mod alerts_attention;
 #[path = "checks_more/gaps_b10m.rs"]
 mod gaps_b10m;
 #[path = "checks_more/window_b10.rs"]

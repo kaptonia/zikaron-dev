@@ -224,6 +224,9 @@ pub struct Shell {
     pub pen: Pen,
     /// Configured chain endpoints.
     pub endpoints: Vec<Endpoint>,
+    /// The folder a sheet that takes a place starts at until one is chosen: the documents folder, else the
+    /// person's home folder. Looked for once at start: the frame never asks the disk.
+    pub documents: String,
     /// Set when resuming a submitted anchor finds no node for its chain (the queue page says so).
     pub resume_blocked: Option<u64>,
     pub faults: Vec<Fault>,
@@ -519,6 +522,13 @@ pub struct Shell {
     pub followed: bool,
 }
 
+/// The documents folder in the person's home, else the home itself (empty when there is no home).
+fn documents_folder() -> String {
+    let home = crate::platform::home_dir();
+    let docs = home.as_ref().map(|h| h.join("Documents")).filter(|d| d.is_dir());
+    docs.or(home).map(|p| p.display().to_string()).unwrap_or_default()
+}
+
 impl Shell {
     /// Start the shell. Skin and fonts are applied by the control library's `skin::dress`; this takes its
     /// result, opens the trace channel, emits the first trace mark and prepares the background tasks. The
@@ -550,6 +560,7 @@ impl Shell {
         trace::mark(Feature::H1);
 
         Shell {
+            documents: documents_folder(),
             page: Default::default(),
             resume_blocked: None,
             tasks: Tasks::new(),
@@ -1541,6 +1552,7 @@ impl Shell {
         let Shell {
             // Tied to the machine, the person and this session, not to the ledger's source:
             page: _,
+            documents: _,
             // Names the fetch kind's in-flight task, which a source change does not stop (its result is set aside).
             fetch_checks_tail: _,
             resume_blocked: _,
@@ -2396,7 +2408,7 @@ impl Shell {
     /// goes to the fault table (only with a home).
     pub fn sweep(&mut self) {
         let rows = self.watch_rows();
-        let (fresh, keys) = crate::watchx::fresh(crate::watchx::notices(&rows), &self.settings.alarmed);
+        let (fresh, keys) = crate::watchx::fresh(crate::watchx::to_ring(rows), &self.settings.alarmed);
         if fresh.is_empty() {
             return;
         }

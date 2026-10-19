@@ -10,14 +10,21 @@
 //!   where it is. An area that has nothing more to show keeps nothing, and the wheel with the pointer elsewhere is
 //!   never its to keep (a focused field inside it does not hold the page still): the wheel goes on to the page.
 
+//!
+//! Every area says here how far it has scrolled, so the library knows when something is scrolling ([`moving`]):
+//! lists light no row under the pointer then, and rows do not slide.
+
 /// The outermost area of a page: shown as egui shows it.
 pub fn page<R>(ui: &mut egui::Ui, area: egui::ScrollArea, add: impl FnOnce(&mut egui::Ui) -> R) -> egui::scroll_area::ScrollAreaOutput<R> {
-    area.show(ui, add)
+    let out = area.show(ui, add);
+    note(ui.ctx(), &out);
+    out
 }
 
 /// An area inside something that scrolls: it keeps the wheel while it is the one being scrolled.
 pub fn nested<R>(ui: &mut egui::Ui, area: egui::ScrollArea, add: impl FnOnce(&mut egui::Ui) -> R) -> egui::scroll_area::ScrollAreaOutput<R> {
     let out = area.show(ui, add);
+    note(ui.ctx(), &out);
     keep(ui, &out);
     out
 }
@@ -25,8 +32,63 @@ pub fn nested<R>(ui: &mut egui::Ui, area: egui::ScrollArea, add: impl FnOnce(&mu
 /// [`nested`] for a long list drawn a screenful at a time (`ScrollArea::show_rows`).
 pub fn nested_rows<R>(ui: &mut egui::Ui, area: egui::ScrollArea, row_h: f32, rows: usize, add: impl FnOnce(&mut egui::Ui, std::ops::Range<usize>) -> R) -> egui::scroll_area::ScrollAreaOutput<R> {
     let out = area.show_rows(ui, row_h, rows, add);
+    note(ui.ctx(), &out);
     keep(ui, &out);
     out
+}
+
+fn moved_id() -> egui::Id {
+    egui::Id::new("zikaron-scroll-moved")
+}
+
+/// Every area shown this pass and the last: where it shows and how much further down it can still scroll.
+#[derive(Clone, Default)]
+struct Rooms {
+    pass: u64,
+    this: Vec<(egui::Rect, f32)>,
+    last: Vec<(egui::Rect, f32)>,
+}
+
+fn rooms_id() -> egui::Id {
+    egui::Id::new("zikaron-scroll-rooms")
+}
+
+/// Remember where an area stands; a change since last pass is a scroll this pass. Remember too how much further
+/// down it can scroll ([`room_below`]).
+fn note<R>(ctx: &egui::Context, out: &egui::scroll_area::ScrollAreaOutput<R>) {
+    let id = out.id.with("zikaron-scroll-at");
+    let at = out.state.offset;
+    let pass = ctx.cumulative_pass_nr();
+    let moved = ctx.data(|d| d.get_temp::<egui::Vec2>(id)).map(|p| (p - at).length() > 0.1).unwrap_or(false);
+    let room = (out.content_size.y - out.inner_rect.height() - at.y).max(0.0);
+    ctx.data_mut(|d| {
+        d.insert_temp(id, at);
+        if moved {
+            d.insert_temp(moved_id(), pass);
+        }
+        let r = d.get_temp_mut_or_default::<Rooms>(rooms_id());
+        if r.pass != pass {
+            r.last = std::mem::take(&mut r.this);
+            r.pass = pass;
+        }
+        r.this.push((out.inner_rect, room));
+    });
+}
+
+/// How much further down the innermost area showing `at` can scroll (as of the last pass); none outside any.
+pub fn room_below(ctx: &egui::Context, at: egui::Rect) -> f32 {
+    let pass = ctx.cumulative_pass_nr();
+    let r = ctx.data(|d| d.get_temp::<Rooms>(rooms_id())).unwrap_or_default();
+    let list = if r.pass == pass { &r.last } else { &r.this };
+    list.iter().filter(|(rect, _)| rect.contains(at.center())).min_by(|a, b| a.0.area().total_cmp(&b.0.area())).map(|x| x.1).unwrap_or(0.0)
+}
+
+/// Whether something is scrolling: an area moved this pass or the last, or wheel motion is still being spent
+/// (egui spreads a wheel turn over the next frames). Settled one pass after the last move.
+pub fn moving(ctx: &egui::Context) -> bool {
+    let pass = ctx.cumulative_pass_nr();
+    let moved = ctx.data(|d| d.get_temp::<u64>(moved_id())).map(|p| p + 1 >= pass).unwrap_or(false);
+    moved || ctx.input(|i| i.smooth_scroll_delta != egui::Vec2::ZERO)
 }
 
 /// Drop what is left of this frame's wheel when the area just shown is the one being scrolled: it has more than it
