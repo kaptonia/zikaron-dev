@@ -95,9 +95,14 @@ fn a_home(tag: &str) -> Shell {
 /// A report of this ledger with nothing wrong but the one deletion the core does not know (`UNKNOWN_TYPE`, which
 /// this desk counts as its own), landed as an audit pass lands.
 fn land_a_report(shell: &mut Shell) {
+    land_a_report_naming(shell, zikaron::tokens::Key::UnknownType);
+}
+
+/// As [`land_a_report`], the one item it names being `item`.
+fn land_a_report_naming(shell: &mut Shell, item: zikaron::tokens::Key) {
     use zikaron::json::Value;
     let entries = shell.rows.as_ref().map(|(r, _)| r.len()).unwrap_or(0);
-    let report = Value::Obj(vec![(zikaron::tokens::Key::UnknownType.as_str().to_string(), Value::Arr(vec![Value::Str("deletion".into())]))]);
+    let report = Value::Obj(vec![(item.as_str().to_string(), Value::Arr(vec![Value::Str("deletion".into())]))]);
     let done = Done::Audited {
         label: zikaron::tokens::Label::Complete.as_str().to_string(),
         complete: true,
@@ -198,4 +203,33 @@ fn the_ledger_state_holds_its_conclusion_while_a_new_report_is_paired() {
         }
         land_a_report(&mut shell);
     }
+}
+
+/// A problem the report names by itself is judged the moment the report lands, without waiting for its table;
+/// a report about an older ledger (an entry written while it ran) is not paired with a table of the newer one.
+#[test]
+fn a_report_is_judged_on_what_it_says_alone_and_never_against_a_newer_ledger() {
+    if super::alone_in(module_path!(), "a_report_is_judged_on_what_it_says_alone_and_never_against_a_newer_ledger") {
+        return;
+    }
+    let mut shell = a_home("alone");
+    land_a_report(&mut shell);
+    let _ = apply(&mut shell, Action::ReadLedger);
+    settle(&mut shell);
+    assert_eq!(shell.ledger_ok, Some(true));
+    // Asked at this mark; the ledger moves on before the report lands.
+    shell.audit_asked = Some(shell.book_mark);
+    shell.book_changed();
+    land_a_report(&mut shell);
+    assert_ne!(shell.audit.as_ref().map(|a| a.mark), Some(shell.book_mark));
+    shell.ledger_ok = None;
+    let _ = apply(&mut shell, Action::ReadLedger);
+    settle(&mut shell);
+    assert!(shell.rows_current(), "the table of the report's generation landed");
+    assert_eq!(shell.ledger_ok, None, "an older ledger's report is not counted against the newer table");
+    // A report naming a missing entry: a problem before its table is read.
+    shell.audit_asked = None;
+    land_a_report_naming(&mut shell, zikaron::tokens::Key::Missing);
+    assert!(!shell.rows_current(), "its table not read yet");
+    assert_eq!(shell.ledger_ok, Some(false), "judged on the report alone");
 }

@@ -749,21 +749,54 @@ pub fn backdrop_available() -> bool {
     true
 }
 
-/// The window's appearance (Aqua or DarkAqua), so the system's material follows the app's light or dark choice.
+/// The window's appearance, so the system's material follows the app's light or dark choice: Aqua or DarkAqua
+/// when the app chose one; none (the system's own) when the app follows the system, so the system goes on telling
+/// the app when its appearance changes (a window given an appearance hears no more of the system's).
 #[cfg(target_os = "macos")]
-fn set_appearance(window: appkit::Id, dark: bool) {
+fn set_appearance(window: appkit::Id, dark: bool, follows: bool) {
     use appkit::*;
     unsafe {
-        let name = string(if dark { "NSAppearanceNameDarkAqua" } else { "NSAppearanceNameAqua" });
-        let look = send_id(class("NSAppearance"), "appearanceNamed:", name);
+        let Some(name) = appearance_name(dark, follows) else {
+            send_id(window, "setAppearance:", std::ptr::null_mut());
+            return;
+        };
+        let look = send_id(class("NSAppearance"), "appearanceNamed:", string(name));
         if !look.is_null() {
             send_id(window, "setAppearance:", look);
         }
     }
 }
 
+/// The appearance a window is given: none (the system's own) when the app follows the system, else the one the
+/// app chose.
+#[cfg(any(target_os = "macos", test))]
+fn appearance_name(dark: bool, follows: bool) -> Option<&'static str> {
+    if follows {
+        None
+    } else if dark {
+        Some("NSAppearanceNameDarkAqua")
+    } else {
+        Some("NSAppearanceNameAqua")
+    }
+}
+
+#[cfg(test)]
+mod appearance_tests {
+    use super::appearance_name;
+
+    /// Following the system, the window is given no appearance of its own, whatever the system is showing now:
+    /// it keeps hearing the system's changes. A chosen light or dark is pinned.
+    #[test]
+    fn a_window_following_the_system_is_given_no_appearance_and_a_chosen_one_is_pinned() {
+        assert_eq!(appearance_name(true, true), None);
+        assert_eq!(appearance_name(false, true), None);
+        assert_eq!(appearance_name(true, false), Some("NSAppearanceNameDarkAqua"));
+        assert_eq!(appearance_name(false, false), Some("NSAppearanceNameAqua"));
+    }
+}
+
 #[cfg(target_os = "macos")]
-pub fn backdrop(w: crate::Window, dark: bool) -> crate::Backdrop {
+pub fn backdrop(w: crate::Window, dark: bool, follows: bool) -> crate::Backdrop {
     use appkit::*;
     let crate::Window::AppKit(view) = w else { return crate::Backdrop::Tint };
     if view.is_null() {
@@ -779,7 +812,7 @@ pub fn backdrop(w: crate::Window, dark: bool) -> crate::Backdrop {
         if frame_view.is_null() {
             return crate::Backdrop::Tint;
         }
-        set_appearance(window, dark);
+        set_appearance(window, dark, follows);
         // macOS 26 and later have the system's glass; earlier ones its vibrancy, under the window's sidebar material.
         let glass = class("NSGlassEffectView");
         let (cls, kind) = if glass.is_null() { (class("NSVisualEffectView"), crate::Backdrop::Vibrancy) } else { (glass, crate::Backdrop::Glass) };
@@ -845,7 +878,7 @@ pub fn reduce_motion() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-pub fn backdrop_appearance(w: crate::Window, dark: bool) {
+pub fn backdrop_appearance(w: crate::Window, dark: bool, follows: bool) {
     use appkit::*;
     let crate::Window::AppKit(view) = w else { return };
     if view.is_null() {
@@ -854,7 +887,7 @@ pub fn backdrop_appearance(w: crate::Window, dark: bool) {
     unsafe {
         let window = send(view, "window");
         if !window.is_null() {
-            set_appearance(window, dark);
+            set_appearance(window, dark, follows);
         }
     }
 }
@@ -866,9 +899,9 @@ pub fn backdrop_available() -> bool {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn backdrop(_w: crate::Window, _dark: bool) -> crate::Backdrop {
+pub fn backdrop(_w: crate::Window, _dark: bool, _follows: bool) -> crate::Backdrop {
     crate::Backdrop::Tint
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn backdrop_appearance(_w: crate::Window, _dark: bool) {}
+pub fn backdrop_appearance(_w: crate::Window, _dark: bool, _follows: bool) {}

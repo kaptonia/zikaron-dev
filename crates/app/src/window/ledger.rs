@@ -88,8 +88,18 @@ impl Win {
         let mut set_up = false;
         stagger(ui, 2, |ui| {
             let create = || key::Key::new(t(Key::WizGenesisTitle), Role::Primary);
+            // What an empty list says: one judgement for the table and the "create the ledger" row.
+            let empty = if !read {
+                t(Key::WbNotRead)
+            } else if rows.is_empty() {
+                t(Key::WbRecentNone)
+            } else if !query.trim().is_empty() || !range.0.is_empty() || !range.1.is_empty() {
+                t(Key::SearchNone)
+            } else {
+                t(Key::U3NoneOfThisKind)
+            };
             if set_up_here && shown.is_empty() {
-                card::form(ui, |ui, f| set_up = f.act(ui, t(if rows.is_empty() { Key::WbRecentNone } else { Key::U3NoneOfThisKind }), "", create()).clicked());
+                card::form(ui, |ui, f| set_up = f.act(ui, empty, "", create()).clicked());
                 return;
             }
             let cols = [table::SEQ, table::TYPE, table::col("", table::Col::Fr(1.0)), table::col("", table::Col::Px(DATE_W)), table::MARK];
@@ -105,15 +115,6 @@ impl Win {
                     }
                 })
                 .collect();
-            let empty = if !read {
-                t(Key::WbNotRead)
-            } else if rows.is_empty() {
-                t(Key::WbRecentNone)
-            } else if !query.trim().is_empty() || !range.0.is_empty() || !range.1.is_empty() {
-                t(Key::SearchNone)
-            } else {
-                t(Key::U3NoneOfThisKind)
-            };
             if let Some(i) = table::table(ui, "ledger", &cols, false, &trs, empty).clicked {
                 open = shown.get(i).map(|r| r.id.clone());
             }

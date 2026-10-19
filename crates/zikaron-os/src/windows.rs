@@ -1239,7 +1239,9 @@ fn set_dark(hwnd: isize, dark: bool) {
     unsafe { DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &on as *const i32 as *const c_void, 4) };
 }
 
-pub fn backdrop(w: crate::Window, dark: bool) -> crate::Backdrop {
+/// Windows tells the app of the system's appearance whatever the window's dark mode says: `follows` changes
+/// nothing here.
+pub fn backdrop(w: crate::Window, dark: bool, _follows: bool) -> crate::Backdrop {
     let crate::Window::Win32(hwnd) = w else { return crate::Backdrop::Tint };
     if hwnd == 0 || !backdrop_available() {
         return crate::Backdrop::Tint;
@@ -1252,7 +1254,7 @@ pub fn backdrop(w: crate::Window, dark: bool) -> crate::Backdrop {
     if extended >= 0 && set >= 0 { crate::Backdrop::Mica } else { crate::Backdrop::Tint }
 }
 
-pub fn backdrop_appearance(w: crate::Window, dark: bool) {
+pub fn backdrop_appearance(w: crate::Window, dark: bool, _follows: bool) {
     if let crate::Window::Win32(hwnd) = w {
         if hwnd != 0 {
             set_dark(hwnd, dark);

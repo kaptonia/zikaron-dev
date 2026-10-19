@@ -59,7 +59,7 @@ impl Win {
                     let items: Vec<menu::Item> = heads.iter().map(|h| menu::Item::Row(menu::Row { lead: t(Key::Address), label: h, mono: true, ..Default::default() })).collect();
                     let spec = pick::Spec { hint: t(Key::SearchAddress), empty: t(Key::SearchNone), w: PICK_W, dates: None };
                     let keep = |i: usize, q: &str, _: &str, _: &str| matches(q, &[&book[i]]);
-                    let inner = |ui: &mut egui::Ui| zikaron_ui::formparts::inner_pick(ui, "others-book", t(Key::U3SeenBeforeDots), false, false, true, &spec, &items, &keep);
+                    let inner = |ui: &mut egui::Ui| zikaron_ui::formparts::inner_pick(ui, "others-book", t(Key::U3SeenBeforeDots), false, false, !book.is_empty(), &spec, &items, &keep);
                     let (_, picked) = fields::joined(ui, address, "0x\u{2026}", w, mono, Some(inner));
                     if let Some(i) = picked.flatten() {
                         *address = book[i].clone();

@@ -2,6 +2,42 @@
 
 [中文](CHANGELOG.md) | English
 
+## Next version
+
+This version lays out and draws the whole app anew, with motion that flows and no flash on refresh; alerts list only what needs attention; AI apps can call the command line through MCP, by the same two ways as before, "Through the desktop app" and "With a credential".
+
+### Interface
+
+- **A new layout**: each settings page opens with an overview card (an icon, the name and state, three figures), with its rows in groups below; a form's field names stand above its fields; a sheet's rows line up with its title and its footer stays at its foot. The lock screen, the passcode gate's states and the first-run wizard are drawn anew.
+- **Materials and depth**: the background, cards, floating panels and sheets each sit at one level, their shadows and grounds following it. On macOS the system's own material lies under the window (from macOS 26 the window corners and traffic lights follow the system's new style), on Windows 11 Mica; elsewhere the ground is opaque as before.
+- **Motion that flows**: changing pages and lists, toasts coming and going, sheets opening and closing, folds, segmented controls and switches all move, and a change of course goes on from where things are; content updated in place moves in place, without replaying the page's entrance. With the system's "Reduce motion" on, only fades are left.
+- **No flash, no false state**: while the ledger refreshes the page keeps drawing the last reading and swaps in the new one where it stands, never emptying first; a ledger check under way no longer shows "Problems" for a moment.
+- **Switching language**: words that change cross-fade where they stand.
+- **Date picker**: pick a year and a month, then the day.
+- **Folds and drop-downs**: with too little room below, the window slides to show them whole.
+- **Highlights**: hover and selection blocks keep an even gap on all four sides, their corners matching the card's.
+- **Type**: Latin letters, figures and signs in medium and semibold weights use Inter (SIL OFL 1.1, embedded with the app).
+- **Words**: explanatory small print is kept to what is needed; the app has no small blue links any more, plain keys or whole clickable rows stand in their place; a time is just the time (e.g. `2026-10-17 00:42:11`).
+- **A new record** is made in one step; its name defaults to the file's full name, extension and all.
+- **Network**: nodes and chain settings are edited in one "Edit nodes and chain" sheet, with one "Save".
+- **The "Command line" page is now "Command line and AI control"**.
+
+### Alerts
+
+- The alerts page, the rail's count and the toasts list only what needs attention (warnings and errors); the whole-machine backup no longer appears among the alerts. With none, the page says "Nothing needs your attention".
+
+### Command line and AI apps
+
+- **`zikaron mcp`**: AI apps call the command line through the Model Context Protocol (MCP), with no terminal needed. The write tools (`history`, `grant`, `revoke`, `adopt`, `annotate`, `retract`, `kit-export`, `anchor`) write this machine's data folder only, each call going "With a credential" or "Through the desktop app" as the switches stand at that moment; the read tools are `show`, `audit`, `scan`, `check-grant`, `chain-check`, `depth`, `badge`, `kit-verify` and `contract`. Each call is that command, and its answer's bytes and exit code are those of the same command typed in a terminal; making keys, every way that takes a private key, handing a ledger over and the fee bump are not given. Putting on chain follows "Putting on chain from the command line": with "Send automatically" it spends this identity's gas.
+- **"Connect an AI app"**: in the "Terminal" group of Settings > Command line and AI control, "Copy config" copies the configuration to paste into the AI app's MCP settings.
+- `scan --ledger <a desktop data folder's ledger>` with no `--endpoint` takes that data folder's nodes with the credential (and this machine's proxy), read as anchoring with a credential reads them.
+- `CLI-SCHEMA.md` gains section 13, the protocol; `contract` lists `mcp` among the verbs.
+
+### Fixes
+
+- A file written by its bare name into the current folder lands as reported (before, the write could be reported failed while the file had in fact been replaced).
+- Resetting a forgotten passcode with the recovery phrase or a key file, typing a word cell by cell or the file's password no longer moves the focus to the new passcode line halfway; it moves on Return or Tab in the last cell or the password, a click on the passcode line, or one paste filling all twelve cells.
+
 ## 0.1.3
 
 This version lets the command line write the data the desktop keeps sealed even while the desktop is closed or locked, authorised by you on the desktop, for a time you choose, and taken back whenever you like; a ledger can be handed back and forth between two places, and a record kit is now one file; following the system's proxy runs the system's automatic configuration script and takes proxies that ask for credentials, HTTPS proxies and SOCKS4; the machine settings keep only the two the passcode gate needs in plain. **Data an earlier version left is not read and nothing converts it: bring it across by hand as in "Upgrading from an earlier version" below.**

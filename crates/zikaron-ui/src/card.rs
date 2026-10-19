@@ -276,6 +276,7 @@ pub fn form<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui, &mut Form) -> 
         quiet: false,
         sheet,
         next_tag: None,
+        corner: if sheet { ui.ctx().data(|d| d.get_temp::<f32>(crate::sheet::rows_corner_id())).unwrap_or(Radius::Card.px()) } else { Radius::Card.px() },
     };
     let (r, shown) = crate::flow::grow(ui, gid, |ui| {
         let r = ui
@@ -307,7 +308,7 @@ pub fn form<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui, &mut Form) -> 
         .map(|(r, col)| {
             let (b, round) = f.band_of(rect, *r);
             let (slot, card) = f.bounds_of(rect, *r);
-            crate::probe::lit(ui.ctx(), crate::probe::Lit { block: b, corners: round, slot, card, card_corner: Radius::Card.px() });
+            crate::probe::lit(ui.ctx(), crate::probe::Lit { block: b, corners: round, slot, card, card_corner: f.corner });
             egui::epaint::RectShape::filled(b, round, *col).into()
         })
         .chain(f.lights.iter().filter_map(|(r, at, col)| {
@@ -364,8 +365,11 @@ pub struct Form {
     quiet: bool,
     /// The group lies in a sheet (rows 48 high).
     sheet: bool,
-    /// A small blue tag right after the next row's title ([`Form::tag_next`]).
-    next_tag: Option<String>,
+    /// The corner of what these rows light within: this card's, or, in a sheet or a form card, that one's.
+    corner: f32,
+    /// A word right after the next row's title ([`Form::tag_next`], [`Form::quiet_next`]): its words and whether
+    /// it is the quiet word (else a small blue tag).
+    next_tag: Option<(String, bool)>,
 }
 
 /// What an information row shows at its right end (one right edge per card).
@@ -424,6 +428,9 @@ pub enum Detail {
     Text(String),
     /// Several lines, each its own, left-aligned from the label's line.
     Lines(Vec<String>),
+    /// Words standing for a value that is not there (an empty seat, a value not read yet): quiet ink, and no
+    /// copy key, as there is nothing to copy.
+    Quiet(String),
 }
 
 /// The short form of an address or digest: its first six and last four, joined by an ellipsis.
@@ -444,17 +451,28 @@ fn tag_font() -> egui::FontId {
     egui::FontId::new(Type::Micro.size(), crate::fonts::medium())
 }
 
-/// A title tag's width: its words and 10 either side.
-fn title_tag_w(ui: &egui::Ui, s: &str) -> f32 {
-    ui.painter().layout_no_wrap(s.to_string(), tag_font(), c(C::AccentInk)).size().x + 20.0
+/// The gap between a row's title and the quiet word after it.
+const QUIET_GAP: f32 = 8.0;
+
+/// What follows a title, with the gap before it: a tag's words and 10 either side; a quiet word's words.
+fn title_tag_w(ui: &egui::Ui, s: &str, quiet: bool) -> f32 {
+    if quiet {
+        return QUIET_GAP + ui.painter().layout_no_wrap(s.to_string(), Type::Small.font(), c(C::Ink3)).size().x;
+    }
+    TAG_GAP + ui.painter().layout_no_wrap(s.to_string(), tag_font(), c(C::AccentInk)).size().x + 20.0
 }
 
-/// A title tag: 20 high, fully round, the accent's wash with its ink, 11 medium, its left edge at `at` and its
-/// middle on `at`'s line.
-fn title_tag(ui: &egui::Ui, at: egui::Pos2, s: &str) {
+/// What follows a title, its left edge `at`'s (the title's end) and its middle on `at`'s line: a tag 20 high, fully
+/// round, the accent's wash with its ink, 11 medium, 10 after the title; or the quiet word, 13 in the third ink, 8
+/// after it ("optional").
+fn title_tag(ui: &egui::Ui, at: egui::Pos2, s: &str, quiet: bool) {
     let p = ui.painter();
+    if quiet {
+        p.text(pos2(at.x + QUIET_GAP, at.y), egui::Align2::LEFT_CENTER, s, Type::Small.font(), c(C::Ink3));
+        return;
+    }
     let g = p.layout_no_wrap(s.to_string(), tag_font(), c(C::AccentInk));
-    let r = Rect::from_min_size(pos2(at.x, at.y - 10.0), vec2(g.size().x + 20.0, 20.0));
+    let r = Rect::from_min_size(pos2(at.x + TAG_GAP, at.y - 10.0), vec2(g.size().x + 20.0, 20.0));
     p.rect_filled(r, egui::CornerRadius::same(10), c(C::AccentWash));
     p.galley(pos2(r.left() + 10.0, r.center().y - g.size().y / 2.0), g, c(C::AccentInk));
 }
@@ -541,12 +559,13 @@ impl Form {
         use crate::band::Bound;
         let (slot, _) = self.bounds_of(card, slot);
         let at = |y: f32| if self.lines.iter().any(|l| (l - y).abs() < 0.5) && (y - card.top()).abs() >= 0.5 && (y - card.bottom()).abs() >= 0.5 { Bound::Line } else { Bound::Edge };
-        crate::band::block(slot, Radius::Card.px(), at(slot.top()), at(slot.bottom()))
+        crate::band::block(slot, self.corner, at(slot.top()), at(slot.bottom()))
     }
 
-    /// A row's slot across the card's edges (in a sheet, where a card's edges would be), and that card.
+    /// A row's slot across the edges of what it lies in (a sheet's or a form card's, its padding out from the
+    /// rows), and that.
     fn bounds_of(&self, card: Rect, slot: Rect) -> (Rect, Rect) {
-        let across = if self.sheet { tokens::FORM_PAD_X } else { 0.0 };
+        let across = if self.sheet { tokens::SHEET_PAD } else { 0.0 };
         let wide = |r: Rect| Rect::from_min_max(pos2(r.left() - across, r.top()), pos2(r.right() + across, r.bottom()));
         (wide(slot), wide(card))
     }
@@ -572,15 +591,15 @@ impl Form {
 
     /// The title (and its second line) at the left of a row, from `x`, within `room`, centred as a pair.
     #[allow(clippy::too_many_arguments)]
-    fn words(ui: &egui::Ui, rect: Rect, x: f32, title: &str, sub: &str, sub_mono: bool, room: f32, ink: egui::Color32, tag: Option<&str>) {
+    fn words(ui: &egui::Ui, rect: Rect, x: f32, title: &str, sub: &str, sub_mono: bool, room: f32, ink: egui::Color32, tag: Option<(&str, bool)>) {
         let p = ui.painter();
         let font = title_font();
-        let tag_w = tag.map(|s| TAG_GAP + title_tag_w(ui, s)).unwrap_or(0.0);
+        let tag_w = tag.map(|(s, quiet)| title_tag_w(ui, s, quiet)).unwrap_or(0.0);
         let ty = if sub.is_empty() { rect.center().y - TITLE_LINE / 2.0 } else { rect.center().y - (TITLE_LINE + SUB_GAP + Type::Small.line()) / 2.0 };
         let fit = crate::width::elide_to(ui, title, font.clone(), (room - tag_w).max(0.0));
         let tr = p.text(pos2(x, ty + TITLE_LINE / 2.0), egui::Align2::LEFT_CENTER, fit, font, ink);
-        if let Some(s) = tag {
-            title_tag(ui, pos2(tr.right() + TAG_GAP, ty + TITLE_LINE / 2.0), s);
+        if let Some((s, quiet)) = tag {
+            title_tag(ui, pos2(tr.right(), ty + TITLE_LINE / 2.0), s, quiet);
         }
         if sub.is_empty() {
             return;
@@ -626,7 +645,7 @@ impl Form {
         let used = child.min_rect();
         let title_room = ((if used.width() > 1.0 { used.left() - 16.0 } else { rx }) - x).max(0.0);
         let tag = self.next_tag.take();
-        Self::words(ui, rect, x, title, sub, sub_mono, title_room, ink, tag.as_deref());
+        Self::words(ui, rect, x, title, sub, sub_mono, title_room, ink, tag.as_ref().map(|(s, q)| (s.as_str(), *q)));
         let resp = if nav { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp };
         (resp, r)
     }
@@ -708,7 +727,12 @@ impl Form {
     /// it. Off: dimmed, not clickable (why on hover).
     /// The next row's title carries a small blue tag right after it (the wizard's "recommended").
     pub fn tag_next(&mut self, tag: &str) {
-        self.next_tag = Some(tag.to_string());
+        self.next_tag = Some((tag.to_string(), false));
+    }
+
+    /// The next row's title carries a quiet word right after it ("optional"), within the title's room.
+    pub fn quiet_next(&mut self, word: &str) {
+        self.next_tag = Some((word.to_string(), true));
     }
 
     pub fn go(&mut self, ui: &mut egui::Ui, title: &str, value: &str, enabled: bool, why: &str) -> egui::Response {
@@ -801,12 +825,17 @@ impl Form {
         let right = rect.right() - self.pad_x();
         icons::draw_glyph_turned(&p, Glyph::Chev, Rect::from_center_size(pos2(right - 7.5, rect.center().y), vec2(COPY_SIZE, COPY_SIZE)), c(C::Ink3), t * std::f32::consts::FRAC_PI_2);
         let x = rect.left() + self.pad_x();
-        let title_w = paint::galley(ui, title, Type::Body, c(C::Ink)).size().x;
-        let room = (right - COPY_SIZE - TRAIL_GAP - x - title_w - 16.0).max(0.0);
-        if !summary.is_empty() {
-            paint::at(&p, ui, pos2(right - COPY_SIZE - TRAIL_GAP, rect.center().y), egui::Align2::RIGHT_CENTER, summary, Type::Note, crate::palette::mix(c(C::Ink2), c(C::Ink), hot), room);
-        }
-        Self::words(ui, rect, x, title, "", false, (right - x).max(0.0), c(C::Ink), None);
+        // The title measured in the face it is drawn in; the summary takes what the title leaves, and the title
+        // what the summary then takes.
+        let title_w = ui.painter().layout_no_wrap(title.to_string(), title_font(), c(C::Ink)).size().x;
+        let lane = (right - COPY_SIZE - TRAIL_GAP - x).max(0.0);
+        let room = (lane - title_w - 16.0).max(0.0);
+        let summary_w = if summary.is_empty() {
+            0.0
+        } else {
+            paint::at(&p, ui, pos2(right - COPY_SIZE - TRAIL_GAP, rect.center().y), egui::Align2::RIGHT_CENTER, summary, Type::Note, crate::palette::mix(c(C::Ink2), c(C::Ink), hot), room).width() + 16.0
+        };
+        Self::words(ui, rect, x, title, "", false, (lane - summary_w).max(0.0), c(C::Ink), None);
         let _ = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         if t <= 0.0 {
             return None;
@@ -832,6 +861,7 @@ impl Form {
                     quiet: false,
                     sheet: self.sheet,
                     next_tag: None,
+                    corner: self.corner,
                 };
                 let r = add(ui, &mut inner);
                 self.label_max = self.label_max.max(inner.label_max);
@@ -861,9 +891,10 @@ impl Form {
         for (i, (label, v)) in rows.iter().enumerate() {
             let lines: Vec<&str> = match v {
                 Detail::Lines(l) => l.iter().map(String::as_str).collect(),
-                Detail::Mono(s) | Detail::Text(s) => vec![s.as_str()],
+                Detail::Mono(s) | Detail::Text(s) | Detail::Quiet(s) => vec![s.as_str()],
             };
-            let text = matches!(v, Detail::Text(_));
+            let quiet = matches!(v, Detail::Quiet(_));
+            let text = matches!(v, Detail::Text(_)) || quiet;
             let line_h = if lines.len() > 1 { 20.0 } else { 22.0 };
             let h = (lines.len() as f32 * line_h + 20.0).max(44.0);
             let (rect, _) = self.place(ui, h, egui::Sense::hover());
@@ -875,14 +906,16 @@ impl Form {
             p.text(pos2(x, ly), egui::Align2::LEFT_CENTER, *label, egui::FontId::new(14.0, egui::FontFamily::Proportional), c(C::Ink2));
             let key = Rect::from_center_size(pos2(right - (COPY_SIZE + 4.0) / 2.0, ly), vec2(COPY_SIZE + 4.0, COPY_SIZE + 4.0));
             let whole = lines.join("\n");
-            let kr = ui.interact(key, self.id.with((id_salt, "copy", i)), egui::Sense::click());
-            if kr.hovered() {
-                p.rect_filled(key, egui::CornerRadius::same(6), c(C::Tone));
-            }
-            icons::glyph_at(&p, Glyph::Copy, key.center(), COPY_SIZE, if kr.hovered() { c(C::Ink) } else { c(C::Ink3) });
-            if kr.clicked() {
-                ui.ctx().copy_text(whole.clone());
-                copied = Some(whole.clone());
+            if !quiet {
+                let kr = ui.interact(key, self.id.with((id_salt, "copy", i)), egui::Sense::click());
+                if kr.hovered() {
+                    p.rect_filled(key, egui::CornerRadius::same(6), c(C::Tone));
+                }
+                icons::glyph_at(&p, Glyph::Copy, key.center(), COPY_SIZE, if kr.hovered() { c(C::Ink) } else { c(C::Ink3) });
+                if kr.clicked() {
+                    ui.ctx().copy_text(whole.clone());
+                    copied = Some(whole.clone());
+                }
             }
             let vx = x + col + 28.0;
             let room = (key.left() - 28.0 - vx).max(20.0);
@@ -890,7 +923,7 @@ impl Form {
             for (k, l) in lines.iter().enumerate() {
                 let y = if lines.len() > 1 { first_y + k as f32 * line_h } else { rect.center().y };
                 let shown = if text { crate::width::elide_to(ui, l, font.clone(), room) } else { crate::width::elide_mid(ui, l, font.clone(), room) };
-                let at = p.text(pos2(vx, y), egui::Align2::LEFT_CENTER, &shown, font.clone(), c(C::Ink));
+                let at = p.text(pos2(vx, y), egui::Align2::LEFT_CENTER, &shown, font.clone(), if quiet { c(C::Ink3) } else { c(C::Ink) });
                 if shown != *l {
                     let _ = crate::layer::tip(ui.interact(at, self.id.with((id_salt, "whole", i, k)), egui::Sense::hover()), *l);
                 }
@@ -934,7 +967,13 @@ impl Form {
         let room = ((if used.width() > 1.0 { used.left() - 14.0 } else { right }) - tx).max(0.0);
         let font = egui::FontId::new(17.0, crate::fonts::strong());
         let ty = rect.center().y - words / 2.0;
-        let fit = crate::width::elide_to(ui, title, font.clone(), room);
+        // The state after the title is laid within the same room: the title gives way to it.
+        let state_w = state.map(|(_, w)| {
+            let dot = p.layout_no_wrap(" \u{b7} ".to_string(), font.clone(), c(C::Ink)).size().x;
+            let sw = p.layout_no_wrap(w.to_string(), egui::FontId::new(15.0, crate::fonts::strong()), c(C::Ink)).size().x;
+            dot + 16.0 + 6.0 + sw
+        });
+        let fit = crate::width::elide_to(ui, title, font.clone(), (room - state_w.unwrap_or(0.0)).max(0.0));
         let g = p.layout_no_wrap(fit, font.clone(), c(C::Ink));
         let tw = g.size().x;
         p.galley(pos2(tx, ty + 12.0 - g.size().y / 2.0), g, c(C::Ink));

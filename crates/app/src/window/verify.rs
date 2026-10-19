@@ -4,6 +4,28 @@
 use super::*;
 use zikaron_ui::inform;
 
+/// What the kit verified is: whole and signed, damaged (naming it), or no kit at all.
+fn kit_said(x: &crate::verifyx::Verified) -> (Mark, String) {
+    match &x.kit {
+        Some(k) if k.ok => (Mark::Ok, t(Key::U4KitGood).to_string()),
+        Some(k) => (Mark::Bad, fill1(Key::U4KitBad, &width::file_name(&k.subject))),
+        None => (Mark::Todo, t(Key::U4NotAKit).to_string()),
+    }
+}
+
+/// A record verification's head: how many do not match; else what the kit is; else all match. The one judgement
+/// the verify page's title and the home page's recent line both read.
+pub(super) fn verified_head(x: &crate::verifyx::Verified) -> (String, Mark) {
+    if !x.mismatches.is_empty() {
+        (fill1(Key::U4Mismatches, &x.mismatches.len().to_string()), Mark::Bad)
+    } else if x.kit.is_some() {
+        let (m, s) = kit_said(x);
+        (s, m)
+    } else {
+        (t(Key::U4NoMismatch).to_string(), Mark::Ok)
+    }
+}
+
 impl Win {
     pub(super) fn verify_page(&mut self, ui: &mut egui::Ui, tab: u8, now: f64) {
         use crate::nav::tab as T;
@@ -82,11 +104,7 @@ impl Win {
                 _ => None,
             };
             let fetched = remote.as_ref().map(|b| fill2(Key::CheckFromAddress, b, &x.kit.as_ref().map(|k| k.entries + k.files + k.proofs + 1).unwrap_or(0).to_string())).unwrap_or_default();
-            let kit = match &x.kit {
-                Some(k) if k.ok => (Mark::Ok, t(Key::U4KitGood).to_string()),
-                Some(k) => (Mark::Bad, fill1(Key::U4KitBad, &width::file_name(&k.subject))),
-                None => (Mark::Todo, t(Key::U4NotAKit).to_string()),
-            };
+            let kit = kit_said(x);
             let review = match &x.review {
                 Ok(a) if a.unanchored.is_empty() && a.unread.is_empty() && a.anchored > 0 => (Mark::Ok, fill1(Key::U4AnchorsMatch, &a.anchored.to_string())),
                 // A network left out this pass: what no read chain reaches is not called unanchored.
@@ -102,14 +120,7 @@ impl Win {
                 Ok(a) => (if a.label == zikaron::tokens::Label::Complete.as_str() { Mark::Ok } else { Mark::Warn }, label_human(&a.label)),
                 Err(_) => (Mark::Todo, t(Key::U4IssuerAuditUnread).to_string()),
             };
-            // The head: how many do not match; else what the kit is; else all match.
-            let (title, title_mark) = if !x.mismatches.is_empty() {
-                (fill1(Key::U4Mismatches, &x.mismatches.len().to_string()), Mark::Bad)
-            } else if x.kit.is_some() {
-                (kit.1.clone(), kit.0)
-            } else {
-                (t(Key::U4NoMismatch).to_string(), Mark::Ok)
-            };
+            let (title, title_mark) = verified_head(x);
             let worst = [title_mark, review.0, label.0].into_iter().filter(|m| *m != Mark::Todo).max_by_key(|m| match m {
                 Mark::Bad => 2,
                 Mark::Warn => 1,

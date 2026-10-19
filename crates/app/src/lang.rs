@@ -2093,6 +2093,9 @@ pub enum Key {
     CliPathTakenSay,
     CliPathProvidedSay,
     CliPathUnsupportedSay,
+    SetCliAiApp,
+    DoCopyAiConfig,
+    SaidCopiedAiConfig,
     SaidCliPathOn,
     SaidCliPathOff,
     TaskCliPath,
@@ -2100,7 +2103,7 @@ pub enum Key {
 
 impl Key {
     /// All keys, in [`TABLE`] order.
-    pub const ALL: [Key; 2034] = [
+    pub const ALL: [Key; 2037] = [
         Key::PageRevoke,
         Key::PageAdopt,
         Key::PageSucceed,
@@ -4132,6 +4135,9 @@ impl Key {
         Key::CliPathTakenSay,
         Key::CliPathProvidedSay,
         Key::CliPathUnsupportedSay,
+        Key::SetCliAiApp,
+        Key::DoCopyAiConfig,
+        Key::SaidCopiedAiConfig,
         Key::SaidCliPathOn,
         Key::SaidCliPathOff,
         Key::TaskCliPath,
@@ -4139,7 +4145,7 @@ impl Key {
 }
 
 /// Every UI string: `(key, Chinese, English)`. One row per key, both languages in each row.
-pub const TABLE: [(Key, &str, &str); 2034] = [
+pub const TABLE: [(Key, &str, &str); 2037] = [
     (Key::PageRevoke, "撤销授权", "Revoke grant"),
     (Key::PageAdopt, "导入上链存证", "Import anchor proofs"),
     (Key::PageSucceed, "移交账本", "Hand over ledger"),
@@ -6186,6 +6192,9 @@ pub const TABLE: [(Key, &str, &str); 2034] = [
     (Key::CliPathTakenSay, "被其他安装占用:{0}", "Taken by another install: {0}"),
     (Key::CliPathProvidedSay, "已由安装包提供", "Provided by the installed package"),
     (Key::CliPathUnsupportedSay, "此安装方式不支持", "Not supported for this install"),
+    (Key::SetCliAiApp, "接入 AI 应用", "Connect an AI app"),
+    (Key::DoCopyAiConfig, "复制配置", "Copy config"),
+    (Key::SaidCopiedAiConfig, "已复制接入配置", "Connection config copied"),
     (Key::SaidCliPathOn, "命令行已接进终端", "The command line is in the terminal now"),
     (Key::SaidCliPathOff, "命令行已从终端移除", "The command line is out of the terminal now"),
     (Key::TaskCliPath, "把命令行接进终端", "Putting the command line in the terminal"),

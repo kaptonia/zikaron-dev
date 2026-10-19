@@ -148,7 +148,7 @@ struct Win {
     asker: crate::platform::Asker,
     /// The native window the system's material lies under, and whether that material is in the dark appearance
     /// now (`None`: no material, the app paints its own ground).
-    backdrop: Option<(zikaron_os::Window, bool)>,
+    backdrop: Option<(zikaron_os::Window, bool, bool)>,
     /// Whether this window follows the system's "reduce motion" (the real window does; a headless frame keeps
     /// full motion, so its readings do not depend on the machine it runs on), what it said last, and when.
     asks_motion: bool,
@@ -205,10 +205,12 @@ impl Win {
         zikaron_ui::probe::begin(ctx);
         let now = ctx.input(|i| i.time);
         let blend = skin::follow(ctx, self.appearance());
-        if let Some((w, dark)) = self.backdrop.as_mut() {
-            if (blend > 0.5) != *dark {
-                *dark = blend > 0.5;
-                zikaron_os::backdrop_appearance(*w, *dark);
+        // The window's appearance follows the app's: light or dark, and whether it follows the system's.
+        let follows = self.appearance() == skin::Appearance::System;
+        if let Some((w, dark, followed)) = self.backdrop.as_mut() {
+            if (blend > 0.5) != *dark || follows != *followed {
+                (*dark, *followed) = (blend > 0.5, follows);
+                zikaron_os::backdrop_appearance(*w, *dark, *followed);
             }
         }
         // Every landing goes through the one registry (`landing`).
@@ -1406,12 +1408,19 @@ impl Ux {
         self.gate_file_ready = false;
     }
 
-    /// "Back" on the recovery panel: return to the unlock card and clear the twelve cells, the key file
+    /// Whether a recovery passcode row's own turn goes on: it waits for its second entry, or its entry was just
+    /// refused (the row shakes) and the retry is its.
+    fn row_turn(&self, now: f64) -> bool {
+        (!self.pin_again.is_empty() && self.pin.is_empty()) || self.pin_shake.is_some_and(|at| now - at < 0.5)
+    }
+
+    /// "Back" on the recovery panel: return to the unlock card and clear the twelve cells, the key file and its
     /// password and both new passcode cells (wiped inside the secret type).
     fn gate_back(&mut self) {
         for w in self.pin_words.iter_mut() {
             w.clear();
         }
+        self.pin_ks_path.clear();
         self.pin_ks_pw.clear();
         self.pin.clear();
         self.pin_again.clear();

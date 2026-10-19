@@ -57,7 +57,9 @@ pub fn fold_ex<R>(ui: &mut egui::Ui, id_salt: &str, title: &str, first_open: boo
     // The body, drawn at full height into a clipped child whose visible height grows with `t`.
     let h_id = id.with("h");
     let full = ui.data(|d| d.get_temp::<f32>(h_id)).unwrap_or(0.0);
-    let shown_h = if t >= 1.0 { full } else { full * t };
+    // Under reduced motion the body takes or gives up its height at once (it still fades with `t`).
+    let grow = if motion::reduced(ui.ctx()) { if open { 1.0 } else { 0.0 } } else { t };
+    let shown_h = if grow >= 1.0 { full } else { full * grow };
     let top = ui.cursor().min;
     let w = ui.available_width();
     let room = Rect::from_min_size(top, vec2(w, f32::INFINITY));
@@ -74,7 +76,7 @@ pub fn fold_ex<R>(ui: &mut egui::Ui, id_salt: &str, title: &str, first_open: boo
         // Laid out again at once with the new size, so no frame is shown placed by the old one.
         ui.ctx().request_discard("fold height changed");
     }
-    let take = if t >= 1.0 { measured } else { measured.min(full.max(measured) * t) };
+    let take = if grow >= 1.0 { measured } else { measured.min(full.max(measured) * grow) };
     ui.advance_cursor_after_rect(Rect::from_min_size(top, vec2(w, take.max(0.0))));
     // Opened by a press just now: the page follows the body as it grows (its foot 32 above the bottom; the
     // scroll never takes the head past the top).
@@ -86,8 +88,8 @@ pub fn fold_ex<R>(ui: &mut egui::Ui, id_salt: &str, title: &str, first_open: boo
     Some(r)
 }
 
-/// How far above the bottom a body opened into view ends.
-pub const REVEAL_FOOT: f32 = 32.0;
+/// How far above the bottom a body opened into view ends: the one measure for a fold and a floating card.
+pub use crate::layer::REVEAL_FOOT;
 
 /// Bring `want` into view in the area `ui` scrolls in, at once (the caller runs it each frame of its own
 /// growth): no scroll when it is in view; else the least scroll that shows it, never taking its top past the

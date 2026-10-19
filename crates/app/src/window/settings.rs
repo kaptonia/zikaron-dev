@@ -111,7 +111,11 @@ impl Win {
             State::Provided => (true, false, t(Key::CliPathProvidedSay).to_string()),
             State::Unsupported(_) => (false, false, t(Key::CliPathUnsupportedSay).to_string()),
         };
+        // "Connect an AI app": the config that starts the command line's MCP server, copied; grey where the command
+        // line cannot be reached from outside the app (a disk image opened in place, an AppImage), and why on hover.
+        let config = self.shell.ai_config.clone();
         let mut flip = false;
+        let mut copy = false;
         stagger(ui, 0, |ui| {
             card::section(ui, t(Key::SetCliTerminal), "", |ui| {
                 card::form(ui, |ui, f| {
@@ -120,11 +124,19 @@ impl Win {
                     if let State::Unsupported(why) = &state {
                         f.fold(ui, "cli-path-why", t(Key::SetEvidence), "", |ui, f| f.note(ui, why));
                     }
+                    copy = f.with(ui, t(Key::SetCliAiApp), "", |ui| {
+                        let k = key::Key::new(t(Key::DoCopyAiConfig), Role::Secondary).enabled(config.is_some());
+                        key::show(ui, if config.is_some() { k } else { k.why(t(Key::CliPathUnsupportedSay)) }).clicked()
+                    });
                 });
             });
         });
         if flip {
             self.act(Action::SetCliPath { on: !on }, now);
+        }
+        if let Some(c) = config.filter(|_| copy) {
+            ui.ctx().copy_text(c);
+            self.toasts.say(t(Key::SaidCopiedAiConfig), Tone::Note, now);
         }
     }
 
@@ -323,7 +335,7 @@ impl Win {
         let backup_at = match &seen {
             Some(b) if b.at == crate::identity::NO_BACKUP_AT => (Mark::Todo, t(Key::IdBackupNever).to_string()),
             Some(b) if b.exists && b.opens => (Mark::Ok, t(Key::IdBackupThere).to_string()),
-            Some(_) => (Mark::Bad, fill1(Key::SetReadFailedNow, t(Key::IdBackupGone))),
+            Some(_) => (Mark::Bad, t(Key::IdBackupGone).to_string()),
             None => (Mark::Todo, t(Key::SetNotRead).to_string()),
         };
         // The primary identity, the only one that recovers the passcode: this one, or another one via "set as
@@ -356,7 +368,14 @@ impl Win {
             Mark::Todo => card::Fact::Quiet(&gas.1),
             _ => card::Fact::Warn(&gas.1),
         };
-        let backed_fact = if backed.0 == Mark::Ok { card::Fact::Text(&backed.1) } else { card::Fact::Warn(&backed.1) };
+        // A backup file that is gone, or no longer opens, is flagged here, above the backup state it undoes.
+        let backed_fact = if backup_at.0 == Mark::Bad {
+            card::Fact::Warn(&backup_at.1)
+        } else if backed.0 == Mark::Ok {
+            card::Fact::Text(&backed.1)
+        } else {
+            card::Fact::Warn(&backed.1)
+        };
         let mut copy = false;
         stagger(ui, 0, |ui| {
             card::form(ui, |ui, f| {
@@ -925,6 +944,8 @@ impl Win {
         });
         match pick {
             Some(2) => self.ux.proxy_manual = true,
+            // The saved choice pressed again (from "enter one" left unsaved): back to it, nothing written.
+            Some(i) if i == cur => self.ux.proxy_manual = false,
             Some(i) if i != shown => {
                 self.ux.proxy_manual = false;
                 self.act(Action::SetProxy { choice: if i == 0 { SYSTEM } else { NONE }.to_string() }, now);

@@ -27,15 +27,10 @@ impl Win {
         out
     }
 
-    /// Ledger state ("normal / problems"): a broken chain is a problem on the last report alone; otherwise the
-    /// conclusion the shell judged from one generation, a report and the table read for its lamps
-    /// (`Shell::ledger_ok`), which stands until the next such pair: a refresh never shows a mix of the two.
+    /// Ledger state ("normal / problems"): the conclusion the shell judged from the last report
+    /// (`Shell::ledger_ok`), which stands until the next judgement: a refresh never shows a mix of two.
     pub(super) fn ledger_state(&self) -> Option<bool> {
-        match self.shell.audit.as_ref() {
-            None => None,
-            Some(a) if a.broken => Some(false),
-            Some(_) => self.shell.ledger_ok,
-        }
+        self.shell.audit.as_ref().and(self.shell.ledger_ok)
     }
 
     /// The records page: a one-line drop zone for a new record, search, then the table (record, state, first

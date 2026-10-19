@@ -15,7 +15,9 @@ The command line `zikaron` offers the same ledger actions as the window, one ver
 ledger folders and on the ledger mirrors and record kits the app exports; the local data the app keeps sealed it
 reads and writes only while "With a credential" is on in the app's Settings > Command line and AI control, with the credential
 that switch issues. With `--home`, writing and putting on chain are done by the running desktop app in its own data folder,
-and the entries show in its window at once.
+and the entries show in its window at once. `zikaron mcp` lets AI apps call these verbs through the Model Context Protocol
+(MCP), by the same two ways and with no right of its own; the configuration is copied with "Connect an AI app" in
+Settings > Command line and AI control.
 
 ## Download
 

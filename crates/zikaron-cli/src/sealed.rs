@@ -22,7 +22,7 @@ use zikaron_seal::{Code, Trouble};
 
 /// Whether `ledger` (as given to `--ledger`) is the ledger of a home the desktop keeps sealed.
 pub fn is_home(ledger: &str) -> bool {
-    Path::new(ledger).parent().is_some_and(|h| env::label_path(h).is_file())
+    env::label_path(&home_of(ledger)).is_file()
 }
 
 /// A sealed home opened for one write: its ledger and what reads and writes it, the signing key and its address,
@@ -162,6 +162,7 @@ pub fn open(ledger: &str, now: u64) -> Result<Opened, Trouble> {
 pub struct Reading {
     home: PathBuf,
     machine: PathBuf,
+    account: String,
     local: LocalKey,
     names: NameKey,
     number: String,
@@ -175,7 +176,7 @@ pub struct Reading {
 pub fn read(ledger: &str, now: u64) -> Result<Reading, Trouble> {
     crate::seam();
     let home = home_of(ledger);
-    let Unlocked { machine, local, names, .. } = unlock(now)?;
+    let Unlocked { machine, account, local, names, .. } = unlock(now)?;
     match zikaron_seal::writer::mark_read(&home) {
         zikaron_seal::writer::Mark::None => {}
         zikaron_seal::writer::Mark::Machine(m) if m == zikaron_seal::writer::this_machine(&machine)? => {}
@@ -184,7 +185,7 @@ pub fn read(ledger: &str, now: u64) -> Result<Reading, Trouble> {
     }
     let label = env::read_label(&home, &local)?.ok_or_else(|| Trouble::new(Code::LocalSeal, env::label_path(&home).display().to_string()))?;
     let items = zikaron_seal::ledger::Ledger::open(Path::new(ledger))?.pile(&keys(&local, &names, &label.number))?.items;
-    Ok(Reading { home, machine, local, names, number: label.number, items })
+    Ok(Reading { home, machine, account, local, names, number: label.number, items })
 }
 
 /// One sealed file's plain bytes (`None` when it is not there): at `dir`/`rel`, owned by `owner`.
@@ -221,6 +222,12 @@ impl Reading {
     /// set.
     pub fn ground(&self) -> Result<zikaron_seal::ground::Ground, Trouble> {
         ground_of(&self.local, &self.names, &self.home, &self.number)
+    }
+
+    /// What this machine's sealed settings say about the command line (`zikaron_seal::machine`): its proxy among
+    /// them, as a write reads it.
+    pub fn machine_settings(&self) -> Result<zikaron_seal::machine::Cli, Trouble> {
+        zikaron_seal::machine::read(&self.machine, &self.account, &self.local, &self.names)
     }
 
     /// The terms document kept when the grant `grant` (its id, `0x` and lowercase) was signed, as its path in a

@@ -43,6 +43,7 @@ not repeated here.
    base layer; the command line does not merge, rewrite or translate them.
 6. **`--now` injection.** Deadlines and windows are judged only by chain time and the injected now;
    without `--now` nothing is injected.
+7. **One exception: `mcp`.** Rules 1, 2 and 4 hold for every verb but `mcp`. `zikaron mcp` speaks the Model Context Protocol on stdin and stdout: for as long as its input stays open it writes one message per line, each line one canonical JSON value (law §3.4) followed by a line end. Its one writer is `out::frame`, which returns so the next message can follow; every other verb still prints once through `out::emit`, which never returns. `mcp` given any flag is misuse and writes zero bytes, as rule 4 says. Section 13 is the protocol.
 
 ## 2 · Exit codes
 
@@ -261,6 +262,7 @@ addition, `scan` passes through the core's no-label answer when the basis is mal
 | `show` | 0 | shell | `author`, `entryId`, `entryType`, `prev`, `seq`, `value` |
 | | 1 | shell | `E_ENTRY` + `token`; with `--entry` on a ledger folder, `E_LEDGER` + `detail`, `names?`, `count?` when the folder or the named entry file does not read; with `--entry` on a mirror bundle or record package, `E_ENTRY_ABSENT` + `entryId` when no entry there has that id, or the `--ledger` refusals of `audit` |
 | `contract` | 0 | shell | `exits`, `ok`, `reasons`, `standsFor`, `verbs` (section 10) |
+| `mcp` | 0 | protocol | no one value: one message per line while its input is open (section 13); exit 0 once it closes |
 
 **`init` only writes to an empty ledger: one ledger, one root.** Genesis is the first entry. If the
 ledger already holds anything (entries, unreadable stray files, bytes whose name fits an entry but
@@ -310,8 +312,13 @@ member); without it every record is `unread`, never "not anchored".
 
 **`scan --ledger` declares the home's basis.** In place of `--basis`, `--ledger` names a home's ledger; the basis
 is the one the desktop's self-audit declares: the chain, the registry and the start block from the home's settings,
-the senders of its ledger, and the chain's head, the lowest its `--endpoint`s say, as the last block. `--basis` and
+the senders of its ledger, and the chain's head, the lowest its nodes say, as the last block. `--basis` and
 `--ledger` together, or neither, is misuse; `--ledger` naming a folder that is no home's is misuse (`--ledger`).
+With neither `--endpoint` nor `--fixture`, a home's `--ledger` also gives the nodes: those its settings list for
+that chain, read with the credential as `anchor --ledger` reads them (section 12), and, without `--proxy`, this
+machine's proxy as a send takes it; the credential's refusals are as for any read of the home (section 12); no
+node set for that chain is `E_UNREACHABLE` (`detail` `NO_ENDPOINT <chain id>`), no chain set `E_SCAN` with `token`
+`E_NO_BASIS`; the nodes are never said. A plain folder with neither is misuse as before (`--fixture --endpoint`).
 
 **`check-grant` takes a grant file as it takes a grant entry.** When `--grant` starts as the app's
 single-file bundle, it is opened by the same reading the app uses (`zikaron_glue::grantfile`: the
@@ -499,7 +506,7 @@ cases apart: **"left to the law" is a refusal by the law, "misuse" is a refusal 
 | `--kind` | free token (`kind` of `succeed`; the shell keeps no allow-list) | the body lacks this member; left to the law |
 | `--effective` | integer, at most 9007199254740991 (past it, within 64 bits or not, misuse `E_ARGS --effective`) | the body lacks this member; left to the law |
 | `--subject` | hex32 (optional member of `annotate`; for `retract`, the record being deleted) | `annotate`: member absent; `retract`: refused by the convention (`E_RETRACTION` + `E_RETRACT_SHAPE`) |
-| `--endpoint` | `<chain id>=<url>`, repeatable; the url `http://` or `https://`, scheme and host in any case; white space at either end of the value is not part of it, and no white space is allowed inside the value (around the `=` or in the url) | `anchor` takes **exactly one** (more is misuse: this layer has no failover); `scan` takes either this or `--fixture`; none at all is misuse; every value is read before any node is asked, and one that does not read is misuse whose subject never echoes it (the url may carry a key): its place and length, `#3 (40 bytes)`, or, when the part before the first `=` is a chain id, that id and the length after the `=`, `#3 (1= + 38 bytes)` |
+| `--endpoint` | `<chain id>=<url>`, repeatable; the url `http://` or `https://`, scheme and host in any case; white space at either end of the value is not part of it, and no white space is allowed inside the value (around the `=` or in the url) | `anchor` takes **exactly one** (more is misuse: this layer has no failover); `scan` takes either this or `--fixture`, or neither with `--ledger` naming a home (its own nodes, section 6); none at all otherwise is misuse; every value is read before any node is asked, and one that does not read is misuse whose subject never echoes it (the url may carry a key): its place and length, `#3 (40 bytes)`, or, when the part before the first `=` is a chain id, that id and the length after the `=`, `#3 (1= + 38 bytes)` |
 | `--form` | `registry` or `bare` | misuse; a word outside the table is misuse |
 | `--registry` | hex20 registry contract address | missing with `--form registry`, or given with `--form bare`: misuse (`E_ARGS --registry`), before any node is asked |
 | `--hash` | hex32, repeatable | at least one of this and `--calldata`; both absent is misuse; with `--calldata` given, not used |
@@ -562,6 +569,7 @@ Each verb's closed list, as its row in `ACCEPTS` in `verbs.rs` names it. The fiv
 | `take-over` | `ledger` `handoff` |
 | `show` | `ledger` `entry` `path` |
 | `contract` | none |
+| `mcp` | none |
 
 ## 9 · Environment variables
 
@@ -663,9 +671,10 @@ as `anchor --ledger` does (section 6): the chain already holding the anchors is 
 The line for people on stderr says each of these in the system's language (section 3), the desktop's own
 refusals in the sentence the desktop gives them in either language.
 
-**The verbs and the flags each takes beside `--home`.** The other fourteen verbs do not take `--home` (it is
+**The verbs and the flags each takes beside `--home`.** The other fifteen verbs do not take `--home` (it is
 misuse with them): their answers are keys, files or readings that are not the desktop's to give (`keygen` would
-hand out a private key), or they do not touch a data folder.
+hand out a private key), or they do not touch a data folder. `mcp`'s write tools take this way while this machine
+has no credential (section 13).
 
 | Verb | Flags beside `--home` |
 |---|---|
@@ -695,6 +704,9 @@ may write the data ZIKARON Desk keeps sealed. The higher outranks the lower, so 
 | off | off | it does not write this data | closed |
 | off | on | through the door, while the desktop is unlocked | open while unlocked |
 | on | on or off (greyed, cannot be switched) | alone, with the credential, the desktop open or not | closed |
+
+`mcp`'s write tools follow the same switches (section 13): with the credential while it is in this machine's folder,
+through the door otherwise; it adds no way and no switch of its own.
 
 **The credential.** Turning "With a credential" on asks for the passcode and a validity (minutes, hours or days, or
 never expiring). The desktop then writes a credential file in this user's machine folder, readable and writable
@@ -777,7 +789,8 @@ no writer lock (it changes nothing; each file the desktop writes meanwhile lands
 that moment is no refusal. What else a read takes from the home it takes the same way: `kit-export` the originals
 of the chosen records from this machine's index of signed files, the terms documents kept for the chosen grants and
 the home's anchoring point from its settings,
-`scan --ledger` the chain, the registry and the start block from its settings.
+`scan --ledger` the chain, the registry and the start block from its settings, and with no `--endpoint` the
+home's nodes for that chain, the proxy from this machine's settings unless `--proxy` is given.
 
 ### Handing a ledger between two places
 
@@ -806,3 +819,86 @@ chain at its next self-audit and queues for anchoring only what that reading fin
 again an entry the command line anchored. A plain folder keeps no queue: for it the command line sends only what
 `anchor` is given (`audit` with a `scan` reading says which entries are anchored); a home's queue is sent by
 `anchor --ledger` (what is sent, above).
+
+## 13 · `mcp`: the Model Context Protocol
+
+`zikaron mcp` lets an AI app ask the command line through the Model Context Protocol, without a terminal. It is not
+a door and holds no right of its own: each tool call is a verb of this command line, run as this same program in a
+process of its own with its arguments laid out as a person would type them, and its answer is that process's answer.
+It takes no flag (one given is misuse, exit 2, zero bytes).
+
+**Transport.** Standard input and standard output only, one JSON-RPC 2.0 message per line, each line ending in one
+line end (section 1, rule 7). Nothing listens on a port or a local channel and nothing is written to a file; lines
+for people never go to stdout. JSON-RPC's error codes are negative: an error's `code` is written with its sign, the
+one number of a message outside the law's integers. When the input closes, the call being done finishes and `mcp`
+exits 0.
+
+**Versions and methods.** `2025-11-25` and `2025-06-18` are spoken: `initialize` asking for either is answered with
+it, asking for another with `2025-11-25`, and the client decides whether to go on. The one capability is `tools`
+(`listChanged` false); `serverInfo` is `zikaron` and this program's version. The methods are `initialize`,
+`notifications/initialized`, `ping`, `tools/list`, `tools/call` and `notifications/cancelled`; any other is answered
+`-32601`. A message is read by the law's reader: a number that is not one of the law's integers (a sign, a
+fraction, an exponent, past 2^53 − 1), a container past depth 128 or a member given twice is answered `-32600` with
+`data` naming the token and where it stands (`at`, member names and places joined by `.`); a line that is not JSON
+is answered `-32700`. Members the protocol adds that this version does not know are passed over.
+
+**Calls.** `tools/call` is done one at a time in the order calls come; `ping` and `initialize` are answered as they
+come. A call is the verb its tool names with each parameter given as the flag of that name (`window-from` as
+`--window-from`), a repeated flag once per value in the order given, stdin empty, the environment `mcp`'s own
+(language and proxy variables with it), and no deadline. The settings, the credential's term, the language and the
+proxy are read again by that process; `mcp` never opens the master key nor reads a sealed file.
+
+**The way a write goes**, judged at each call by the same judgement as section 11's `ALONE`: this machine's folder
+holds the credential (section 12), the write is `--ledger <home>/ledger`; otherwise it is `--home <home>` (section
+11). A credential that does not open or has expired, and both ways closed, are answered by the command as typed,
+with its code and sentence; `mcp` adds none.
+
+**The tools** are read off the verb table (`mcp.rs` reads `verbs::HOME` and `ACCEPTS`; the tests pin the list):
+
+| Tool | Parameters | Writes |
+|---|---|---|
+| `history` | `home` `file` `note` | yes |
+| `grant` | `home` `grantee` `work` `terms` `history` `window-from` `window-to` `scope` `upstream` | yes |
+| `revoke` | `home` `grant` `case` | yes |
+| `adopt` | `home` `anchors` `attestor` `attestation` | yes |
+| `annotate` | `home` `subject` `note` | yes |
+| `retract` | `home` `subject` `note` | yes |
+| `kit-export` | `home` `entry` `note` `out` `as` | yes (a record package at `out`) |
+| `anchor` | `home` | yes; it sends this home's queue as section 12's "putting on chain from the command line" says, spending this identity's gas when sending is automatic (`destructiveHint`, `openWorldHint`) |
+| `show` | `ledger` `entry` `path` | no |
+| `audit` | `ledger` `root` `input` `fragment` `unavailable` | no |
+| `scan` | `home` (given as `--ledger <home>/ledger`: the home's chain settings and its nodes, section 6) | no |
+| `check-grant` | `ledger` `root` `input` `fragment` `unavailable` `now` `grant` | no |
+| `chain-check` | `ledger` `root` `hop` `now` `input` `fragment` `unavailable` | no |
+| `depth` | `ledger` `root` `work` `input` `fragment` `unavailable` | no |
+| `badge` | `decode` | no |
+| `kit-verify` | `kit` `fragment` `unavailable` | no |
+| `contract` | none | no |
+
+No other verb is a tool: not `keygen` (it would hand a private key over), not a way that takes `--key` or
+`--key-file` (`init` without a home, the direct `anchor`, `attest`, `fpm-sign`, `ack-sign`), not `succeed` (done on
+the desktop by hand), not `hand-over` or `take-over`, not the desktop's fee bump; and not a write's `ledger`, `key`,
+`root`, `seq`, `prev`, `endpoint` or `proxy`, nor `audit`'s `out`, `badge`'s `encode`, or `scan`'s `endpoint`, `fixture`,
+`basis`, `adoptions` and `proxy`. A parameter is a string, a repeated one a list of strings. A path (`home`, `ledger`,
+`input`, `fragment`, `history`'s `file`, `adopt`'s `anchors`, `kit-export`'s `out`, `kit-verify`'s `kit`, `show`'s
+`path`, `check-grant`'s `grant`, each side of a `chain-check` `hop`, `badge`'s `decode`) is taken whole only. Each
+tool's description is one sentence of a closed table, in the system's language (section 3), with nothing from a
+ledger.
+
+**Results.** The text is the process's stdout, the canonical JSON value as it came; `structuredContent` is
+`{"answer":<that value>,"exit":<its exit code>}`. Two kinds are marked `isError`: the process exiting 2 (misuse:
+stdout is empty, so the text is its two stderr lines), and a parameter `mcp` refuses itself before anything runs (a
+path not whole, a parameter not the tool's, a value of the wrong kind, a write without `home`), said in the same two
+lines (`E_ARGS --home` and the sentence; a parameter not the tool's by its place and length), with `exit` 2. Exits
+0, 1, 3 and 4 are answers, never errors (law §9.4). A tool name not in the table is answered `-32602`.
+
+**Cancelling.** A read being done is stopped and not answered; a write being done is not stopped (a send cut halfway
+cannot be undone) and is answered when done, so the client knows what was written; a call not started is not done.
+The desktop's `CLOSED` is said as it is (what was started may have been done), never tried again.
+
+**Ledger text is data.** Notes, statements, other ledgers' content and nodes' replies in an answer are passed as
+they came; nothing is rewritten or picked out of them.
+
+**For AI apps.** Settings > Command line and AI control, "Connect an AI app", copies the configuration that starts
+this: `{"mcpServers":{"zikaron":{"args":["mcp"],"command":"<this machine's zikaron, its full path>"}}}`. The key is
+grey where the command line cannot be reached from outside the app (a disk image opened in place, an AppImage).

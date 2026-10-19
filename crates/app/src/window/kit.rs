@@ -256,7 +256,8 @@ impl Win {
             ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), tk::KEY_H), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = tk::S2;
                 // The page's only primary key.
-                export_open = key::show(ui, key::Key::new(t(Key::U3KitKey), Role::Primary).enabled(ready).phase(phase).why(t(Key::U3KitNothingPicked))).clicked();
+                let why = t(if in_pick.is_empty() { Key::U3KitNothingPicked } else { Key::KitNameRefused });
+                export_open = key::show(ui, key::Key::new(t(Key::U3KitKey), Role::Primary).enabled(ready).phase(phase).why(why)).clicked();
                 cancel = key::key(ui, t(Key::CfBack), Role::Secondary, true).clicked();
             });
             self.stage_line(ui, crate::task::Kind::Kit);
@@ -293,7 +294,7 @@ impl Win {
         if cancel {
             self.back(now);
         }
-        let export = self.kit_sheets(ui.ctx(), in_pick.len());
+        let export = self.kit_sheets(ui.ctx(), in_pick.len(), ready);
         if let Some(work) = read_depth {
             self.act(Action::ReadDepth { work }, now);
         }
@@ -394,8 +395,9 @@ impl Win {
     /// The kit page's own sheets: where the export lands (the entries and the folder, "choose folder" at the
     /// bottom left, "export"; up until the export lands), and a kit exported on this machine (its place and id,
     /// its fetch address with "save", "delete local copy" with a second press to confirm, "close"). Any other
-    /// sheet opening closes them. Returns whether "export" was pressed.
-    fn kit_sheets(&mut self, ctx: &egui::Context, entries: usize) -> bool {
+    /// sheet opening closes them. Returns whether "export" was pressed. `ready` is the page's own judgement (entries
+    /// picked, no attachment refused), judged again every frame the sheet is up.
+    fn kit_sheets(&mut self, ctx: &egui::Context, entries: usize, ready: bool) -> bool {
         let Some(open) = kit_sheet_get(ctx) else { return false };
         if self.any_sheet() {
             kit_sheet_set(ctx, None);
@@ -409,7 +411,7 @@ impl Win {
                     return false;
                 }
                 let at = self.typed.kit_out.clone();
-                let ready = Self::landing_ok(&at);
+                let ready = ready && Self::landing_ok(&at);
                 let phase = self.phase_of(crate::task::Kind::Kit);
                 let (mut go, mut close, mut picked) = (false, false, None);
                 let out = sheet::show(

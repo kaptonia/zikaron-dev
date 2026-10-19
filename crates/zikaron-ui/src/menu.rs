@@ -164,8 +164,7 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
     let (rect, origin) = (drop.rect, drop.origin);
     crate::layer::card_at(ctx, id, rect);
     let layer = egui::LayerId::new(egui::Order::Foreground, id.with("menu"));
-    let scale = 0.97 + 0.03 * e;
-    ctx.set_transform_layer(layer, egui::emath::TSTransform { scaling: scale, translation: origin.to_vec2() * (1.0 - scale) + drop.moved * (1.0 - e) });
+    drop.enter(ctx, layer, e);
     let mut picked = None;
     // The lens: which identity rows there are, where each sits, and which one it frames now.
     let lens = items.iter().any(|it| matches!(it, Item::Who(_)));

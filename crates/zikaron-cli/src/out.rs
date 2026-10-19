@@ -11,7 +11,9 @@
 //! - [`misuse`] writes stderr only and exits.
 //!
 //! So every run ends either through `misuse` with exit 2 and zero bytes on stdout, or through `emit` with
-//! exactly one canonical value and the table's exit code. An answer may carry one line for people
+//! exactly one canonical value and the table's exit code. One verb is the exception (CLI-SCHEMA §1 rule 7):
+//! `mcp` writes one message per line through [`frame`], which returns so the next can follow, and ends through
+//! [`finish`] when its input closes; no other verb calls either. An answer may carry one line for people
 //! ([`Answer::told`]), which `emit` writes to stderr before stdout; it is not part of the contract, and stdout and
 //! the exit code are the same with or without it. The tests also scan that stdout is written only in
 //! this file and that `Exit::Misuse` appears only here and in `codes.rs`.
@@ -171,6 +173,31 @@ pub fn emit(a: Answer) -> ! {
     let _ = out.flush();
     drop(out);
     std::process::exit(code as i32)
+}
+
+/// One message of `mcp` (CLI-SCHEMA §1 rule 7, §13): one canonical value and a line end, flushed. It returns, so
+/// the next message can follow. Only `mcp` calls it.
+///
+/// JSON-RPC's error codes are negative and the law's integers are not: a message's error code is written with its
+/// sign here, the one byte of a message outside the law's form. Canonical members are in order, so an error's
+/// code is the first member of the first member (`error`).
+pub fn frame(v: &Value) {
+    let mut bytes = json::canon_bytes(v);
+    const ERROR_CODE: &[u8] = b"{\"error\":{\"code\":";
+    if v.member("error").and_then(|e| e.member("code")).is_some() && bytes.starts_with(ERROR_CODE) {
+        bytes.insert(ERROR_CODE.len(), b'-');
+    }
+    bytes.push(b'\n');
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_all(&bytes);
+    let _ = out.flush();
+}
+
+/// The end of an `mcp` session, its input closed: every message went out through [`frame`]; nothing more is
+/// written, exit 0. Only `mcp` calls it.
+pub fn finish() -> ! {
+    let _ = std::io::stdout().lock().flush();
+    std::process::exit(Exit::Affirmed.code() as i32)
 }
 
 /// The language of the lines for people (stderr's second line, the line an answer tells): the system's, as the
@@ -391,10 +418,16 @@ pub enum Said {
     SendRefused,
     ReadOnly,
     ScanTooWide,
+    /// `mcp` refusing a tool's parameter itself, before any process is started.
+    McpAbsolute,
+    McpNotAParameter,
+    McpNotText,
+    McpNotTexts,
+    McpNoProgram,
 }
 
 impl Said {
-    pub const ALL: [Said; 75] = [
+    pub const ALL: [Said; 80] = [
         Said::Usage,
         Said::NotAVerb,
         Said::NotAFlag,
@@ -470,6 +503,11 @@ impl Said {
         Said::SendRefused,
         Said::ReadOnly,
         Said::ScanTooWide,
+        Said::McpAbsolute,
+        Said::McpNotAParameter,
+        Said::McpNotText,
+        Said::McpNotTexts,
+        Said::McpNoProgram,
     ];
 
     /// The words, one table: Chinese and English.
@@ -555,6 +593,11 @@ impl Said {
             Said::HomeSettingsSay => ("这处数据的链、合约、节点与代理由设置给,不收这一旗", "this home's chain, registry, nodes and proxy come from its settings; this flag is not taken"),
             Said::SendRefused => ("什么也没发出:看 token 与 detail", "Nothing was sent: see token and detail"),
             Said::ReadOnly => ("这一处数据只读,未写:看 token 与 detail", "This home is read-only; nothing was written: see token and detail"),
+            Said::McpAbsolute => ("要一条完整路径(从根起)", "a full path is needed (from the root)"),
+            Said::McpNotAParameter => ("不是这个工具的参数", "not a parameter of this tool"),
+            Said::McpNotText => ("要一段文字", "text is needed"),
+            Said::McpNotTexts => ("要一列文字", "a list of texts is needed"),
+            Said::McpNoProgram => ("起不了命令行程序", "the command line program could not be started"),
             Said::ScanTooWide => (
                 "这一扇窗按节点收得下的跨度问不完:把起始区块往前挪,或换一处收得下更宽窗的节点",
                 "This window cannot be read at the span the node takes: move the start block forward, or use a node that takes wider windows",

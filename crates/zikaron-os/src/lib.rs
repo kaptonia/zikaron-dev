@@ -858,14 +858,16 @@ pub fn backdrop_available() -> bool {
 }
 
 /// Put the system's material under `w` in the dark or light appearance; asked once per window, when it opens.
-/// Answers what was put (`Tint`: nothing, the app paints its own ground).
-pub fn backdrop(w: Window, dark: bool) -> Backdrop {
-    imp::backdrop(w, dark)
+/// `follows` says the app follows the system's appearance: the window is then left to the system's (macOS), so
+/// the system still tells the app when it changes; otherwise the window takes the app's. Answers what was put
+/// (`Tint`: nothing, the app paints its own ground).
+pub fn backdrop(w: Window, dark: bool, follows: bool) -> Backdrop {
+    imp::backdrop(w, dark, follows)
 }
 
-/// Follow the app's light or dark appearance on a window's material.
-pub fn backdrop_appearance(w: Window, dark: bool) {
-    imp::backdrop_appearance(w, dark)
+/// Follow the app's light or dark appearance, and whether it follows the system's, on a window's material.
+pub fn backdrop_appearance(w: Window, dark: bool, follows: bool) {
+    imp::backdrop_appearance(w, dark, follows)
 }
 
 /// Whether the system asks apps to reduce motion (macOS: Accessibility › Display › Reduce motion; Windows:

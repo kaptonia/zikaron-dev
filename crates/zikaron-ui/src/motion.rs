@@ -102,8 +102,9 @@ struct Tween {
 }
 
 impl Tween {
+    /// How far along the run is: 0 before it starts (it stands at its start), 1 once done.
     fn progress(&self, now: f64) -> f32 {
-        if self.dur <= 0.0 || now < self.t0 {
+        if self.dur <= 0.0 {
             return 1.0;
         }
         ((now - self.t0) as f32 / self.dur).clamp(0.0, 1.0)
@@ -122,8 +123,10 @@ impl Tween {
         if self.progress(now) >= 1.0 {
             return 0.0;
         }
+        // Sampled within the run: a sample before its start would read the start, not where it was going.
         let h = 1.0 / 240.0;
-        (self.value(now + h) - self.value(now - h)) / (2.0 * h as f32)
+        let back = (now - h).max(self.t0);
+        (self.value(now + h) - self.value(back)) / ((now + h - back) as f32)
     }
 
     fn moving(&self, now: f64) -> bool {
@@ -328,7 +331,8 @@ pub fn enter(ctx: &Context, id: Id, key: u64, delay: f32, dur: f32, curve: Curve
 /// the loop is on screen.
 pub fn cycle(ctx: &Context, period: f32) -> f32 {
     ctx.request_repaint();
-    ((now(ctx) as f32) / period).fract()
+    // The remainder taken in the clock's own precision: a long-running app's spinners stay smooth.
+    (now(ctx).rem_euclid(period as f64) / period as f64) as f32
 }
 
 /// Keyframes by linear pieces: `(at, value)` sorted by `at` in 0..1.
@@ -358,7 +362,8 @@ pub fn shake_at(ctx: &Context, at: Option<f64>, dur: f32) -> f32 {
             let p = ((now(ctx) - a) as f32) / dur;
             if p < 1.0 {
                 ctx.request_repaint();
-                shake(p)
+                // Under reduced motion nothing swings (the refusal is still said and coloured).
+                shake(p) * travel(ctx)
             } else {
                 0.0
             }

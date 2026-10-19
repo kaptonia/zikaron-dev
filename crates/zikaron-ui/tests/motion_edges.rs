@@ -102,7 +102,8 @@ fn a_run_turned_midway_goes_on_from_its_place_and_speed() {
 
 // ───────────────────────── A card's rows ─────────────────────────
 
-/// A card of rows kept continuous: 甲, then 乙 when `middle`, then 丙.
+/// A card of rows kept continuous: the first row, then the middle one when `middle`, then the last (named by the
+/// first three Chinese ordinal signs).
 fn rows(ui: &mut egui::Ui, middle: bool, width: f32) {
     ui.allocate_ui_at_rect(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(width, 600.0)), |ui| {
         card::form(ui, |ui, f| {
@@ -289,4 +290,26 @@ fn under_reduced_motion_a_sheet_opens_at_its_size_and_fades() {
     let b = find(&settled, "弹窗标题").expect("the title, settled");
     assert!((a.rect.width() - b.rect.width()).abs() < 0.5 && (a.rect.center() - b.rect.center()).length() < 0.5, "at its size and place at once: {:?} vs {:?}", a.rect, b.rect);
     assert!(a.alpha < b.alpha || a.opacity < b.opacity, "it still fades in");
+}
+
+/// A run turned twice in one frame (a pass done again at the same time, as a discarded pass is) goes on from where
+/// it stands towards the last target, never far past either end: it does not take the start of a run not yet begun
+/// for where that run was going.
+#[test]
+fn a_run_turned_twice_in_one_frame_stays_between_its_ends() {
+    let mut f = Frames::new(false);
+    let id = egui::Id::new("twice");
+    let mut v = 0.0;
+    f.run(DT, vec![], |ui| v = motion::to(ui.ctx(), id, 100.0, 0.3, motion::Curve::Spring));
+    f.run(DT, vec![], |ui| v = motion::to(ui.ctx(), id, 200.0, 0.3, motion::Curve::Spring));
+    // The same moment again, the target moved once more.
+    f.run(0.0, vec![], |ui| v = motion::to(ui.ctx(), id, 210.0, 0.3, motion::Curve::Spring));
+    let mut seen = vec![v];
+    for _ in 0..30 {
+        f.run(DT, vec![], |ui| v = motion::to(ui.ctx(), id, 210.0, 0.3, motion::Curve::Spring));
+        seen.push(v);
+    }
+    let (lo, hi) = seen.iter().fold((f32::MAX, f32::MIN), |(a, b), x| (a.min(*x), b.max(*x)));
+    assert!(lo >= 90.0 && hi <= 240.0, "stays between its ends, a spring's overshoot aside: {lo}..{hi}");
+    assert!((v - 210.0).abs() < 0.5, "and arrives: {v}");
 }

@@ -83,6 +83,12 @@ pub(crate) fn inside_id() -> egui::Id {
     egui::Id::new("zikaron-sheet-inside")
 }
 
+/// The corner of what the rows being drawn now lie in, when that is not a card of their own (a sheet, a form
+/// card): a lit row's block takes it less its gap (`crate::band`).
+pub(crate) fn rows_corner_id() -> egui::Id {
+    egui::Id::new("zikaron-rows-corner")
+}
+
 /// Whether what is being drawn now lies in a sheet's body (groups there lay no ground of their own).
 pub fn inside(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<bool>(inside_id())).unwrap_or(false)
@@ -192,8 +198,17 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
                         ui.spacing_mut().item_spacing.y = tokens::S3;
                         let was = inside(ui.ctx());
                         ui.ctx().data_mut(|d| d.insert_temp(inside_id(), true));
+                        let corner_was = ui.ctx().data(|d| d.get_temp::<f32>(rows_corner_id()));
+                        ui.ctx().data_mut(|d| d.insert_temp(rows_corner_id(), Radius::Sheet.px()));
                         let b = motion::shifted(ui, vec2(slide_x, 0.0), slide_a, |ui| body(ui, state));
                         ui.ctx().data_mut(|d| d.insert_temp(inside_id(), was));
+                        ui.ctx().data_mut(|d| {
+        if let Some(c) = corner_was {
+            d.insert_temp(rows_corner_id(), c);
+        } else {
+            d.remove::<f32>(rows_corner_id());
+        }
+    });
                         b
                     });
                     (r.inner, r.response.rect.height())
@@ -226,7 +241,7 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
             Out { body: b, foot: fr.inner, esc }
         })
         .inner;
-    crate::layer::keep(ctx, id.with("card-keep"), layer, LEAVE, 1.0 - (1.0 - LEAVE_TO) * motion::travel(ctx), card.center(), egui::Vec2::ZERO);
+    crate::layer::keep(ctx, id.with("card-keep"), layer, LEAVE, LEAVE_TO, card.center(), egui::Vec2::ZERO);
     out
 }
 

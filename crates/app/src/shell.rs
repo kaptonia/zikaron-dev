@@ -38,8 +38,9 @@ pub struct AuditRead {
     pub at: f64,
     /// Which ledger mark this report was computed for ([`Shell::book_mark`]).
     pub mark: u64,
-    /// The table generation this report's lamps go with ([`Shell::rows_gen`] once the report landed): the
-    /// ledger's state is judged only against a table read at that generation ([`Shell::ledger_ok`]).
+    /// The table generation this report's lamps go with ([`Shell::rows_gen`] once the report landed): where the
+    /// ledger's state needs the table, it is judged only against a table read at that generation
+    /// ([`Shell::ledger_ok`]).
     pub rows_gen: u64,
 }
 
@@ -260,9 +261,9 @@ pub struct Shell {
     pub grants_gen: u64,
     /// The generation the register held in `grants` was read at, as `rows_at`.
     pub grants_at: u64,
-    /// The ledger's state ("normal / problems") as last judged from one generation: a report and the table
-    /// read for its lamps ([`Self::judge_ledger`]). It changes only when a new pair is in hand; between them
-    /// the last conclusion stands. `None` until this home's first pair.
+    /// The ledger's state ("normal / problems") as last judged from the last report, with the table of its
+    /// generation where unknown types need it ([`Self::judge_ledger`]). Between judgements the last conclusion
+    /// stands. `None` until this home's first judgement.
     pub ledger_ok: Option<bool>,
     /// The key vault state now. Read once at start and changed by each passcode action; the frame only reads
     /// this field, so the window never touches the disk for it.
@@ -497,6 +498,10 @@ pub struct Shell {
     /// "Enable command line": what is at its install path, as last read (`Action::ReadCliPath`, and after
     /// turning it on or off); `None` until read.
     pub cli_path: Option<zikaron_os::cli_path::State>,
+    /// What an AI app is given to start the command line's MCP server (`action::ai_config`), read with
+    /// [`Shell::cli_path`]; `None` when there is no command line beside this program to point at, or it cannot be
+    /// reached from outside the app.
+    pub ai_config: Option<String>,
     /// The command line's credential as last read or issued (`None`: none on this machine), for its expiry line
     /// and the expiry check at every drain ([`Shell::credential_tick`]).
     pub credential: Option<zikaron_seal::credential::Term>,
@@ -680,6 +685,7 @@ impl Shell {
             door_off: false,
             door_answered: 0,
             cli_path: None,
+            ai_config: None,
             credential: None,
             seen_entries: None,
             seen_queue: None,
@@ -1519,23 +1525,30 @@ impl Shell {
         self.grants.is_some() && self.grants_at == self.grants_gen
     }
 
-    /// Judge the ledger's state from one generation: the last report and the table read for its lamps. A broken
-    /// chain is a problem on the report alone; otherwise only a table of the report's generation is counted
-    /// with it (this desk's own deletions are recognized, not unknown types; entries awaiting anchoring are not
-    /// faults). With no such pair in hand the last conclusion stands.
+    /// Judge the ledger's state from the last report. A broken chain, and every problem the report names by
+    /// itself (findings, missing, malformed, void, unproven), is a problem on the report alone, judged the moment
+    /// it lands. Only unknown types need the table: this desk's own deletions are recognized there, not counted
+    /// as unknown types. That count is taken from a table of the report's generation, and only while the report
+    /// is of the ledger as it stands (its mark is the book's); with no such pair in hand the last conclusion
+    /// stands until the next report. Entries awaiting anchoring are not faults.
     fn judge_ledger(&mut self) {
         use zikaron::tokens::Key as T;
         let Some(a) = self.audit.as_ref() else { return };
-        if a.broken {
+        let items = crate::auditx::items(&a.report);
+        let n = |k: T| items.iter().find(|i| i.key == k.as_str()).and_then(|i| i.count).unwrap_or(0);
+        let alone = n(T::Findings) + n(T::Missing) + n(T::Malformed) + n(T::Void) + n(T::AdoptionUnproven) + n(T::Unproven);
+        if a.broken || alone > 0 {
             self.ledger_ok = Some(false);
             return;
         }
-        let Some((rows, _)) = self.rows.as_ref().filter(|_| self.rows_at == a.rows_gen) else { return };
-        let items = crate::auditx::items(&a.report);
-        let n = |k: T| items.iter().find(|i| i.key == k.as_str()).and_then(|i| i.count).unwrap_or(0);
+        let unknown = n(T::UnknownType);
+        if unknown == 0 {
+            self.ledger_ok = Some(true);
+            return;
+        }
+        let Some((rows, _)) = self.rows.as_ref().filter(|_| self.rows_at == a.rows_gen && a.mark == self.book_mark) else { return };
         let convention = crate::retractx::read(rows).count;
-        let bad = n(T::Findings) + n(T::Missing) + n(T::Malformed) + n(T::Void) + n(T::AdoptionUnproven) + n(T::Unproven) + n(T::UnknownType).saturating_sub(convention);
-        self.ledger_ok = Some(bad == 0);
+        self.ledger_ok = Some(unknown.saturating_sub(convention) == 0);
     }
 
     /// The ledger's source changed. `Source::Ledger`: the ledger in the same home was replaced (adoption in
@@ -1604,6 +1617,7 @@ impl Shell {
             door_answered: _,
             // What is at the command-line install path belongs to the machine, not to a ledger's source.
             cli_path: _,
+            ai_config: _,
             // The command line's credential belongs to the machine.
             credential: _,
             // Counted against the home whose lock is held; a new home starts uncounted (cleared below).

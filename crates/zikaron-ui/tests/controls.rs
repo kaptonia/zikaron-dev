@@ -132,7 +132,7 @@ fn the_two_colour_tables_hold_the_designed_values() {
     // The scrim darkens only: black at 30 % light, 50 % dark.
     assert_eq!((LIGHT[at(C::Scrim)].r(), LIGHT[at(C::Scrim)].a()), (0, 77), "light scrim is black at 30 %");
     assert_eq!((DARK[at(C::Scrim)].r(), DARK[at(C::Scrim)].a()), (0, 128), "dark scrim is black at 50 %");
-    // The translucent roles: a grey tone at 9 % light and white at 7 % dark; glass at 93 % in both.
+    // The translucent roles: a grey tone at 9 % light and white at 7 % dark; glass at 97 % in both.
     assert_eq!(LIGHT[at(C::Tone)].a(), 23, "light tone at 9 %");
     assert_eq!(DARK[at(C::Tone)].a(), 18, "dark tone at 7 %");
     assert_eq!((LIGHT[at(C::Glass)].a(), DARK[at(C::Glass)].a()), (247, 247), "glass at 97 % (the design's 93 % has a blur under it this toolkit draws no)");

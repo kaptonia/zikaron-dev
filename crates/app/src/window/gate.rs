@@ -107,7 +107,8 @@ impl Win {
                     // The two ways exclude each other: touching the key file fold makes it the active one.
                     let by_file = !self.ux.pin_ks_path.trim().is_empty() || !self.ux.pin_ks_pw.is_empty();
                     let title = t(if self.ux.pin_again.is_empty() { Key::WizPinTitle } else { Key::PinAgain });
-                    let row = words_way(ui, &mut self.ux.pin_words, &mut self.ux.gate_words_ready, &mut self.ux.pin, len, self.ux.pin_shake, title, !by_file && !busy);
+                    let again = self.ux.row_turn(now);
+                    let row = words_way(ui, &mut self.ux.pin_words, &mut self.ux.gate_words_ready, &mut self.ux.pin, len, self.ux.pin_shake, title, !by_file && !busy, again);
                     if row.is_some_and(|r| r.full) {
                         if self.ux.pin_again.is_empty() {
                             first_pin = true;
@@ -121,7 +122,8 @@ impl Win {
                 // open); a recovery-word primary's key files are folded under its words.
                 let by_key_file = |me: &mut Self, ui: &mut egui::Ui, first_pin: &mut bool, act: &mut Option<Action>| {
                     let title = t(if me.ux.pin_again.is_empty() { Key::WizPinTitle } else { Key::PinAgain });
-                    let row = file_way(ui, &mut me.ux.pin_ks_path, &mut me.ux.pin_ks_pw, &mut me.ux.gate_file_ready, &mut me.ux.pin, len, me.ux.pin_shake, t(Key::GateDropKeyFile), t(Key::GateFilePassword), title, busy);
+                    let again = me.ux.row_turn(now);
+                    let row = file_way(ui, &mut me.ux.pin_ks_path, &mut me.ux.pin_ks_pw, &mut me.ux.gate_file_ready, &mut me.ux.pin, len, me.ux.pin_shake, t(Key::GateDropKeyFile), t(Key::GateFilePassword), title, busy, again);
                     if row.full && me.ux.pin_again.is_empty() {
                         *first_pin = true;
                     } else if row.full && !busy {
@@ -191,21 +193,25 @@ fn lead_key(ui: &mut egui::Ui, text: &str, role: Role, enabled: bool) -> bool {
 /// Focus goes to the passcode row only when the user says so, never because of what the cells hold (a word may be
 /// the start of another, `act` of `action`, and a cell holding one is not done): Enter in a cell lets it go and the
 /// row, enabled once all twelve are filled, takes it; Tab moves on to the row; a click on the row takes it; one
-/// pasted phrase that fills the twelve hands it over here. `was_full` is whether the cells were all filled the
-/// frame before.
-fn words_way(ui: &mut egui::Ui, words: &mut [crate::secret::Secret; 12], was_full: &mut bool, pin: &mut crate::secret::Secret, len: usize, shake: Option<f64>, title: &str, row_on: bool) -> Option<pin::PinRow> {
+/// pasted phrase that fills the twelve hands it over here; and the row takes it back while its own turn goes on
+/// (`again`: its second entry, or a retry the moment its entry is refused). Nothing else hands focus over: a click
+/// elsewhere leaves it where the user put it.
+/// `was_full` is whether the cells were all filled the frame before.
+fn words_way(ui: &mut egui::Ui, words: &mut [crate::secret::Secret; 12], was_full: &mut bool, pin: &mut crate::secret::Secret, len: usize, shake: Option<f64>, title: &str, row_on: bool, again: bool) -> Option<pin::PinRow> {
     ui.spacing_mut().item_spacing.y = tk::S3;
     let bad = crate::cryptx::strangers(words);
     let phrase = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Paste(x) if x.split_whitespace().count() > 1)));
     let changed = pin::words_grid_marked(ui, "gate-words", words, &bad);
     let full = words.iter().all(|w| !w.expose().trim().is_empty());
-    if changed && phrase && full && !*was_full {
+    let pasted = changed && phrase && full && !*was_full;
+    if pasted {
         if let Some(id) = ui.memory(|m| m.focused()) {
             ui.memory_mut(|m| m.surrender_focus(id));
         }
     }
     *was_full = full;
-    full.then(|| field(ui, title, None, |ui| parts::pins(ui, "gate-new-pin", pin, len, shake, row_on)))
+    let hand = again || pasted || ui.input(|i| i.key_pressed(egui::Key::Enter));
+    full.then(|| field(ui, title, None, |ui| parts::pins(ui, "gate-new-pin", pin, len, shake, row_on && hand)))
 }
 
 /// The key file way: the file (`file_title`), its password (`password_title`), and the new passcode row under
@@ -213,13 +219,15 @@ fn words_way(ui: &mut egui::Ui, words: &mut [crate::secret::Secret; 12], was_ful
 /// would split between rows and never match); `ready` keeps whether they are. Focus goes to the row only when the
 /// user says so, never because the password field holds something (its length says nothing of being done): Enter
 /// in the password field lets it go and the enabled row takes it, Tab moves on to the row, a click on the row takes
-/// it.
-fn file_way(ui: &mut egui::Ui, path: &mut String, password: &mut crate::secret::Secret, ready: &mut bool, pin: &mut crate::secret::Secret, len: usize, shake: Option<f64>, file_title: &str, password_title: &str, title: &str, busy: bool) -> pin::PinRow {
+/// it, and the row takes it back while its own turn goes on (`again`, as in [`words_way`]). A file chosen or a click
+/// elsewhere hands nothing over.
+fn file_way(ui: &mut egui::Ui, path: &mut String, password: &mut crate::secret::Secret, ready: &mut bool, pin: &mut crate::secret::Secret, len: usize, shake: Option<f64>, file_title: &str, password_title: &str, title: &str, busy: bool, again: bool) -> pin::PinRow {
     ui.spacing_mut().item_spacing.y = tk::S3;
     field(ui, file_title, None, |ui| pick_path(ui, path, crate::platform::Pick::File));
     field(ui, password_title, None, |ui| input::secret_line(ui, password, ""));
     *ready = !path.trim().is_empty() && !password.is_empty();
-    field(ui, title, None, |ui| parts::pins(ui, "gate-file-pin", pin, len, shake, *ready && !busy))
+    let hand = again || ui.input(|i| i.key_pressed(egui::Key::Enter));
+    field(ui, title, None, |ui| parts::pins(ui, "gate-file-pin", pin, len, shake, *ready && !busy && hand))
 }
 
 /// The line under the gate's cells: nothing (no height), "verifying…", or the refusal in a grey box, at the
@@ -308,7 +316,7 @@ mod tests {
 
     fn words_draw(w: &mut Words) -> impl FnMut(&mut egui::Ui) + '_ {
         move |ui| {
-            let _ = words_way(ui, &mut w.words, &mut w.full, &mut w.pin, crate::keybox::PIN_LEN, None, "passcode", true);
+            let _ = words_way(ui, &mut w.words, &mut w.full, &mut w.pin, crate::keybox::PIN_LEN, None, "passcode", true, false);
         }
     }
 
@@ -388,7 +396,7 @@ mod tests {
 
     fn file_draw(f: &mut File) -> impl FnMut(&mut egui::Ui) + '_ {
         move |ui| {
-            let _ = file_way(ui, &mut f.path, &mut f.password, &mut f.ready, &mut f.pin, crate::keybox::PIN_LEN, None, "file", "password", "passcode", false);
+            let _ = file_way(ui, &mut f.path, &mut f.password, &mut f.ready, &mut f.pin, crate::keybox::PIN_LEN, None, "file", "password", "passcode", false, false);
         }
     }
 
@@ -418,6 +426,35 @@ mod tests {
             assert_eq!(f.pin.expose(), "ab12", "{k:?}");
             assert_eq!(f.password.expose(), "hunter2-long", "{k:?}");
         }
+    }
+
+    /// The password typed first and the file chosen after it (focus nowhere, as when a dialog took the click):
+    /// the row is ready but takes no keys until the user hands focus over.
+    #[test]
+    fn a_file_chosen_after_the_password_hands_nothing_over() {
+        let mut d = Drive::new();
+        let mut f = File::default();
+        for _ in 0..2 {
+            d.frame(Vec::new(), &mut file_draw(&mut f));
+        }
+        for _ in 0..3 {
+            d.frame(vec![key(egui::Key::Tab)], &mut file_draw(&mut f));
+            d.typed("h", &mut file_draw(&mut f));
+            if !f.password.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(f.password.expose(), "h");
+        if let Some(id) = d.ctx.memory(|m| m.focused()) {
+            d.ctx.memory_mut(|m| m.surrender_focus(id));
+        }
+        f.path = "/somewhere/key.json".into();
+        for _ in 0..3 {
+            d.frame(Vec::new(), &mut file_draw(&mut f));
+        }
+        d.typed("ab12", &mut file_draw(&mut f));
+        assert!(f.ready);
+        assert!(f.pin.is_empty(), "no key reached the passcode row");
     }
 }
 

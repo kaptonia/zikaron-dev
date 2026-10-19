@@ -2303,6 +2303,8 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
         Action::ReadCliPath => {
             let s = cli_path_now();
             shell.cli_path = Some(s.clone());
+            // No config where the command line cannot be reached from outside the app (the same judgement).
+            shell.ai_config = cli_beside().filter(|_| !matches!(s, zikaron_os::cli_path::State::Unsupported(_))).map(|cli| ai_config(&cli));
             Applied::CliPathRead(s)
         }
         Action::SetCliPath { on } => match crate::action::cli_beside() {
@@ -2544,6 +2546,16 @@ use self::wizard::*;
 /// The command line binary shipped beside this program (located only by `zikaron_os::cli_path`).
 pub fn cli_beside() -> Option<std::path::PathBuf> {
     zikaron_os::cli_path::beside_this_program()
+}
+
+/// What an AI app takes to start the command line's MCP server (CLI-SCHEMA §13): this machine's command line by its
+/// absolute path (an app started from the desktop does not have the terminal's path), and `mcp`. Written by the
+/// one JSON writer, so a path's backslashes and quotes are escaped as JSON escapes them on every system.
+pub fn ai_config(cli: &std::path::Path) -> String {
+    use zikaron::json::Value;
+    let o = |k: &str, v: Value| Value::Obj(vec![(k.to_string(), v)]);
+    let server = Value::Obj(vec![("command".to_string(), Value::Str(cli.display().to_string())), ("args".to_string(), Value::Arr(vec![Value::Str("mcp".to_string())]))]);
+    String::from_utf8_lossy(&zikaron::json::canon_bytes(&o("mcpServers", o("zikaron", server)))).into_owned()
 }
 
 /// What is currently at the command line's location (a missing bundled command line reads as unsupported).

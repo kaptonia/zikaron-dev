@@ -154,7 +154,7 @@ pub enum Glyph {
     Gear,
     /// Settings sections and page marks.
     Globe,
-    /// Language: 文 and A side by side, no frame.
+    /// Language: the Chinese sign for writing and an A side by side, no frame.
     Lang,
     /// The command line: a prompt and a cursor.
     Terminal,

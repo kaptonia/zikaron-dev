@@ -70,6 +70,9 @@ pub fn over(ctx: &Context, layer: LayerId) -> egui::Area {
 /// Record the shapes a layer drew this pass (call right after drawing it). `dur`, `to_scale` and `moved` are
 /// its entrance's time and the scale and offset it entered from.
 pub fn keep(ctx: &Context, key: Id, layer: LayerId, dur: f32, to_scale: f32, center: egui::Pos2, moved: Vec2) {
+    // Under reduced motion a leaving only fades: no scale and no travel, for every overlay alike.
+    let k = crate::motion::travel(ctx);
+    let (to_scale, moved) = (1.0 + (to_scale - 1.0) * k, moved * k);
     let shapes: Vec<egui::epaint::ClippedShape> = ctx.graphics(|g| g.get(layer).map(|l| l.all_entries().cloned().collect()).unwrap_or_default());
     let pass = ctx.cumulative_pass_nr();
     ctx.data_mut(|d| {
@@ -82,6 +85,7 @@ pub fn keep(ctx: &Context, key: Id, layer: LayerId, dur: f32, to_scale: f32, cen
 /// Turn the leaving of a recorded layer (`key`) toward `moved`: the offset it reaches at the end of its leaving
 /// (a wizard step's card leaves toward the side it is left on, known only when the next one comes).
 pub fn steer(ctx: &Context, key: Id, moved: Vec2) {
+    let moved = moved * crate::motion::travel(ctx);
     ctx.data_mut(|d| {
         if let Some(t) = d.get_temp_mut_or_default::<Vec<(Id, Snap)>>(table_id()).iter_mut().find(|(k, _)| *k == key) {
             t.1.moved = moved;
@@ -261,6 +265,17 @@ pub struct Drop {
     pub moved: Vec2,
 }
 
+impl Drop {
+    /// The card's entrance at eased progress `e`: from 97 % of its size at `origin` and from `moved` away, both
+    /// scaled by [`crate::motion::travel`] (none under "reduce motion"; the fade is the caller's). The one
+    /// entrance of every drop card (menus, pickers, the date card); their leave is [`keep`].
+    pub fn enter(&self, ctx: &Context, layer: egui::LayerId, e: f32) {
+        let k = crate::motion::travel(ctx);
+        let scale = 1.0 - 0.03 * (1.0 - e) * k;
+        ctx.set_transform_layer(layer, egui::emath::TSTransform { scaling: scale, translation: self.origin.to_vec2() * (1.0 - scale) + self.moved * (1.0 - e) * k });
+    }
+}
+
 pub fn drop_card(ctx: &Context, anchor: Rect, bounds: Rect, size: Vec2, left: bool) -> Drop {
     let screen = ctx.content_rect();
     let (room_l, room_r) = (bounds.left().max(screen.left()), bounds.right().min(screen.right()));
@@ -296,15 +311,24 @@ fn card_rect_id(id: Id) -> Id {
     id.with("zikaron-card-at")
 }
 
-/// Record where a floating card under `id` lies this frame (its owner reads it in [`follow`]).
+/// Record where a floating card under `id` lies this frame (its owner reads it in [`follow`]), and when it opened
+/// (a card not drawn the pass before opens now).
 pub fn card_at(ctx: &Context, id: Id, rect: Rect) {
-    ctx.data_mut(|d| d.insert_temp(card_rect_id(id), rect));
+    let (now, pass) = (ctx.input(|i| i.time), ctx.cumulative_pass_nr());
+    ctx.data_mut(|d| {
+        let opened = match d.get_temp::<(f64, u64)>(card_rect_id(id).with("seen")) {
+            Some((at, last)) if last + 1 >= pass => at,
+            _ => now,
+        };
+        d.insert_temp(card_rect_id(id).with("seen"), (opened, pass));
+        d.insert_temp(card_rect_id(id), rect);
+    });
 }
 
 /// A floating card stays with its anchor (call it from the anchor's own `ui`, after the card is drawn, while it
 /// is open): the wheel turned anywhere off the card scrolls what the anchor scrolls in, and the card, placed from
-/// its anchor each frame, goes along; a card that hangs past the window's foot takes the page along until it ends
-/// [`REVEAL_FOOT`] above it (never taking the anchor past the top); and once the anchor has scrolled out of view
+/// its anchor each frame, goes along; a card that hangs past the window's foot as it opens takes the page along
+/// until it ends [`REVEAL_FOOT`] above it (never taking the anchor past the top); and once the anchor has scrolled out of view
 /// the card closes. Returns whether it should close.
 pub fn follow(ui: &egui::Ui, id: Id, anchor: Rect) -> bool {
     let ctx = ui.ctx();
@@ -319,8 +343,12 @@ pub fn follow(ui: &egui::Ui, id: Id, anchor: Rect) -> bool {
         ui.scroll_with_delta_animation(wheel, egui::style::ScrollAnimation::none());
         ctx.input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
     }
+    // The page is taken along only as the card opens (as a fold's body is revealed while it grows): the wheel
+    // after that is the person's, never turned back.
+    let opened = ctx.data(|d| d.get_temp::<(f64, u64)>(card_rect_id(id).with("seen"))).map(|(at, _)| at).unwrap_or(0.0);
+    let opening = ((ctx.input(|i| i.time) - opened) as f32) < crate::tokens::SLOW + 0.05;
     let screen = ctx.content_rect();
-    if card.top() >= anchor.bottom() && card.bottom() + REVEAL_FOOT > screen.bottom() + 0.5 {
+    if opening && card.top() >= anchor.bottom() && card.bottom() + REVEAL_FOOT > screen.bottom() + 0.5 {
         ui.scroll_to_rect(Rect::from_min_max(anchor.min, egui::pos2(anchor.right(), card.bottom() + REVEAL_FOOT)), None);
     }
     false

@@ -1,5 +1,5 @@
-//! The twenty-five verbs. Each does the same three steps: arrange arguments, call the public API below, render
-//! the returned state on one line.
+//! The twenty-six verbs. Each but `mcp` does the same three steps: arrange arguments, call the public API below,
+//! render the returned state on one line (`mcp` runs the others, `crate::mcp`).
 //!
 //! The shell only requires the flags it needs itself (where the ledger is, whose key, where to write).
 //! Body members the `zikaron/1` spec requires are enforced by the core: a `history` without `mode` or a `grant`
@@ -42,7 +42,7 @@ fn flags<'a>(base: &[&'a str], more: &[&'a str]) -> Vec<&'a str> {
 /// every verb's arguments by its row before the verb runs (the crate's one `close`), [`VERBS`] is this table's
 /// first column, and the `contract` verb prints it. `--key-file` is taken wherever `key` is
 /// (`args::STANDS_FOR`, read by `close`).
-const ACCEPTS: [(&str, &[&str], &[&str]); 25] = [
+const ACCEPTS: [(&str, &[&str], &[&str]); 26] = [
     ("keygen", &[], &[]),
     ("init", &[], &["ledger", "key", "statement", "home"]),
     ("history", &WRITE, &["content", "mark", "toolchain", "note", "file", "home"]),
@@ -68,6 +68,26 @@ const ACCEPTS: [(&str, &[&str], &[&str]); 25] = [
     ("take-over", &[], &["ledger", "handoff"]),
     ("show", &[], &["ledger", "entry", "path"]),
     ("contract", &[], &[]),
+    // The Model Context Protocol on stdin and stdout (`mcp`, CLI-SCHEMA §13): it takes no flag.
+    ("mcp", &[], &[]),
+];
+
+/// The flags a verb takes more than once (read with `Args::many`), by verb: the readings that need to know
+/// whether a flag repeats (`mcp`'s tool parameters) read it here.
+pub const REPEATED: [(&str, &str); 13] = [
+    ("anchor", "hash"),
+    ("scan", "fixture"),
+    ("scan", "endpoint"),
+    ("audit", "unavailable"),
+    ("check-grant", "unavailable"),
+    ("chain-check", "unavailable"),
+    ("chain-check", "hop"),
+    ("depth", "unavailable"),
+    ("badge", "encode"),
+    ("kit-export", "entry"),
+    ("kit-export", "file"),
+    ("kit-export", "proof"),
+    ("kit-verify", "unavailable"),
 ];
 
 /// The verbs the desktop does when `--home` names its home, and the flags each takes beside `--home` then (the
@@ -183,6 +203,7 @@ pub fn run(a: &Args) -> Answer {
         "take-over" => crate::handoff::take_over(a),
         "show" => show(a),
         "contract" => contract(a),
+        "mcp" => crate::mcp::serve(a),
         // A verb not in the table is named by its place and length, never echoed (it may be anything pasted).
         other => out::misuse(Reason::Args, out::Subject::Placed { at: 1, bytes: other.len() }, out::Said::NotAVerb),
     }
@@ -794,7 +815,13 @@ fn scan(a: &Args) -> Answer {
     proxy_from(a);
     let fixtures = a.many("fixture");
     let endpoints_given = a.many("endpoint");
-    if fixtures.is_empty() == endpoints_given.is_empty() {
+    // A home's own nodes: `--ledger` names a home the desktop keeps and neither `--endpoint` nor `--fixture` is
+    // given; the nodes come from its settings (`home_nodes`).
+    let at_home = match a.one("ledger") {
+        Some(at) if fixtures.is_empty() && endpoints_given.is_empty() && crate::sealed::is_home(&at) => Some(at),
+        _ => None,
+    };
+    if at_home.is_none() && fixtures.is_empty() == endpoints_given.is_empty() {
         out::misuse(Reason::Args, out::Subject::Flags(vec!["fixture", "endpoint"]), out::Said::OneOf);
     }
     // A run over recordings reads no basis, no adoptions and no network: any of them given (once or more) is
@@ -835,7 +862,13 @@ fn scan(a: &Args) -> Answer {
             }
         }
     } else {
-        let specs = chain::endpoint_specs(&a.many_at("endpoint"));
+        let specs = match &at_home {
+            Some(at) => match home_nodes(at, a.one("proxy").is_none()) {
+                Ok(specs) => specs,
+                Err(answer) => return answer,
+            },
+            None => chain::endpoint_specs(&a.many_at("endpoint")),
+        };
         thin = chain::thin_chains(&specs);
         // The basis: the file `--basis` names, or the one a home the desktop keeps declares (`--ledger`).
         let basis = match (a.one("basis"), a.one("ledger")) {
@@ -909,6 +942,27 @@ fn scan(a: &Args) -> Answer {
 /// for the window's last block. A ledger folder that is not a home's has no settings to read (misuse, `--ledger`);
 /// a home whose settings name no chain or no registry has no basis (`E_SCAN`, `E_NO_BASIS`); no endpoint of that
 /// chain given, or none answering its head, is no answer (`E_UNREACHABLE`).
+/// A home's nodes for the chain its settings name, read with the credential as a send reads them
+/// (`sealedsend::nodes_of`), and, when `--proxy` was not given (`their_proxy`), this machine's proxy for the command
+/// line as a send takes it. No chain set is `E_NO_BASIS`, as for the basis; no node for that chain is no answer
+/// (`E_UNREACHABLE`), the nodes never said.
+fn home_nodes(at: &str, their_proxy: bool) -> Result<Vec<(u64, String)>, Answer> {
+    let r = crate::sealed::read(at, now_secs()).map_err(|t| crate::sealed::refused(&t))?;
+    let ground = r.ground().map_err(|t| crate::sealed::refused(&t))?;
+    let Some(chain) = ground.chain_id else {
+        return Err(out::unanswered(Reason::Scan, vec![(Key::Token, s("E_NO_BASIS")), (Key::Detail, s(at))]));
+    };
+    if their_proxy {
+        let cli = r.machine_settings().map_err(|t| crate::sealed::refused(&t))?;
+        zikaron_anchor::rpc::set_choice(zikaron_send::node::route_of(cli.proxy.as_deref()));
+    }
+    let nodes = crate::sealedsend::nodes_of(&ground, chain);
+    if nodes.is_empty() {
+        return Err(out::unanswered(Reason::Unreachable, vec![(Key::Detail, s(&format!("NO_ENDPOINT {chain}")))]));
+    }
+    Ok(nodes.iter().map(|e| (e.chain, e.url.for_transport().to_string())).collect())
+}
+
 fn home_basis(at: &str, specs: &[(u64, String)]) -> Result<Vec<u8>, Answer> {
     if !crate::sealed::is_home(at) {
         out::misuse(Reason::Args, out::Subject::flag("ledger"), out::Said::NotAHome);
@@ -2050,7 +2104,7 @@ pub fn flag_named(x: &str) -> Option<&'static str> {
     ALL_FLAGS.iter().chain(MORE_FLAGS.iter()).find(|f| **f == x).copied()
 }
 
-/// The twenty-two verbs: the first column of [`ACCEPTS`], in its order.
+/// The twenty-six verbs: the first column of [`ACCEPTS`], in its order.
 pub const VERBS: [&str; ACCEPTS.len()] = {
     let mut names = [""; ACCEPTS.len()];
     let mut i = 0;

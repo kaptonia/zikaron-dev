@@ -132,7 +132,8 @@ impl Win {
             String::new()
         };
         let room = (ui.available_width() * 0.45).max(80.0);
-        let (row, (pick, remove)) = f.line(ui, None, title, "", false, false, c(C::Ink), |ui| {
+        f.quiet_next(t(Key::U3Optional));
+        let (_, (pick, remove)) = f.line(ui, None, title, "", false, false, c(C::Ink), |ui| {
             if chosen {
                 let remove = key::key(ui, t(Key::KitRemove), Role::Secondary, true).clicked();
                 let pick = key::key(ui, t(Key::U3TermsSwap), Role::Secondary, true).clicked();
@@ -144,7 +145,6 @@ impl Win {
                 (pick, false)
             }
         });
-        inform::after_title(ui, row.rect, title, t(Key::U3Optional));
         if remove {
             self.ck_side(which).clear();
         } else if let Some(p) = path_answer(ui.ctx(), egui::Id::new(("zikaron-path-drop", which.salt())), pick, crate::platform::Pick::File) {
@@ -197,8 +197,8 @@ impl Win {
             crate::checkx::Tone::Amber | crate::checkx::Tone::Grey => (Key::OsOpen, PillTone::Warn),
         };
         let (verdict, glyph, tint) = match crate::checkx::summary(&x) {
-            crate::checkx::Summary::AllMatch => (t(Key::OsSixPass).to_string(), Glyph::Ok, card::Tint::Ok),
-            crate::checkx::Summary::Mismatched(n) => (fill1(Key::U4Mismatches, &n.to_string()), Glyph::No, card::Tint::Bad),
+            crate::checkx::Summary::AllMatch => (t(Key::U4NoMismatch).to_string(), Glyph::Ok, card::Tint::Ok),
+            crate::checkx::Summary::Mismatched(n) => (fill1(Key::OsMismatchN, &n.to_string()), Glyph::No, card::Tint::Bad),
             crate::checkx::Summary::Incomplete => (t(Key::OsIncomplete).to_string(), Glyph::Warn, card::Tint::Warn),
         };
         // A side's line under its name: the file compared, or why it could not be read.
@@ -238,7 +238,7 @@ impl Win {
             card::section(ui, t(Key::OsSixChecks), "", |ui| {
                 card::form(ui, |ui, f| {
                     if grant_tone != crate::checkx::Tone::Green {
-                        let _ = f.info(ui, t(Key::KindGrant), card::Show::Pill(t(grant_pill), grant_badge));
+                        let _ = f.line(ui, None, t(Key::KindGrant), verdict_human(&x.judged.verdict), false, false, c(C::Ink), |ui| mark::pill(ui, t(grant_pill), grant_badge));
                     }
                     for (side, name) in [(&x.file, Key::U3File), (&x.terms, Key::OsTerms)] {
                         if !matches!(side, crate::checkx::Side::NotGiven) {

@@ -117,7 +117,7 @@ fn hovered_ground(row: usize, head: bool) -> egui::CornerRadius {
 #[test]
 fn a_tables_lit_row_meets_lines_square_and_the_cards_edge_round() {
     let round = (zikaron_ui::tokens::Radius::Card.px() - zikaron_ui::band::GAP) as u8;
-    let sq = egui::CornerRadius::ZERO;
+    let sq: egui::CornerRadius = Default::default();
     assert_eq!(hovered_ground(0, true), sq, "under the head's rule and over a line: square");
     assert_eq!(hovered_ground(1, true), sq, "between two lines: square");
     assert_eq!(hovered_ground(2, true), egui::CornerRadius { nw: 0, ne: 0, sw: round, se: round }, "the last row: round at the card's foot");

@@ -145,16 +145,29 @@ pub fn lit_block(card_x: (f32, f32), row: Rect, head_rule: Option<f32>, first: b
     crate::band::block(slot, Radius::Card.px(), above, below)
 }
 
-/// A row's identity: its sequence number when it has one, else its first words.
-fn row_key(row: &Row) -> u64 {
-    for cell in &row.cells {
-        match cell {
-            Cell::Seq(n) => return motion::key_of(&("seq", *n)),
-            Cell::Text(s) | Cell::Mono(s) | Cell::Tag(s) => return motion::key_of(&("words", s.as_str())),
-            _ => {}
+/// Each row's identity in this table, one per row: its sequence number when it has one, else its first words (a
+/// row whose other cells change, a date landing, is the same row); rows alike in that are told apart by their order
+/// among their likes, so no two rows of a table share one.
+fn row_keys(rows: &[Row]) -> Vec<u64> {
+    let base = |row: &Row| -> u64 {
+        if let Some(n) = row.cells.iter().find_map(|c| if let Cell::Seq(n) = c { Some(*n) } else { None }) {
+            return motion::key_of(&("seq", n));
         }
-    }
-    0
+        let first = row.cells.iter().find_map(|c| match c {
+            Cell::Text(s) | Cell::Mono(s) | Cell::Tag(s) => Some(s.as_str()),
+            _ => None,
+        });
+        motion::key_of(&("words", first))
+    };
+    let mut seen: Vec<u64> = Vec::new();
+    rows.iter()
+        .map(|row| {
+            let b = base(row);
+            let nth = seen.iter().filter(|x| **x == b).count();
+            seen.push(b);
+            if nth == 0 { b } else { motion::key_of(&("again", b, nth)) }
+        })
+        .collect()
 }
 
 /// A list card with an optional head, the rows, and an empty line when there are none.
@@ -217,6 +230,7 @@ fn table_body(ui: &mut egui::Ui, id: egui::Id, cols: &[Column], head: bool, rows
         p.text(r.center(), egui::Align2::CENTER_CENTER, empty, Type::Body.font(), c(C::Ink3));
         y = r.bottom();
     } else {
+        let keys = row_keys(rows);
         for (i, row) in rows.iter().enumerate() {
             let r = rects[i];
             let start = group.start(ui.ctx());
@@ -265,7 +279,7 @@ fn table_body(ui: &mut egui::Ui, id: egui::Id, cols: &[Column], head: bool, rows
                 }
                 let _ = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
             }
-            group.row(ui.ctx(), row_key(row), r, start);
+            group.row(ui.ctx(), keys[i], r, start);
         }
         y = rects.last().map(|r| r.bottom()).unwrap_or(y);
     }

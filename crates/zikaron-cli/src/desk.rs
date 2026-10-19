@@ -56,7 +56,7 @@ pub fn ask(a: &Args) -> Answer {
 
 /// Whether this machine writes alone: a command-line credential is in its folder (the desktop keeps one exactly
 /// while that switch is on, and keeps its endpoint closed meanwhile).
-fn writes_alone(machine: &std::path::Path) -> bool {
+pub(crate) fn writes_alone(machine: &std::path::Path) -> bool {
     !matches!(zikaron_seal::credential::find(machine), Err(t) if t.code == zikaron_seal::Code::CredentialMissing)
 }
 

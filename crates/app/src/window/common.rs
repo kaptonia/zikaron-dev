@@ -177,8 +177,9 @@ fn detail_rows<'a>(ui: &egui::Ui, rows: &[(&'a str, Val)]) -> (Vec<(&'a str, car
                 Val::Mono(s) if s.contains('\n') => card::Detail::Lines(s.lines().map(str::to_string).collect()),
                 Val::Mono(s) => card::Detail::Mono(s.clone()),
                 Val::Text(s) | Val::Quiet(s) | Val::Mark(_, s) if s.contains('\n') => card::Detail::Lines(s.lines().map(str::to_string).collect()),
-                Val::Text(s) | Val::Quiet(s) | Val::Mark(_, s) => card::Detail::Text(s.clone()),
-                Val::Loading(_) => card::Detail::Text(String::new()),
+                Val::Quiet(s) => card::Detail::Quiet(s.clone()),
+                Val::Text(s) | Val::Mark(_, s) => card::Detail::Text(s.clone()),
+                Val::Loading(_) => card::Detail::Quiet(String::new()),
             };
             (*k, d)
         })

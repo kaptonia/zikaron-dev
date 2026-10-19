@@ -308,13 +308,11 @@ impl Win {
         // anchored.
         let mut recent: Vec<(Mark, String, Place, Option<String>)> = Vec::new();
         if let Some(x) = self.shell.checked.as_ref() {
-            let v = x.judged.verdict.as_str();
-            let (k, m) = if v == green {
-                (Key::U3CheckAllPass, Mark::Ok)
-            } else if v == zikaron_kit::tokens::CheckVerdict::Fail.as_str() {
-                (Key::U3CheckFail, Mark::Bad)
-            } else {
-                (Key::U3CheckSomeMissing, Mark::Warn)
+            // The check page's own summary (grant, file and terms together).
+            let (k, m) = match crate::checkx::summary(x) {
+                crate::checkx::Summary::AllMatch => (Key::U3CheckAllPass, Mark::Ok),
+                crate::checkx::Summary::Mismatched(_) => (Key::U3CheckFail, Mark::Bad),
+                crate::checkx::Summary::Incomplete => (Key::U3CheckSomeMissing, Mark::Warn),
             };
             recent.push((m, fill1(Key::U4RecentChecked, t(k)), Place::View(crate::nav::View::Verify, crate::nav::tab::VERIFY_CHECK), None));
         }
@@ -327,7 +325,8 @@ impl Win {
             recent.push((Mark::Bad, fill1(k, &name), Place::View(crate::nav::View::MyGrants, 0), Some(a.grant.clone())));
         }
         if let Some(v) = self.shell.verified.as_ref() {
-            let ok = v.mismatches.is_empty();
+            // The verify page's own head.
+            let ok = super::verify::verified_head(v).1 == Mark::Ok;
             recent.push((if ok { Mark::Ok } else { Mark::Bad }, fill2(Key::U4RecentVerified, &width::file_name(&v.path), t(if ok { Key::U4NoMismatch } else { Key::U3CheckFail })), Place::View(crate::nav::View::Verify, crate::nav::tab::VERIFY_WORK), None));
         }
         let queued = self.shell.queue.len();

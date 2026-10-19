@@ -218,8 +218,7 @@ impl Win {
         self.act(Action::TakeDropped { path: p }, now);
     }
 
-    /// After content is taken, an empty record name takes the content's name (a file without its extension, a
-    /// folder or repository whole).
+    /// After content is taken, an empty record name takes the content's whole name.
     pub(super) fn took_named(&mut self) {
         if self.typed.work_note.trim().is_empty() {
             if let Some(c) = self.shell.content.as_ref() {
@@ -1333,8 +1332,9 @@ impl Win {
                     });
                 });
             },
-            |ui, me| {
-                go = page::Pen::new().press(ui, t(Key::U3AnnotateGo), !me.typed.annotate_note.trim().is_empty()).clicked();
+            |ui, _me| {
+                // Always pressable: an empty note is refused by the action, which says why (one judgement).
+                go = page::Pen::new().press(ui, t(Key::U3AnnotateGo), true).clicked();
                 close = key::key(ui, t(Key::CfBack), Role::Secondary, true).clicked();
             },
         );
@@ -1373,6 +1373,8 @@ impl Win {
         let trouble = self.ux.u3.attest_trouble.clone();
         let pin_full = self.ux.pin.chars() == crate::keybox::PIN_LEN;
         let (mut sign, mut close) = (false, false);
+        // The passcode's last character signs, as the key does.
+        let mut filled = false;
         let mut copy: Option<String> = None;
         let out = sheet::show(
             ctx,
@@ -1417,7 +1419,8 @@ impl Win {
                             });
                         }
                         None => {
-                            let _ = pin_field(st, ui, t(Key::U3AttestPin), None, "attest-pin", &mut me.ux.pin, me.ux.pin_shake, !busy);
+                            let row = pin_field(st, ui, t(Key::U3AttestPin), None, "attest-pin", &mut me.ux.pin, me.ux.pin_shake, !busy);
+                            filled = row.full && row.changed;
                         }
                     }
                 });
@@ -1435,6 +1438,7 @@ impl Win {
             ctx.copy_text(x);
             self.toasts.say(t(Key::U3CopiedSig), Tone::Note, now);
         }
+        sign |= filled && claim.is_some() && !busy;
         if sign {
             let pin = std::mem::take(&mut self.ux.pin);
             let r = self.act(Action::AttestFor { text: text.clone(), pin }, now);

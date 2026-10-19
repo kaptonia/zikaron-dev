@@ -329,8 +329,7 @@ fn calendar(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::Id, an
     let (rect, origin) = (drop.rect, drop.origin);
     crate::layer::card_at(ctx, id, rect);
     let layer = egui::LayerId::new(egui::Order::Foreground, id.with("menu"));
-    let scale = 0.97 + 0.03 * e;
-    ctx.set_transform_layer(layer, egui::emath::TSTransform { scaling: scale, translation: origin.to_vec2() * (1.0 - scale) + drop.moved * (1.0 - e) });
+    drop.enter(ctx, layer, e);
     let chosen = parse(value);
     let mut picked: Option<String> = None;
     let mut next = view;
@@ -392,6 +391,8 @@ fn calendar(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::Id, an
                 Level::Months => View { y: view.y + turn, ..next },
                 Level::Years => View { y: view.y + 10 * turn, ..next },
             };
+            // Only the years a day can be written in (`YYYY`, read back by `parse`).
+            next.y = next.y.clamp(1, 9999);
         }
         // The level's page: the room of the weekdays and the six rows of days.
         let top = head.bottom();

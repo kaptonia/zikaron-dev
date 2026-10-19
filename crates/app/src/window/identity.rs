@@ -313,7 +313,7 @@ impl Win {
                     for (which, label) in [(crate::roles::Role::Author, Key::IdSeatRowAuthor), (crate::roles::Role::Grantee, Key::IdSeatRowGrantee)] {
                         let v = match r.address(which) {
                             Some(a) => card::Detail::Mono(a.hex()),
-                            None => card::Detail::Text(t(Key::IdSeatEmpty).to_string()),
+                            None => card::Detail::Quiet(t(Key::IdSeatEmpty).to_string()),
                         };
                         addrs.push((format!("{} \u{b7} {}", name_of(r), t(label)), v));
                     }

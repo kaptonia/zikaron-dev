@@ -112,9 +112,10 @@ pub fn run_at(start: Start) -> i32 {
                     skin::Appearance::Light => false,
                     skin::Appearance::System => cc.egui_ctx.system_theme() == Some(egui::Theme::Dark),
                 };
-                if zikaron_os::backdrop(w, dark) != zikaron_os::Backdrop::Tint {
+                let follows = win.appearance() == skin::Appearance::System;
+                if zikaron_os::backdrop(w, dark, follows) != zikaron_os::Backdrop::Tint {
                     zikaron_ui::material::set_glass(true);
-                    win.backdrop = Some((w, dark));
+                    win.backdrop = Some((w, dark, follows));
                 }
             }
             Ok(Box::new(win))
@@ -1555,6 +1556,8 @@ pub struct Geometry {
     pub rows: Vec<(String, egui::Rect)>,
     /// The lit blocks seen with the pointer on each control that takes a click, one by one.
     pub lits: Vec<zikaron_ui::probe::Lit>,
+    /// Texts wider than the clip they are drawn in: the words, where they were laid, and the clip that cuts them.
+    pub cut: Vec<(String, egui::Rect, egui::Rect)>,
 }
 
 /// Draw `scene` in windowless frames until it is still (entrances, sheet openings and the appearance's blend
@@ -1622,15 +1625,23 @@ pub fn probe_geometry(ctx: &egui::Context, shell: Shell, scene: Scene, width: f3
     });
     widgets.retain(|w| w.rect.is_finite() && w.rect.width() > 0.0 && w.rect.height() > 0.0);
     let mut texts = Vec::new();
-    fn walk(s: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
+    let mut cut = Vec::new();
+    fn walk(s: &egui::Shape, clip: egui::Rect, out: &mut Vec<(String, egui::Rect)>, cut: &mut Vec<(String, egui::Rect, egui::Rect)>) {
         match s {
-            egui::Shape::Text(x) => out.push((x.galley.job.text.clone(), x.galley.rect.translate(x.pos.to_vec2()))),
-            egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, out)),
+            egui::Shape::Text(x) => {
+                let r = x.galley.rect.translate(x.pos.to_vec2());
+                // Cut across: laid wider than the clip it is drawn in (a row scrolled half out is cut down, not across).
+                if r.width() > 0.0 && (r.left() < clip.left() - 0.5 || r.right() > clip.right() + 0.5) && r.intersects(clip) {
+                    cut.push((x.galley.job.text.clone(), r, clip));
+                }
+                out.push((x.galley.job.text.clone(), r));
+            }
+            egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, clip, out, cut)),
             _ => {}
         }
     }
     for c in &out.shapes {
-        walk(&c.shape, &mut texts);
+        walk(&c.shape, c.clip_rect, &mut texts, &mut cut);
     }
     // The pointer on each control that takes a click, a frame each: the block it lights, as drawn.
     let mut lits: Vec<zikaron_ui::probe::Lit> = Vec::new();
@@ -1656,7 +1667,7 @@ pub fn probe_geometry(ctx: &egui::Context, shell: Shell, scene: Scene, width: f3
     (shell.checked, shell.key_anchors, shell.held, shell.verified, shell.book, shell.diligence) = kept_data;
     let cards = boxes.iter().map(|(l, r)| (format!("{:?}", l.order), *r)).collect();
     let rows = parts.iter().map(|(l, r)| (format!("{:?}", l.order), *r)).collect();
-    (shell, Geometry { widgets, texts, strays, cards, rows, lits })
+    (shell, Geometry { widgets, texts, strays, cards, rows, lits, cut })
 }
 
 /// Set the window's data for a data scene: a real check of this home's grant (no node set, so its gaps name the

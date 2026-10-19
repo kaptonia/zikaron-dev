@@ -83,7 +83,8 @@ fn paint_seg(ui: &mut egui::Ui, id_salt: &str, rect: Rect, cells: &[Cell], width
     let want_l = lefts.get(cur).copied().unwrap_or(inner.left()) - rect.left();
     let want_w = widths.get(cur).copied().unwrap_or(0.0);
     let (tl, tw) = slide(ui.ctx(), id, want_l, want_w);
-    thumb(&p, Rect::from_min_size(pos2(rect.left() + tl, inner.top()), vec2(tw, inner.height())));
+    // The stretch never takes the thumb outside its track.
+    thumb(&p, Rect::from_min_size(pos2(rect.left() + tl, inner.top()), vec2(tw, inner.height())).intersect(inner));
     let mut hit = None;
     for (i, cell) in cells.iter().enumerate() {
         let r = Rect::from_min_size(pos2(lefts[i], inner.top()), vec2(widths[i], inner.height()));

@@ -23,7 +23,19 @@ fn tone(step: u8) -> Color32 {
 
 /// A form card: fields 20 apart inside 22 × 24, on the card ground.
 pub fn card<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui, &mut Stack) -> R) -> R {
-    crate::card::card_pad(ui, vec2(24.0, 22.0), |ui| stack_gap(ui, 20.0, add))
+    // Rows laid in it light within this card, by its corner.
+    let id = crate::sheet::rows_corner_id();
+    let was = ui.ctx().data(|d| d.get_temp::<f32>(id));
+    ui.ctx().data_mut(|d| d.insert_temp(id, crate::tokens::Radius::Card.px()));
+    let r = crate::card::card_pad(ui, vec2(24.0, 22.0), |ui| stack_gap(ui, 20.0, add));
+    ui.ctx().data_mut(|d| {
+        if let Some(c) = was {
+            d.insert_temp(id, c);
+        } else {
+            d.remove::<f32>(id);
+        }
+    });
+    r
 }
 
 /// A sheet's fields: 14 apart, on the sheet.
@@ -169,10 +181,13 @@ pub fn joined<R>(ui: &mut egui::Ui, text: &mut String, hint: &str, w: f32, look:
     }
     let font = if look.mono { Type::MonoSmall.font() } else { egui::FontId::new(14.0, egui::FontFamily::Proportional) };
     let edit_rect = Rect::from_min_max(pos2(x + if look.icon.is_some() { 0.0 } else { 12.0 }, rect.top()), pos2(right - 8.0, rect.bottom()));
+    // Named as every field is (`input::field_id`), so it keeps its focus while what is above it comes and goes.
+    let id = crate::input::field_id(ui, "zikaron-joined", hint);
     let resp = ui
         .scope_builder(egui::UiBuilder::new().max_rect(edit_rect).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
             ui.add(
                 egui::TextEdit::singleline(text)
+                    .id(id)
                     .frame(egui::Frame::NONE)
                     .font(font.clone())
                     .text_color(c(C::Ink))
@@ -184,7 +199,8 @@ pub fn joined<R>(ui: &mut egui::Ui, text: &mut String, hint: &str, w: f32, look:
         .inner;
     let hot = resp.hovered();
     let focus = resp.has_focus();
-    let shape: egui::Shape = if focus {
+    // Red wins over blue, as on every field (`input::frame_shape`): a wrong value is said while it is typed.
+    let shape: egui::Shape = if focus && !look.bad {
         egui::Shape::Vec(vec![
             egui::epaint::RectShape::filled(rect.expand(3.0), egui::CornerRadius::same(13), c(C::Focus)).into(),
             egui::epaint::RectShape::new(rect, egui::CornerRadius::same(10), c(C::Surface), egui::Stroke::new(1.5_f32, c(C::Accent).gamma_multiply(0.7)), egui::StrokeKind::Inside).into(),
@@ -238,10 +254,12 @@ pub fn small(ui: &mut egui::Ui, text: &mut String, hint: &str, w: f32, bad: bool
     let slot = ui.painter().add(egui::Shape::Noop);
     let font = Type::MonoSmall.font();
     let inner = rect.shrink2(vec2(10.0, 0.0));
+    let id = crate::input::field_id(ui, "zikaron-small", hint);
     let resp = ui
         .scope_builder(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| {
             ui.add(
                 egui::TextEdit::singleline(text)
+                    .id(id)
                     .frame(egui::Frame::NONE)
                     .font(font.clone())
                     .text_color(c(C::Ink))
@@ -251,7 +269,7 @@ pub fn small(ui: &mut egui::Ui, text: &mut String, hint: &str, w: f32, bad: bool
             )
         })
         .inner;
-    let shape: egui::Shape = if resp.has_focus() {
+    let shape: egui::Shape = if resp.has_focus() && !bad {
         egui::Shape::Vec(vec![
             egui::epaint::RectShape::filled(rect.expand(3.0), egui::CornerRadius::same(12), c(C::Focus)).into(),
             egui::epaint::RectShape::new(rect, egui::CornerRadius::same(9), c(C::Surface), egui::Stroke::new(1.5_f32, c(C::Accent).gamma_multiply(0.7)), egui::StrokeKind::Inside).into(),

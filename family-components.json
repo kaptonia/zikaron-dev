@@ -2411,10 +2411,10 @@
   },
   {
    "id": "os-platform",
-   "familyVersion": 3,
+   "familyVersion": 4,
    "origin": {
     "by": "ZIKARON",
-    "previous": 2
+    "previous": 3
    },
    "home": [
     "crates/app/tests/checks_more/gaps_b13.rs",
@@ -2550,6 +2550,10 @@
     },
     {
      "path": "crates/zikaron-cli/tests/cli.rs",
+     "name": "the_repeated_flags_are_the_ones_read_many_times"
+    },
+    {
+     "path": "crates/zikaron-cli/tests/cli.rs",
      "name": "the_shell_holds_no_bare_write_to_a_path_the_caller_gave"
     },
     {
@@ -2666,6 +2670,10 @@
     },
     {
      "path": "crates/zikaron-os/src/unix.rs",
+     "name": "a_window_following_the_system_is_given_no_appearance_and_a_chosen_one_is_pinned"
+    },
+    {
+     "path": "crates/zikaron-os/src/unix.rs",
      "name": "an_appimage_is_not_supported"
     },
     {
@@ -2717,10 +2725,10 @@
   },
   {
    "id": "durable-write",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "crates/app/src/home.rs",
@@ -3091,6 +3099,10 @@
     {
      "path": "crates/zikaron-cli/tests/cli.rs",
      "name": "the_output_key_table_and_the_reason_table_have_no_twin_spellings"
+    },
+    {
+     "path": "crates/zikaron-cli/tests/cli.rs",
+     "name": "the_repeated_flags_are_the_ones_read_many_times"
     },
     {
      "path": "crates/zikaron-cli/tests/cli.rs",
@@ -3561,6 +3573,10 @@
      "name": "a_record_package_is_one_file_unless_a_folder_is_asked_and_both_read_back"
     },
     {
+     "path": "crates/zikaron-cli/tests/handoff.rs",
+     "name": "a_scan_of_a_home_with_neither_takes_its_nodes_through_the_credential"
+    },
+    {
      "path": "crates/zikaron-os/src/lib.rs",
      "name": "a_child_never_runs_holding_a_listed_lock"
     },
@@ -3631,6 +3647,10 @@
     {
      "path": "crates/zikaron-os/src/unix.rs",
      "name": "a_place_not_writable_and_no_command_line_are_named"
+    },
+    {
+     "path": "crates/zikaron-os/src/unix.rs",
+     "name": "a_window_following_the_system_is_given_no_appearance_and_a_chosen_one_is_pinned"
     },
     {
      "path": "crates/zikaron-os/src/unix.rs",
@@ -3899,10 +3919,10 @@
   },
   {
    "id": "passcode-gate",
-   "familyVersion": 3,
+   "familyVersion": 4,
    "origin": {
     "by": "ZIKARON",
-    "previous": 2
+    "previous": 3
    },
    "home": [
     "crates/app/src/action/mod.rs",
@@ -3918,6 +3938,10 @@
     "crates/zikaron-seal/src/keybox.rs"
    ],
    "tests": [
+    {
+     "path": "crates/app/src/window/gate.rs",
+     "name": "a_file_chosen_after_the_password_hands_nothing_over"
+    },
     {
      "path": "crates/app/src/window/gate.rs",
      "name": "a_pasted_phrase_that_fills_the_twelve_moves_to_the_passcode_row"
@@ -4562,10 +4586,10 @@
   },
   {
    "id": "ui-kit",
-   "familyVersion": 5,
+   "familyVersion": 6,
    "origin": {
     "by": "ZIKARON",
-    "previous": 4
+    "previous": 5
    },
    "home": [
     "crates/app/Cargo.toml",
@@ -5249,6 +5273,10 @@
     },
     {
      "path": "crates/zikaron-ui/tests/motion_edges.rs",
+     "name": "a_run_turned_twice_in_one_frame_stays_between_its_ends"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/motion_edges.rs",
      "name": "under_reduced_motion_a_fold_opens_at_once_and_its_rows_fade"
     },
     {
@@ -5360,10 +5388,10 @@
   },
   {
    "id": "bilingual-table",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "crates/app/src/lang.rs",
@@ -5442,10 +5470,10 @@
   },
   {
    "id": "app-skeleton",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     ".cargo/config.toml",
@@ -5605,6 +5633,10 @@
     {
      "path": "crates/app/tests/checks_more/refresh_steady.rs",
      "name": "a_refreshed_table_is_drawn_until_the_new_reading_lands"
+    },
+    {
+     "path": "crates/app/tests/checks_more/refresh_steady.rs",
+     "name": "a_report_is_judged_on_what_it_says_alone_and_never_against_a_newer_ledger"
     },
     {
      "path": "crates/app/tests/checks_more/refresh_steady.rs",
@@ -5828,6 +5860,10 @@
     },
     {
      "path": "crates/zikaron-cli/tests/cli.rs",
+     "name": "the_repeated_flags_are_the_ones_read_many_times"
+    },
+    {
+     "path": "crates/zikaron-cli/tests/cli.rs",
      "name": "the_shell_holds_no_bare_write_to_a_path_the_caller_gave"
     },
     {
@@ -5839,10 +5875,10 @@
   },
   {
    "id": "cli-skeleton",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "CLI-SCHEMA.md",
@@ -5955,6 +5991,10 @@
     {
      "path": "crates/zikaron-cli/tests/cli.rs",
      "name": "the_output_key_table_and_the_reason_table_have_no_twin_spellings"
+    },
+    {
+     "path": "crates/zikaron-cli/tests/cli.rs",
+     "name": "the_repeated_flags_are_the_ones_read_many_times"
     },
     {
      "path": "crates/zikaron-cli/tests/cli.rs",
@@ -6205,13 +6245,14 @@
   },
   {
    "id": "packaging-release",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/build.rs",
+    "crates/app/macos_sdk.rs",
     "crates/app/src/about.rs",
     "crates/zikaron-pack/Cargo.toml",
     "crates/zikaron-pack/src/elf.rs",
@@ -6299,10 +6340,10 @@
   },
   {
    "id": "ci-toolchain",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     ".github/workflows/package-windows.yml",
@@ -6363,10 +6404,10 @@
   },
   {
    "id": "structure-pins",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "crates/app/tests/checks.rs",
@@ -6795,6 +6836,10 @@
     },
     {
      "path": "tools/family-reg/tests/registry.rs",
+     "name": "a_file_spliced_in_by_include_is_reached_and_built_with_its_includer"
+    },
+    {
+     "path": "tools/family-reg/tests/registry.rs",
      "name": "a_home_file_that_is_missing_or_that_no_target_builds_is_a_fault"
     },
     {
@@ -6862,10 +6907,10 @@
   },
   {
    "id": "cli-desktop",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "CLI-SCHEMA.md",
@@ -7183,6 +7228,10 @@
     },
     {
      "path": "crates/zikaron-cli/tests/cli.rs",
+     "name": "the_repeated_flags_are_the_ones_read_many_times"
+    },
+    {
+     "path": "crates/zikaron-cli/tests/cli.rs",
      "name": "the_shell_holds_no_bare_write_to_a_path_the_caller_gave"
     },
     {
@@ -7391,6 +7440,10 @@
     },
     {
      "path": "crates/zikaron-os/src/unix.rs",
+     "name": "a_window_following_the_system_is_given_no_appearance_and_a_chosen_one_is_pinned"
+    },
+    {
+     "path": "crates/zikaron-os/src/unix.rs",
      "name": "an_appimage_is_not_supported"
     },
     {
@@ -7502,10 +7555,10 @@
   },
   {
    "id": "sealed-layer",
-   "familyVersion": 2,
+   "familyVersion": 3,
    "origin": {
     "by": "ZIKARON",
-    "previous": 1
+    "previous": 2
    },
    "home": [
     "crates/app/src/keybox.rs",
@@ -7678,6 +7731,10 @@
     {
      "path": "crates/zikaron-cli/tests/handoff.rs",
      "name": "a_record_package_is_one_file_unless_a_folder_is_asked_and_both_read_back"
+    },
+    {
+     "path": "crates/zikaron-cli/tests/handoff.rs",
+     "name": "a_scan_of_a_home_with_neither_takes_its_nodes_through_the_credential"
     },
     {
      "path": "crates/zikaron-glue/src/container.rs",
@@ -7887,6 +7944,12 @@
     "README.md",
     "THIRD-PARTY-LICENSES.txt",
     "tools/release/src/main.rs"
+   ]
+  },
+  {
+   "why": "this product's own Model Context Protocol server for its command line, reached only through the verb table (`verbs::run` dispatches `mcp`); a product without it writes none.",
+   "paths": [
+    "crates/zikaron-cli/src/mcp.rs"
    ]
   }
  ],

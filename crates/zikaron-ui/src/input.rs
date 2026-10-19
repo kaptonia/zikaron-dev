@@ -96,7 +96,7 @@ fn unframed() -> egui::Frame {
 /// focus and state while the page around it changes. When the words change language ([`crate::flow::morphing`])
 /// the field keeps the identity it had (the `n`th field of its kind in its `ui` stays the same field), so what is
 /// being typed keeps its focus and cursor.
-fn field_id(ui: &egui::Ui, kind: &str, hint: &str) -> egui::Id {
+pub(crate) fn field_id(ui: &egui::Ui, kind: &str, hint: &str) -> egui::Id {
     let worded = worded_id(ui, kind, hint);
     let ctx = ui.ctx();
     let pass = ctx.cumulative_pass_nr();
@@ -281,13 +281,10 @@ fn secret_field(ui: &mut egui::Ui, text: &mut crate::secret::Secret, hint: &str,
     let inner = rect.shrink2(vec2(tokens::INPUT_PAD_X, 4.0));
     let hint = number.map(|n| n.to_string()).unwrap_or_else(|| hint.to_string());
     let (font, hint_font) = match face {
-        Face::Plain => (Type::Mono.font(), None),
-        Face::Key => (Type::MonoSmall.font(), Some(Type::MonoSmall.font())),
-        Face::Word(_) => (Type::Mono.font(), Some(Type::Mono.font())),
-    };
-    let hint_text = match hint_font {
-        Some(f) => egui::RichText::new(&hint).font(f),
-        None => egui::RichText::new(&hint),
+        // A passcode's hint is words, in the plain face; a key's and a word cell's are in the monospace they take.
+        Face::Plain => (Type::Mono.font(), Type::Body.font()),
+        Face::Key => (Type::MonoSmall.font(), Type::MonoSmall.font()),
+        Face::Word(_) => (Type::Mono.font(), Type::Mono.font()),
     };
     let id = field_id(ui, "zikaron-secret", &format!("{hint}#{}", number.unwrap_or(0)));
     // Masked fields do not open the input method: while composing, the candidate bar and composing text are
@@ -304,7 +301,7 @@ fn secret_field(ui: &mut egui::Ui, text: &mut crate::secret::Secret, hint: &str,
             .id(id)
             .font(font)
             .text_color(c(C::Ink))
-            .hint_text(hint_text.color(c(C::Ink3)))
+            .hint_text(egui::RichText::new(&hint).font(hint_font).color(c(C::Ink3)))
             .password(true)
             .frame(unframed())
             .desired_width(inner.width())
@@ -313,8 +310,8 @@ fn secret_field(ui: &mut egui::Ui, text: &mut crate::secret::Secret, hint: &str,
     if resp.has_focus() {
         ui.ctx().output_mut(|o| o.ime = None);
     }
-    // No plain text in the undo stack: the text control pushes the previous text (a `String` that is never
-    // wiped) every frame, and a masked field needs no undo.
+    // No plain text kept in the undo stack from frame to frame: the text control pushes the previous text (a
+    // `String` egui frees without wiping) every frame, and a masked field needs no undo.
     if let Some(mut st) = egui::TextEdit::load_state(ui.ctx(), id) {
         st.clear_undoer();
         st.store(ui.ctx(), id);

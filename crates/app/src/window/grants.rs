@@ -18,7 +18,7 @@ fn ymd(secs: u64) -> datepick::Day {
     datepick::parse(&crate::when::day(secs)).unwrap_or((1970, 1, 1))
 }
 
-/// A month in short words ("10月", "Oct").
+/// A month in short words: the number and the month sign in Chinese, "Oct" in English.
 fn month_short(m: u32) -> &'static str {
     const MONTHS: [Key; 12] = [
         Key::MonthShort1,
@@ -37,7 +37,8 @@ fn month_short(m: u32) -> &'static str {
     t(MONTHS[(m.clamp(1, 12) - 1) as usize])
 }
 
-/// A validity window in words: "YYYY-MM-DD 至 YYYY-MM-DD", as the pages have always written it.
+/// A validity window in words: "YYYY-MM-DD to YYYY-MM-DD" (in Chinese the word for "to" between), as the pages
+/// have always written it.
 pub(super) fn span_say(w: Option<(u64, u64)>) -> String {
     super::faces::window_long(w)
 }
