@@ -262,11 +262,6 @@ pub enum Action {
     ReadGrants,
     /// Run the overlap check (guard against selling the same work twice).
     CheckClash { work: String, from: String, to: String },
-    // First-run checklist.
-    /// Tick a step. Skipping a step is refused by name.
-    WizardTick { step: String, said: String },
-    /// Start over.
-    WizardReset,
     // Revocation.
     /// Assemble a revocation. A legal action (verb `revoke`).
     Revoke { grant: String, case: String },
@@ -655,8 +650,6 @@ impl Action {
             | Action::ReadDepth { .. }
             | Action::ReadGrants
             | Action::CheckClash { .. }
-            | Action::WizardTick { .. }
-            | Action::WizardReset
             | Action::ReadStory { .. }
             | Action::VerifyAnchors { .. }
             | Action::ListKeyAnchors { .. }
@@ -761,7 +754,6 @@ impl Action {
             Action::ReadDepth { .. } => Feature::W6,
             Action::DraftGrant { .. } => Feature::W7,
             Action::ReadGrants | Action::CheckClash { .. } => Feature::W8,
-            Action::WizardTick { .. } | Action::WizardReset => Feature::W13,
             Action::Revoke { .. } | Action::ReadStory { .. } => Feature::W9,
             Action::VerifyAnchors { .. }
             | Action::Cosign { .. }
@@ -880,8 +872,6 @@ impl Action {
             Action::QueueEntry { .. } => None,
             Action::ReadGrants => None,
             Action::CheckClash { .. } => None,
-            Action::WizardTick { .. } => None,
-            Action::WizardReset => None,
             Action::Revoke { .. } => None,
             Action::ReadStory { .. } => None,
             Action::VerifyAnchors { .. } => None,
@@ -1157,10 +1147,6 @@ pub enum Applied {
     ReadNets(usize),
     /// The overlap check ran: how many overlaps.
     Clashed(usize),
-    /// A step was ticked, with the next step.
-    Ticked { step: &'static str, next: Option<&'static str> },
-    /// The checklist starts over.
-    Restarted,
     /// A revocation was written.
     Revoked { id: String, queued: usize, next: Next },
     /// A grant's three-part story was read.
@@ -2114,16 +2100,6 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             Ok(n) => Applied::Clashed(n),
             Err(f) => shell.trouble(f),
         },
-        // ── First-run checklist ──
-        Action::WizardTick { step, said } => match wizard_tick(shell, &step, &said) {
-            Ok((s, n)) => Applied::Ticked { step: s, next: n },
-            Err(f) => shell.trouble(f),
-        },
-        Action::WizardReset => match wizard_reset(shell) {
-            Ok(()) => Applied::Restarted,
-            Err(f) => shell.trouble(f),
-        },
-
         // ── Revocation ──
         Action::Revoke { grant, case } => match revoke(shell, &grant, &case) {
             Ok((id, n)) => Applied::Revoked { id, queued: n.queued, next: n.next },
@@ -2513,7 +2489,6 @@ mod sentinel;
 mod succeed;
 mod vault;
 mod verify;
-mod wizard;
 use self::adopt::*;
 use self::anchor::*;
 use self::archive::*;
@@ -2541,7 +2516,6 @@ use self::sentinel::*;
 use self::succeed::*;
 use self::vault::*;
 use self::verify::*;
-use self::wizard::*;
 
 /// The command line binary shipped beside this program (located only by `zikaron_os::cli_path`).
 pub fn cli_beside() -> Option<std::path::PathBuf> {

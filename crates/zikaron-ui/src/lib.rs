@@ -30,6 +30,7 @@ pub mod formparts;
 pub mod fonts;
 pub mod full;
 pub mod grid;
+pub mod hand;
 pub mod headtabs;
 pub mod inform;
 pub mod icons;

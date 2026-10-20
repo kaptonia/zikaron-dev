@@ -85,9 +85,72 @@ pub fn bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
     cy(s)
 }
 
-fn now(ctx: &Context) -> f64 {
-    ctx.input(|i| i.time)
+/// The clock every motion in the window reads (and the window's own `now`): the time of the frame on the screen,
+/// stepping evenly from frame to frame. The window does not draw at even times (on macOS through OpenGL two frames
+/// fall in one refresh, one at once and one late), so a motion sampled when each frame starts moves unevenly on
+/// the screen; this clock moves about one refresh a frame (the refresh read from the frames themselves), is never
+/// ahead of the time nor more than two refreshes behind it, and is the time itself after a rest or a stall (a frame
+/// nothing moving asked for is a rest).
+pub fn now(ctx: &Context) -> f64 {
+    /// How many moving frames the refresh is read from.
+    const SEEN: usize = 16;
+    #[derive(Clone, Copy)]
+    struct Clock {
+        frame: u64,
+        real: f64,
+        shown: f64,
+        /// The spacing of the last moving frames (a ring), how many are in it, and where the next goes.
+        gaps: [f64; SEEN],
+        count: usize,
+        next: usize,
+    }
+    impl Clock {
+        /// The refresh: the mean spacing of the last moving frames (a sixtieth of a second until there are any).
+        /// Every moving frame counts, the late with the early, so frames that come two to a refresh read as one
+        /// refresh each.
+        fn period(&self) -> f64 {
+            if self.count == 0 { 1.0 / 60.0 } else { self.gaps[..self.count].iter().sum::<f64>() / self.count as f64 }
+        }
+        fn saw(mut self, dt: f64) -> Clock {
+            self.gaps[self.next] = dt;
+            self.next = (self.next + 1) % SEEN;
+            self.count = (self.count + 1).min(SEEN);
+            self
+        }
+    }
+    let id = egui::Id::new("zikaron-motion-clock");
+    let frame = ctx.cumulative_frame_nr();
+    let real = ctx.input(|i| i.time);
+    let last = ctx.data(|d| d.get_temp::<Clock>(id));
+    if let Some(c) = last.filter(|c| c.frame == frame) {
+        return c.shown;
+    }
+    // Only a frame the last one asked for at once (something moving) steps on from it; any other frame (a timer's,
+    // an input's after a rest) is drawn at the time itself and teaches the clock no refresh.
+    let moving = ctx.requested_repaint_last_pass();
+    let c = match last {
+        Some(c) if moving && real > c.real && real - c.real < REST => {
+            let dt = real - c.real;
+            let c = Clock { frame, real, ..c }.saw(dt);
+            let period = c.period();
+            if dt > 2.5 * period {
+                // A frame more than two and a half refreshes after the last is a stall: the clock is the time again.
+                Clock { shown: real, ..c }
+            } else {
+                // One refresh on, drawn a fifth of the way to the time itself (so it never falls behind for good).
+                let step = last.map(|l| l.shown).unwrap_or(real) + period;
+                Clock { shown: (step + (real - step) * 0.2).clamp(real - 2.0 * period, real), ..c }
+            }
+        }
+        Some(c) => Clock { frame, real, shown: real, ..c },
+        None => Clock { frame, real, shown: real, gaps: [0.0; SEEN], count: 0, next: 0 },
+    };
+    ctx.data_mut(|d| d.insert_temp(id, c));
+    c.shown
 }
+
+/// A gap between frames this long is a rest, not a refresh.
+const REST: f64 = 0.05;
 
 #[derive(Clone, Copy)]
 struct Tween {
@@ -421,26 +484,31 @@ impl Entry {
 /// Draw `add` moved by `off` and faded to `alpha`, while taking the space it would take unmoved. Input
 /// follows the drawing, so a moving block is clicked where it is seen. Moving or at rest, the block is drawn in
 /// the same child: the ids of what it holds (their open states, their animations' clocks) do not change the
-/// moment an entrance ends.
-pub fn shifted<R>(ui: &mut egui::Ui, off: Vec2, alpha: f32, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+/// moment an entrance ends. They are the entrance's own (`entry`, the key of what entered): a new page, tab, step or
+/// swapped content is first seen with its own size, never eased from what stood there before.
+pub fn shifted<R>(ui: &mut egui::Ui, off: Vec2, alpha: f32, entry: u64, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let top = ui.cursor().min;
     let w = ui.available_width();
     let rect = egui::Rect::from_min_size(top + off, egui::vec2(w, f32::INFINITY));
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(*ui.layout()));
+    let mut child = ui.new_child(egui::UiBuilder::new().id_salt(("zikaron-entry", entry)).max_rect(rect).layout(*ui.layout()));
     if alpha < 1.0 {
         child.multiply_opacity(alpha.clamp(0.0, 1.0));
     }
     let r = add(&mut child);
+    // What the block shows, not what it laid out: a block easing its height (`flow::grow`) moves the cursor back to
+    // the height it shows, while the child's laid-out rectangle keeps the whole; what follows is placed from the
+    // height shown, so it moves with the block rather than ahead of it.
     let used = child.min_rect();
-    ui.advance_cursor_after_rect(egui::Rect::from_min_size(top, egui::vec2(used.width().min(w), used.height())));
+    let shown_bottom = (child.cursor().min.y - child.spacing().item_spacing.y).min(used.bottom()).max(used.top());
+    ui.advance_cursor_after_rect(egui::Rect::from_min_size(top, egui::vec2(used.width().min(w), (shown_bottom - (top.y + off.y)).max(0.0))));
     r
 }
 
 /// One block of a staggered list: each enters from 6 below, 200 ms, 30 ms after the one before (at most 200).
 pub fn stagger<R>(ui: &mut egui::Ui, id: Id, key: u64, index: usize, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    let delay = (index as f32 * 0.03).min(0.2);
+    let delay = (index as f32 * 0.03).min(0.2) * crate::tokens::PACE;
     let p = enter(ui.ctx(), id, key, delay, tokens::MID, Curve::Ease);
-    shifted(ui, egui::vec2(0.0, 6.0 * (1.0 - p)), p, add)
+    shifted(ui, egui::vec2(0.0, 6.0 * (1.0 - p)), p, key, add)
 }
 
 /// A block swapped in with new content: fades in from 6 below over 200 ms whenever `key` changes.

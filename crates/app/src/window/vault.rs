@@ -344,11 +344,11 @@ impl Win {
             rows.push((t(Key::UpstreamDirName).to_string(), Val::mono(d.clone())));
         }
         if let Some(k) = card.as_ref() {
-            rows.push((t(Key::U3Verdict).to_string(), Val::mono(k.verdict.clone())));
+            rows.push((t(Key::U3Verdict).to_string(), Val::figure(k.verdict.clone())));
             for (tok, st) in crate::vaultx::states(&k.checks) {
-                rows.push((tok, Val::mono(st)));
+                rows.push((tok, Val::figure(st)));
             }
-            rows.push((t(Key::AuditLabel).to_string(), Val::mono(k.upstream_label.clone())));
+            rows.push((t(Key::AuditLabel).to_string(), Val::figure(k.upstream_label.clone())));
         }
         if let Some(b) = made.as_ref() {
             rows.push((t(Key::U4BadgeText).to_string(), Val::mono(b.txt.display().to_string())));
@@ -389,7 +389,7 @@ impl Win {
                 ui,
                 "relicense-page-details",
                 &[
-                    (t(Key::U4Upstream), Val::mono(if upstream.is_empty() { t(Key::None_).to_string() } else { upstream.clone() })),
+                    (t(Key::U4Upstream), if upstream.is_empty() { Val::text(t(Key::None_)) } else { Val::mono(upstream.clone()) }),
                     (t(Key::U3Issuer), Val::mono(held.as_ref().map(|h| h.author.clone()).unwrap_or_default())),
                 ],
             );

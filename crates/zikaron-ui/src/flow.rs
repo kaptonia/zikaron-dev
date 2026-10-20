@@ -33,7 +33,7 @@ pub fn mark(ctx: &Context, layer: LayerId) -> usize {
 }
 
 /// Clip the shapes painted on `layer` from `start` on to above `bottom`.
-fn clip_below(ctx: &Context, layer: LayerId, start: usize, bottom: f32) {
+pub(crate) fn clip_below(ctx: &Context, layer: LayerId, start: usize, bottom: f32) {
     ctx.graphics_mut(|g| {
         if let Some(l) = g.get_mut(layer) {
             let end = l.next_idx().0;
@@ -44,17 +44,40 @@ fn clip_below(ctx: &Context, layer: LayerId, start: usize, bottom: f32) {
     });
 }
 
+fn moving_id() -> Id {
+    Id::new("zikaron-height-moving")
+}
+
+/// A height is on its way this pass (a block easing to its content, a fold opening or closing): whatever holds it
+/// learns so through [`watch_moving`] and follows it, instead of easing again after it.
+pub fn mark_moving(ctx: &Context) {
+    ctx.data_mut(|d| d.insert_temp(moving_id(), true));
+}
+
+/// Run `f` and say whether a height inside it was on its way this pass ([`mark_moving`]); the scope around this one
+/// learns it as well.
+pub fn watch_moving<R>(ctx: &Context, f: impl FnOnce() -> R) -> (R, bool) {
+    let outer = ctx.data(|d| d.get_temp::<bool>(moving_id())).unwrap_or(false);
+    ctx.data_mut(|d| d.insert_temp(moving_id(), false));
+    let r = f();
+    let inner = ctx.data(|d| d.get_temp::<bool>(moving_id())).unwrap_or(false);
+    ctx.data_mut(|d| d.insert_temp(moving_id(), outer || inner));
+    (r, inner)
+}
+
 /// A block whose height follows its content over [`tokens::SLOW`] (see the file header). `add` draws the block
 /// in `ui` itself, as it always has (so whatever it holds keeps its identity), and answers its laid-out
 /// rectangle; the block then takes the height shown: what lies past it is clipped, and what comes after it in
-/// `ui` is placed from the height shown (the cursor moved back up, or on down). Returns the content's answer and
-/// the block's rectangle as shown.
+/// `ui` is placed from the height shown (the cursor moved back up, or on down). A block whose content is itself
+/// changing height this pass (an inner block easing, a fold) takes its content's height as it is, so the two move
+/// as one instead of the outer one easing again behind the inner. Returns the content's answer and the block's
+/// rectangle as shown.
 pub fn grow<R>(ui: &mut egui::Ui, id: Id, add: impl FnOnce(&mut egui::Ui) -> (R, Rect)) -> (R, Rect) {
     let ctx = ui.ctx().clone();
     let layer = ui.layer_id();
     let start = mark(&ctx, layer);
-    let (r, laid) = add(ui);
-    let shown = height(&ctx, id, laid.height(), laid.width());
+    let ((r, laid), inner) = watch_moving(&ctx, || add(ui));
+    let shown = height_following(&ctx, id, laid.height(), laid.width(), inner);
     if shown + 0.5 < laid.height() {
         clip_below(&ctx, layer, start, laid.top() + shown);
     }
@@ -69,13 +92,23 @@ pub fn grow<R>(ui: &mut egui::Ui, id: Id, add: impl FnOnce(&mut egui::Ui) -> (R,
 
 /// The height shown for a block under `id` whose content is `natural` high at width `w` (see [`grow`]).
 pub fn height(ctx: &Context, id: Id, natural: f32, w: f32) -> f32 {
+    height_following(ctx, id, natural, w, false)
+}
+
+/// [`height`], taking `natural` as it is when the content is itself on its way (`inner`): the content already
+/// moves, and a second ease after it would trail by its own length.
+pub fn height_following(ctx: &Context, id: Id, natural: f32, w: f32, inner: bool) -> f32 {
     let pass = ctx.cumulative_pass_nr();
     let hid = id.with("zikaron-grow");
     let prev = ctx.data(|d| d.get_temp::<Grown>(hid));
     let steady = prev.map(|p| p.pass + 1 >= pass && (p.w - w).abs() < 0.5).unwrap_or(false);
     ctx.data_mut(|d| d.insert_temp(hid, Grown { w, pass }));
-    if steady {
-        motion::glide(ctx, hid.with("h"), natural, tokens::SLOW, Curve::Ease)
+    if steady && !inner {
+        let shown = motion::glide(ctx, hid.with("h"), natural, tokens::SLOW, Curve::Ease);
+        if (shown - natural).abs() >= 0.5 {
+            mark_moving(ctx);
+        }
+        shown
     } else {
         motion::snap(ctx, hid.with("h"), natural);
         natural
@@ -143,9 +176,9 @@ impl Group {
     /// add (a list that draws its own block adds it to the block's height; one inside [`grow`] needs nothing).
     pub fn finish(self, ctx: &Context) -> f32 {
         let pass = ctx.cumulative_pass_nr();
-        let now = ctx.input(|i| i.time);
+        let now = crate::motion::now(ctx);
         let mut mem = ctx.data(|d| d.get_temp::<Memory>(self.id)).unwrap_or_default();
-        let steady = mem.pass + 1 >= pass && mem.pass != 0 && (mem.width - self.width).abs() < 0.5 && !crate::scroll::moving(ctx) && !morphing(ctx);
+        let steady = mem.pass + 1 >= pass && mem.pass != 0 && (mem.width - self.width).abs() < 0.5 && !crate::scroll::by_hand(ctx) && !morphing(ctx);
         let dur = tokens::SLOW;
         let still = motion::reduced(ctx);
         let mut extra = 0.0;
@@ -269,13 +302,13 @@ fn retext_id() -> Id {
 }
 
 /// How long the old words take to go, the new ones to come, and keys and labels to reach their new size.
-const WORDS_OUT: f32 = 0.2;
-const WORDS_IN: f32 = 0.24;
+const WORDS_OUT: f32 = 0.2 * crate::tokens::PACE;
+const WORDS_IN: f32 = 0.24 * crate::tokens::PACE;
 
 /// The words just changed language: start the crossfade (see the file header). Call it the frame the language is
 /// switched, before or while drawing that frame.
 pub fn retext(ctx: &Context) {
-    let now = ctx.input(|i| i.time);
+    let now = crate::motion::now(ctx);
     ctx.plugin_or_default::<Words>();
     ctx.data_mut(|d| d.insert_temp(retext_id(), now));
     ctx.with_plugin::<Words, _>(|w| w.start = Some((now, w.last.clone())));
@@ -285,7 +318,7 @@ pub fn retext(ctx: &Context) {
 /// Whether keys and labels are on their way to the size of their new words (within [`tokens::SLOW`] of a
 /// [`retext`]).
 pub fn morphing(ctx: &Context) -> bool {
-    let now = ctx.input(|i| i.time);
+    let now = crate::motion::now(ctx);
     ctx.data(|d| d.get_temp::<f64>(retext_id())).map(|at| now >= at && ((now - at) as f32) < tokens::SLOW + 0.05).unwrap_or(false)
 }
 
@@ -342,7 +375,7 @@ impl egui::Plugin for Words {
     }
 
     fn on_end_pass(&mut self, ui: &mut egui::Ui) {
-        self.now = ui.input(|i| i.time);
+        self.now = crate::motion::now(ui.ctx());
         if let Some((at, _)) = &self.start {
             if self.now >= *at && ((self.now - at) as f32) < WORDS_IN.max(WORDS_OUT) {
                 ui.ctx().request_repaint();
@@ -386,15 +419,32 @@ impl egui::Plugin for Words {
 
 // ───────────────────────── Hover ─────────────────────────
 
-/// Whether the pointer is on `rect` now, as it is laid out this frame, on the layer on top there, with nothing
-/// scrolling: a list lights at most the one row under the pointer this frame, and none while it scrolls (it
-/// lights again once it stands still).
+/// Whether the row in `rect` is the one lit under the pointer now, as it is laid out this frame, on the layer on top
+/// there, with nothing scrolling: at most one place a pass is lit, and none while something scrolls (it lights
+/// again once it stands still). A row owns its top edge and not its bottom one, so the pointer on the line between
+/// two rows lights the lower only; the first place that answers yes in a pass holds the light for that pass.
 pub fn pointer_on(ui: &egui::Ui, rect: Rect) -> bool {
     if crate::scroll::moving(ui.ctx()) {
         return false;
     }
-    let Some(p) = ui.ctx().pointer_hover_pos() else { return false };
-    rect.contains(p) && ui.clip_rect().contains(p) && crate::layer::on_top(ui, Rect::from_center_size(p, Vec2::ZERO))
+    let Some(at) = ui.ctx().pointer_hover_pos() else { return false };
+    // Where the pointer is among this layer's rows as they are drawn this frame: a layer scaled as it comes in (a
+    // sheet, a menu) is read through its transform, not where its rows would be unscaled.
+    let p = ui.ctx().layer_transform_to_global(ui.layer_id()).map(|tr| tr.inverse() * at).unwrap_or(at);
+    let owns = |r: Rect| p.x >= r.min.x && p.x < r.max.x && p.y >= r.min.y && p.y < r.max.y;
+    if !(owns(rect) && ui.clip_rect().contains(p) && crate::layer::on_top(ui, Rect::from_center_size(at, Vec2::ZERO))) {
+        return false;
+    }
+    let held = egui::Id::new("zikaron-lit-this-pass");
+    let pass = ui.ctx().cumulative_pass_nr();
+    let key = (ui.layer_id(), [rect.min.x, rect.min.y, rect.max.x, rect.max.y].map(f32::to_bits));
+    match ui.ctx().data(|d| d.get_temp::<(u64, (egui::LayerId, [u32; 4]))>(held)) {
+        Some((at, k)) if at == pass => k == key,
+        _ => {
+            ui.ctx().data_mut(|d| d.insert_temp(held, (pass, key)));
+            true
+        }
+    }
 }
 
 // ───────────────────────── Keys of a bar ─────────────────────────

@@ -42,8 +42,9 @@ pub fn title_tabs(ui: &mut egui::Ui, title: &str, id_salt: &str, labels: &[&str]
         let colour = crate::palette::mix(c(C::Ink2), c(C::Ink), hot);
         let font = if on { font_on.clone() } else { Type::Body.font() };
         p.text(pos2(r.left() + 1.0, r.center().y), egui::Align2::LEFT_CENTER, *l, font, colour);
-        if !on {
-            let _ = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        if on {
+            // Already chosen: nothing to press.
+            crate::hand::sink(ui.ctx(), resp.id);
         }
     }
     if !labels.is_empty() {

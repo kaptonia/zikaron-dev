@@ -4644,6 +4644,7 @@
     "crates/zikaron-ui/src/formparts.rs",
     "crates/zikaron-ui/src/full.rs",
     "crates/zikaron-ui/src/grid.rs",
+    "crates/zikaron-ui/src/hand.rs",
     "crates/zikaron-ui/src/headtabs.rs",
     "crates/zikaron-ui/src/icons.rs",
     "crates/zikaron-ui/src/inform.rs",
@@ -4680,13 +4681,18 @@
     "crates/zikaron-ui/tests/controls.rs",
     "crates/zikaron-ui/tests/covers_motion.rs",
     "crates/zikaron-ui/tests/gaps_b10.rs",
+    "crates/zikaron-ui/tests/hand.rs",
+    "crates/zikaron-ui/tests/icon_pairs.rs",
     "crates/zikaron-ui/tests/layers.rs",
     "crates/zikaron-ui/tests/layout_rules.rs",
+    "crates/zikaron-ui/tests/motion_clock.rs",
     "crates/zikaron-ui/tests/motion_edges.rs",
     "crates/zikaron-ui/tests/motion_frames.rs",
     "crates/zikaron-ui/tests/outside_pages.rs",
+    "crates/zikaron-ui/tests/reveal.rs",
     "crates/zikaron-ui/tests/row_geometry.rs",
     "crates/zikaron-ui/tests/rows_structure.rs",
+    "crates/zikaron-ui/tests/size_with_content.rs",
     "crates/zikaron-ui/tests/toast_wrap.rs"
    ],
    "symbols": [
@@ -4869,6 +4875,10 @@
     },
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
+     "name": "a_chain_read_the_status_line_reports_grows_no_card"
+    },
+    {
+     "path": "crates/app/tests/checks_more/window_habits.rs",
      "name": "a_page_set_from_outside_the_window_is_shown_next"
     },
     {
@@ -4882,6 +4892,10 @@
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
      "name": "the_language_switches_on_the_wizard_and_the_gate_keeps_it"
+    },
+    {
+     "path": "crates/app/tests/checks_more/window_habits.rs",
+     "name": "the_passcode_cells_sit_in_the_middle_of_the_gates_group"
     },
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
@@ -5116,6 +5130,30 @@
      "name": "pressing_the_menus_own_key_while_it_is_open_closes_it_and_it_stays_closed"
     },
     {
+     "path": "crates/zikaron-ui/tests/hand.rs",
+     "name": "a_cursor_the_frame_chose_is_kept"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/hand.rs",
+     "name": "only_machine_values_carry_a_copy_key"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/hand.rs",
+     "name": "the_details_copy_icon_shows_the_hand_and_its_label_does_not"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/hand.rs",
+     "name": "whatever_takes_a_click_shows_the_hand_unless_it_only_swallows_it"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/icon_pairs.rs",
+     "name": "back_and_forward_are_one_shape_mirrored"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/icon_pairs.rs",
+     "name": "open_and_shut_are_one_shape_turned"
+    },
+    {
      "path": "crates/zikaron-ui/tests/layers.rs",
      "name": "a_banner_wraps_a_long_sentence_and_never_cuts_it"
     },
@@ -5233,6 +5271,10 @@
     },
     {
      "path": "crates/zikaron-ui/tests/layout_rules.rs",
+     "name": "a_fields_name_stands_over_its_control_by_the_one_measure"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/layout_rules.rs",
      "name": "a_nested_area_at_its_end_keeps_the_wheel_and_the_page_stays"
     },
     {
@@ -5250,6 +5292,22 @@
     {
      "path": "crates/zikaron-ui/tests/layout_rules.rs",
      "name": "no_widget_opens_a_row_in_the_layout_it_was_handed"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/motion_clock.rs",
+     "name": "a_frame_nothing_moving_asked_for_teaches_it_no_refresh"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/motion_clock.rs",
+     "name": "a_run_of_close_frames_does_not_lock_the_refresh_short"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/motion_clock.rs",
+     "name": "after_a_rest_or_a_stall_it_is_the_time"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/motion_clock.rs",
+     "name": "uneven_frames_step_evenly"
     },
     {
      "path": "crates/zikaron-ui/tests/motion_edges.rs",
@@ -5317,6 +5375,10 @@
     },
     {
      "path": "crates/zikaron-ui/tests/motion_frames.rs",
+     "name": "momentum_scrolling_lights_no_row_until_it_stands_still"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/motion_frames.rs",
      "name": "rows_below_a_row_that_leaves_move_up_in_one_run"
     },
     {
@@ -5326,6 +5388,10 @@
     {
      "path": "crates/zikaron-ui/tests/motion_frames.rs",
      "name": "the_knob_stretches_then_settles_round"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/motion_frames.rs",
+     "name": "the_pointer_on_the_line_between_two_rows_lights_one"
     },
     {
      "path": "crates/zikaron-ui/tests/motion_frames.rs",
@@ -5348,8 +5414,36 @@
      "name": "the_shell_names_no_page"
     },
     {
+     "path": "crates/zikaron-ui/tests/reveal.rs",
+     "name": "a_drop_down_near_the_foot_takes_the_page_along"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/reveal.rs",
+     "name": "a_fold_in_a_card_is_brought_into_view_as_it_opens"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/reveal.rs",
+     "name": "a_fold_of_its_own_is_brought_into_view_as_it_opens"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/reveal.rs",
+     "name": "a_row_that_comes_while_the_window_scrolls_on_its_own_still_opens_in"
+    },
+    {
      "path": "crates/zikaron-ui/tests/row_geometry.rs",
-     "name": "a_lit_block_keeps_one_gap_and_the_cards_corner"
+     "name": "a_fold_lights_no_block"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/row_geometry.rs",
+     "name": "a_lit_block_keeps_the_gap_to_the_card_and_meets_the_lines"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/row_geometry.rs",
+     "name": "a_lit_blocks_edge_lies_under_the_line_it_meets"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/row_geometry.rs",
+     "name": "a_menu_rows_lit_block_is_where_it_takes_the_pointer"
     },
     {
      "path": "crates/zikaron-ui/tests/row_geometry.rs",
@@ -5357,7 +5451,15 @@
     },
     {
      "path": "crates/zikaron-ui/tests/row_geometry.rs",
-     "name": "a_tables_lit_row_meets_lines_square_and_the_cards_edge_round"
+     "name": "a_tables_lit_row_is_round_on_every_corner"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/row_geometry.rs",
+     "name": "a_value_with_line_breaks_is_drawn_a_line_each_whatever_its_kind"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/row_geometry.rs",
+     "name": "chosen_rows_that_touch_are_one_block"
     },
     {
      "path": "crates/zikaron-ui/tests/row_geometry.rs",
@@ -5368,8 +5470,24 @@
      "name": "two_lines_in_a_row_as_tall_as_they_are_sit_on_the_keys_middle_line"
     },
     {
+     "path": "crates/zikaron-ui/tests/row_geometry.rs",
+     "name": "under_a_scaled_layer_the_row_drawn_under_the_pointer_is_the_one_lit"
+    },
+    {
      "path": "crates/zikaron-ui/tests/rows_structure.rs",
      "name": "a_key_in_a_row_is_in_its_row_and_a_loose_key_is_told"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/size_with_content.rs",
+     "name": "a_block_around_an_easing_block_moves_with_it"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/size_with_content.rs",
+     "name": "a_folds_rows_give_up_their_height_as_they_fade"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/size_with_content.rs",
+     "name": "new_content_is_first_seen_at_its_own_size"
     },
     {
      "path": "crates/zikaron-ui/tests/toast_wrap.rs",
@@ -5443,6 +5561,10 @@
     },
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
+     "name": "a_chain_read_the_status_line_reports_grows_no_card"
+    },
+    {
+     "path": "crates/app/tests/checks_more/window_habits.rs",
      "name": "a_page_set_from_outside_the_window_is_shown_next"
     },
     {
@@ -5456,6 +5578,10 @@
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
      "name": "the_language_switches_on_the_wizard_and_the_gate_keeps_it"
+    },
+    {
+     "path": "crates/app/tests/checks_more/window_habits.rs",
+     "name": "the_passcode_cells_sit_in_the_middle_of_the_gates_group"
     },
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
@@ -7016,6 +7142,10 @@
     },
     {
      "path": "crates/app/src/window/settings.rs",
+     "name": "the_line_under_the_box_takes_room_only_with_words"
+    },
+    {
+     "path": "crates/app/src/window/settings.rs",
      "name": "the_line_under_the_switch_says_the_expiry_or_why_not"
     },
     {
@@ -7841,8 +7971,7 @@
     "crates/app/src/action/sentinel.rs",
     "crates/app/src/action/succeed.rs",
     "crates/app/src/action/vault.rs",
-    "crates/app/src/action/verify.rs",
-    "crates/app/src/action/wizard.rs"
+    "crates/app/src/action/verify.rs"
    ]
   },
   {
@@ -7884,7 +8013,6 @@
     "crates/app/src/verifiedx.rs",
     "crates/app/src/verifyx.rs",
     "crates/app/src/widex.rs",
-    "crates/app/src/wizard.rs",
     "crates/app/src/zlibx.rs"
    ]
   },
@@ -8334,10 +8462,6 @@
     },
     {
      "path": "crates/app/tests/checks.rs",
-     "name": "the_first_window_checklist_refuses_a_skipped_step"
-    },
-    {
-     "path": "crates/app/tests/checks.rs",
      "name": "the_frame_body_asks_no_question_that_needs_the_disk"
     },
     {
@@ -8347,10 +8471,6 @@
     {
      "path": "crates/app/tests/checks.rs",
      "name": "the_wizard_never_stands_past_the_identity_step_without_an_identity"
-    },
-    {
-     "path": "crates/app/tests/checks_more/window_b10.rs",
-     "name": "a_failed_chain_read_is_said_on_the_grants_page"
     },
     {
      "path": "crates/app/tests/checks_more/window_b10.rs",

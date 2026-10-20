@@ -216,8 +216,6 @@ fn every(ids: &Ids) -> Vec<Action> {
         Action::QueueEntry { id: s() },
         Action::ReadGrants,
         Action::CheckClash { work: s(), from: s(), to: s() },
-        Action::WizardTick { step: s(), said: s() },
-        Action::WizardReset,
         Action::Revoke { grant: ids.grant.clone(), case: "a8".into() },
         Action::ReadStory { grant: s() },
         Action::VerifyAnchors { rows: s() },

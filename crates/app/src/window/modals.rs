@@ -252,7 +252,6 @@ impl Win {
                 sheet::title(ui, &fill1(Key::ConflictTitle, &c.offline.to_string()), "");
                 let cols = [table::SEQ, table::col(t(Key::U3Entry), table::Col::Fr(1.0)), table::col_r(t(Key::U3QueuedAt), table::Col::Px(120.0))];
                 let _ = table::table(ui, "fetch-conflict", &cols, true, &rows, "");
-                zikaron_ui::callout::callout(ui, t(Key::ConflictSay));
             },
             |ui, _me| {
                 sure = page::Pen::new().press(ui, t(Key::DoFetchReplace), ready).clicked();
@@ -473,7 +472,6 @@ impl Win {
                     });
                 });
                 repo_picked = path_answer(ui.ctx(), egui::Id::new("zikaron-path-new-record-repo"), ask_repo, crate::platform::Pick::Folder);
-                zikaron_ui::callout::callout(ui, t(if auto { Key::U3AnchorHintOn } else { Key::U3AnchorHint }));
             },
             |ui, _me| {
                 // While the fingerprint is computed (`Kind::Take`) or the entries written (`Kind::Record`) the key
@@ -633,7 +631,6 @@ impl Win {
                         let _ = f.info(ui, t(Key::U3GasEstimate), if gas.is_some() { card::Show::Mono(&gas_say) } else { card::Show::Empty(t(Key::U3Estimating)) });
                         let _ = f.info(ui, t(Key::U3FeeCap), if gas.is_some() { card::Show::Mono(&cap_say) } else { card::Show::Empty(t(Key::U3Estimating)) });
                     });
-                    zikaron_ui::callout::callout(ui, t(Key::U3SendNote));
                     // Where the cap came from: one line when it is the fallback pair, once the figures are in.
                     if let (Some(_), Some(k)) = (gas, crate::chainx::fee_source_line(fees_now.as_ref())) {
                         zikaron_ui::callout::callout(ui, t(k));
@@ -732,7 +729,6 @@ impl Win {
                     let _ = f.info(ui, t(Key::U3BumpNewCap), card::Show::Mono(&fill1(Key::SetGasSay, &eth_cap(fees.cap_wei()))));
                     details_row(ui, f, "bump-details", &[(t(Key::U3GasEstimate), Val::mono(stuck.sent.gas_limit.to_string())), (t(Key::SendTx), Val::mono(stuck.txs.join("\n")))]);
                 });
-                zikaron_ui::callout::callout(ui, &fill1(if unheld { Key::U3UnheldNote } else { Key::U3BumpNote }, &crate::queue::RESENDS_MAX.to_string()));
                 // Name each node the current price was not read from (it serves another chain).
                 if !stuck.left.is_empty() {
                     zikaron_ui::callout::callout(ui, &fill1(Key::U3FeeLeftNodes, &stuck.left.iter().map(crate::chainx::said_of).collect::<Vec<_>>().join(" · ")));
@@ -782,7 +778,6 @@ impl Win {
                     let _ = f.info(ui, t(Key::U3Work), card::Show::Text(&row.as_ref().map(human_summary).unwrap_or_default()));
                     details_row(ui, f, "delete-details", &[(t(Key::ContentHash), Val::mono(row.as_ref().and_then(|x| x.work.clone()).unwrap_or_default())), (t(Key::CfWhere), Val::mono(root.clone()))]);
                 });
-                zikaron_ui::callout::callout(ui, t(Key::V2DeleteNote));
             },
             |ui, _me| {
                 go = page::Erase::press(ui, t(Key::V2DeleteGo), true).clicked();
@@ -842,7 +837,6 @@ impl Win {
                     let _ = f.info(ui, t(Key::CfCost), card::Show::Text(cost));
                 });
                 tell_copied(ui.ctx(), copied);
-                zikaron_ui::callout::callout(ui, t(Key::U3GrantHint));
                 card::form(ui, |ui, f| details_row(ui, f, "grant-confirm-details", &raw));
             },
             |ui, _me| {
@@ -885,7 +879,6 @@ impl Win {
                 fields::stack(ui, |ui, st| {
                     st.field(ui, t(Key::RevokeCaseName), Some(t(Key::U3Optional)), None, |ui, w| fields::line(ui, &mut me.ux.u3.revoke_case, "0x\u{2026}", w, fields::Look { mono: true, ..Default::default() }));
                 });
-                zikaron_ui::callout::callout(ui, t(Key::U3RevokeNote));
             },
             |ui, _me| {
                 go = page::Pen::new().press(ui, t(Key::U3RevokeGo), true).clicked();
@@ -1037,7 +1030,7 @@ impl Win {
                         }
                     }
                     let raw: Vec<(String, String)> = rows.iter().map(|k| (crate::when::when(k.time), fill2(Key::AdBlockAt, &k.block.to_string(), &crate::ledgerx::short(&k.row.content)))).collect();
-                    let raw_rows: Vec<(&str, Val)> = raw.iter().map(|(a, b)| (a.as_str(), Val::mono(b.clone()))).collect();
+                    let raw_rows: Vec<(&str, Val)> = raw.iter().map(|(a, b)| (a.as_str(), Val::figure(b.clone()))).collect();
                     details_row(ui, f, "adopt-rows-details", &raw_rows);
                 }
                 (None, Some(fl)) => {
@@ -1102,12 +1095,11 @@ impl Win {
                                 f,
                                 "adopt-sig-details",
                                 &[
-                                    (t(Key::ChannelText), Val::mono(text.clone().unwrap_or_else(|| t(Key::None_).to_string()))),
-                                    (t(Key::U3AdSig), Val::mono(if sig.is_empty() { t(Key::None_).to_string() } else { sig.clone() })),
+                                    (t(Key::ChannelText), text.clone().map(Val::mono).unwrap_or_else(|| Val::text(t(Key::None_)))),
+                                    (t(Key::U3AdSig), if sig.is_empty() { Val::text(t(Key::None_)) } else { Val::mono(sig.clone()) }),
                                 ],
                             );
                         });
-                        zikaron_ui::callout::callout(ui, t(Key::U3AdResign));
                     }
                     list(ui, &off, &mut flip, &mut select_all);
                     // Rows typed by hand: opened in place in its own group, what the check found on the fold's row.
@@ -1224,7 +1216,6 @@ impl Win {
                             picked = menu::menu_key(ui, "succeed-kind", shown, true, 160.0, &items);
                         });
                         st.field(ui, t(Key::U3HandSay), Some(t(Key::U3Optional)), None, |ui, w| fields::line(ui, &mut me.typed.sc_statement, "", w, fields::Look::default()));
-                        zikaron_ui::callout::callout(ui, t(Key::U3SucceedNote));
                     } else {
                         // What will be written, the new key's address among it (copied from its row).
                         let mut copied = None;
@@ -1239,7 +1230,6 @@ impl Win {
                             });
                         });
                         tell_copied(ui.ctx(), copied);
-                        zikaron_ui::callout::callout(ui, t(Key::U3SucceedNote));
                     }
                 });
             },
@@ -1585,7 +1575,6 @@ impl Win {
                     let _ = f.info(ui, t(Key::U3Issuer), card::Show::Text(&issuer));
                     f.with(ui, t(Key::U4WindowCap), "", |ui| grants::span_trail(ui, window));
                 });
-                zikaron_ui::callout::callout(ui, t(Key::U4RelicenseConfirmNote));
                 card::form(ui, |ui, f| {
                     details_row(
                         ui,

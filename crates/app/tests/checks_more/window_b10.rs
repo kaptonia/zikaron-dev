@@ -234,31 +234,6 @@ fn a_failed_chain_read_is_said_on_the_wizards_gas_step() {
     assert!(!words.iter().any(|w| w.starts_with(&failed_head)), "nothing failed now: {words:?}");
 }
 
-/// After a chain read that failed, the grants page's checks before issuing say this read failed (with why),
-/// not the key balance read before it; once the failure is gone, that balance shows.
-#[test]
-fn a_failed_chain_read_is_said_on_the_grants_page() {
-    if super::alone_in(module_path!(), "a_failed_chain_read_is_said_on_the_grants_page") {
-        return;
-    }
-    let place = Place::View(View::Grants, app::nav::tab::GRANTS_NEW);
-    let ctx = egui::Context::default();
-    let mut shell = probe_shell(&ctx);
-    shell.chain = Some(a_reading(ONE_AND_A_HALF));
-    shell.failed.insert(Kind::Chain, failed_read());
-    let failed_head = head_of(Key::SetReadFailedNow);
-    let balance = fill1(Key::U3GasLeft, "1.5000");
-    let (mut shell, r) = app::window::probe_face(&ctx, shell, place, W, H);
-    assert!(r.texts.iter().any(|t| t == app::lang::t(Key::U3BeforeSigning)), "the checks before issuing are drawn: {:?}", r.texts);
-    assert!(r.texts.iter().any(|t| t.starts_with(&failed_head)), "the failed read is said: {:?}", r.texts);
-    assert!(!r.texts.iter().any(|t| *t == balance), "the balance before it is not shown: {:?}", r.texts);
-    shell.failed.remove(&Kind::Chain);
-    let ctx = dressed();
-    let (_, r) = app::window::probe_face(&ctx, shell, place, W, H);
-    assert!(r.texts.iter().any(|t| *t == balance), "a landed reading shows: {:?}", r.texts);
-    assert!(!r.texts.iter().any(|t| t.starts_with(&failed_head)), "nothing failed now: {:?}", r.texts);
-}
-
 // ───────────────────── 3 · The nodes left out of a fee reading ─────────────────────
 
 /// The send sheet names the nodes its fees were not read from (they serve another chain), each by name; with

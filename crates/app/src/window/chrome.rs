@@ -301,6 +301,12 @@ impl Win {
         (words, rail::Voice::Quiet, None, sync)
     }
 
+    /// Whether the status line at the rail's foot reports a task of kind `k` while it runs (every long task the
+    /// person starts, wherever the rail is drawn): what it reports is not drawn again in the page.
+    pub(super) fn status_reports(&self, k: crate::task::Kind) -> bool {
+        task_long(k) && self.rail_shown()
+    }
+
     /// The long task the person started that is still running (the latest one).
     pub(super) fn running_task(&self) -> Option<crate::task::Kind> {
         self.ux.asked.iter().rev().find(|k| self.shell.tasks.in_flight(**k) && task_long(**k)).copied()

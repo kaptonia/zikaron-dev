@@ -6,11 +6,18 @@ use crate::mark::{self, Mark};
 use crate::palette::{c, C};
 use crate::tokens::{self, Type};
 
-/// One value.
+/// One value. Its kind says whether a copy key goes with it: only a machine value (an address, a digest or
+/// fingerprint, an entry or transaction id, a contract or node address, a path, a code) is taken elsewhere to be
+/// pasted; words, figures, states and empty values are read, not copied.
 #[derive(Clone, Debug)]
 pub enum Val {
+    /// Words: no copy key.
     Text(String),
+    /// A machine value, in the monospace face, with a copy key.
     Mono(String),
+    /// A figure in the monospace face that is read, not pasted (a count, a size, a date or time, a state's
+    /// token): no copy key.
+    Figure(String),
     /// A status mark and words.
     Mark(Mark, String),
     /// Words in a quiet tone (a value that is not there yet).
@@ -26,6 +33,15 @@ impl Val {
 
     pub fn mono(s: impl Into<String>) -> Val {
         Val::Mono(s.into())
+    }
+
+    pub fn figure(s: impl Into<String>) -> Val {
+        Val::Figure(s.into())
+    }
+
+    /// Whether a copy key goes with this value (a machine value with something in it).
+    pub fn copies(&self) -> bool {
+        matches!(self, Val::Mono(s) if !s.trim().is_empty())
     }
 }
 
@@ -77,7 +93,7 @@ pub fn list(ui: &mut egui::Ui, id_salt: &str, rows: &[(&str, Val)], label_w: f32
     let mut copied = None;
     for (i, (k, v)) in rows.iter().enumerate() {
         let lines: Vec<String> = match v {
-            Val::Text(s) | Val::Mono(s) | Val::Quiet(s) | Val::Mark(_, s) => s.split('\n').map(str::to_string).collect(),
+            Val::Text(s) | Val::Mono(s) | Val::Figure(s) | Val::Quiet(s) | Val::Mark(_, s) => s.split('\n').map(str::to_string).collect(),
             Val::Loading(_) => vec![String::new()],
         };
         let n = lines.len().max(1) as f32;
@@ -91,7 +107,7 @@ pub fn list(ui: &mut egui::Ui, id_salt: &str, rows: &[(&str, Val)], label_w: f32
         let top = rect.top() + pad;
         p.text(egui::pos2(rect.left(), top + line_h / 2.0), egui::Align2::LEFT_CENTER, *k, Type::Body.font(), c(C::Ink2));
         let x = rect.left() + widest + tokens::KV_COL_GAP;
-        let copyable = matches!(v, Val::Text(_) | Val::Mono(_)) && !lines.iter().all(|l| l.trim().is_empty());
+        let copyable = v.copies();
         let key_w = if copyable { 26.0 + tokens::S2 } else { 0.0 };
         let room = (rect.right() - key_w - x).max(20.0);
         if copyable {
@@ -117,12 +133,12 @@ pub fn list(ui: &mut egui::Ui, id_salt: &str, rows: &[(&str, Val)], label_w: f32
             }
             _ => {
                 let (t, ink) = match v {
-                    Val::Mono(_) => (Type::Mono, c(C::Ink)),
+                    Val::Mono(_) | Val::Figure(_) => (Type::Mono, c(C::Ink)),
                     Val::Quiet(_) => (Type::Body, c(C::Ink3)),
                     _ => (Type::Body, c(C::Ink)),
                 };
                 for (j, l) in lines.iter().enumerate() {
-                    let shown = if matches!(v, Val::Mono(_)) { crate::width::elide_mid(ui, l, t.font(), room) } else { crate::width::elide_to(ui, l, t.font(), room) };
+                    let shown = if matches!(v, Val::Mono(_) | Val::Figure(_)) { crate::width::elide_mid(ui, l, t.font(), room) } else { crate::width::elide_to(ui, l, t.font(), room) };
                     let at = p.text(egui::pos2(x, top + line_h * (j as f32 + 0.5)), egui::Align2::LEFT_CENTER, &shown, t.font(), ink);
                     if shown != *l {
                         let _ = crate::layer::tip(ui.interact(at, id.with(("whole", i, j)), egui::Sense::hover()), l.as_str());
@@ -150,7 +166,7 @@ pub fn value(ui: &mut egui::Ui, v: &Val) {
     match v {
         Val::Text(s) => wrap(ui, s, Type::Body, c(C::Ink), room),
         Val::Quiet(s) => wrap(ui, s, Type::Body, c(C::Ink3), room),
-        Val::Mono(s) => wrap(ui, s, Type::Mono, c(C::Ink), room),
+        Val::Mono(s) | Val::Figure(s) => wrap(ui, s, Type::Mono, c(C::Ink), room),
         Val::Loading(w) => {
             ui.allocate_ui_with_layout(egui::vec2(*w, Type::Body.line()), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 crate::states::skeleton(ui, *w, 12.0, 6.0);

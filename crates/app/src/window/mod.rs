@@ -90,7 +90,6 @@ struct Typed {
     g_scope: String,
     g_upstream: String,
     g_exclusive: bool,
-    wiz_said: String,
     // Revocation, adoption, succession and others' ledgers.
     ad_rows: String,
     ad_sig: String,
@@ -179,7 +178,7 @@ impl Win {
     fn draw(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         // The system's "reduce motion", asked now and then (moves and scales then arrive at once; fades stay).
-        let now = ctx.input(|i| i.time);
+        let now = zikaron_ui::motion::now(&ctx);
         if self.asks_motion && self.motion_asked.map(|at| now < at || now - at > 2.0).unwrap_or(true) {
             self.motion_asked = Some(now);
             self.reduced = zikaron_os::reduce_motion();
@@ -187,23 +186,23 @@ impl Win {
         zikaron_ui::motion::set_reduced(&ctx, self.reduced);
         let spoke = crate::lang::lang();
         self.draw_frame(ui);
-        // A value copied from a row (its copy key) is said once, shortened.
-        if let Some(v) = ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new("zikaron-copied"))) {
-            let n = v.chars().count();
-            let shown = if n > 24 { format!("{}\u{2026}{}", v.chars().take(10).collect::<String>(), v.chars().skip(n - 8).collect::<String>()) } else { v };
-            self.toasts.say(&crate::lang::fill1(Key::SaidCopied, &shown), Tone::Note, now);
+        // A value copied from a row (its copy key) is said once, without the value.
+        if ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new("zikaron-copied"))).is_some() {
+            self.toasts.say(t(Key::SaidCopied), Tone::Note, now);
         }
         // The words changed language this frame: the changed words cross-fade in place, keys and labels grow or
         // shrink to their new words (one place for the whole window and the first-run wizard).
         if crate::lang::lang() != spoke {
             zikaron_ui::flow::retext(&ctx);
         }
+        // The pointing hand over whatever takes a click, decided once for the whole frame.
+        zikaron_ui::hand::finish(&ctx);
     }
 
     fn draw_frame(&mut self, ui: &mut egui::Ui) {
         let ctx = &ui.ctx().clone();
         zikaron_ui::probe::begin(ctx);
-        let now = ctx.input(|i| i.time);
+        let now = zikaron_ui::motion::now(&ctx);
         let blend = skin::follow(ctx, self.appearance());
         // The window's appearance follows the app's: light or dark, and whether it follows the system's.
         let follows = self.appearance() == skin::Appearance::System;
@@ -451,7 +450,7 @@ impl Win {
         // One dialog at a time: a place asking while one is open (perhaps hidden behind the window) is told so,
         // never left with nothing happening.
         if self.shell.tasks.in_flight(crate::task::Kind::Path) {
-            let now = ctx.input(|i| i.time);
+            let now = zikaron_ui::motion::now(&ctx);
             self.toasts.say(t(Key::PathAlreadyOpen), Tone::Note, now);
             return;
         }
@@ -741,8 +740,6 @@ impl Win {
                 self.clash_modal = n > 0;
                 (fill1(Key::SaidClashed, &n.to_string()), if n > 0 { Tone::Bad } else { Tone::Note })
             }
-            Applied::Ticked { step, next } => (fill2(Key::SaidTicked, step, next.unwrap_or(t(Key::WizardDone))), Tone::Note),
-            Applied::Restarted => (t(Key::SaidRestarted).to_string(), Tone::Note),
             Applied::Revoked { queued, .. } => {
                 let _ = self.ux.u3.revoking.take();
                 self.shell.stale_rows();

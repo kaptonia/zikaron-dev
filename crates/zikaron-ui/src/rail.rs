@@ -68,7 +68,7 @@ pub enum Line<'a> {
 }
 
 /// How long the lit block takes to slide to another item.
-pub const BLOCK: f32 = 0.42;
+pub const BLOCK: f32 = 0.42 * crate::tokens::PACE;
 
 /// What an item shows at its right end.
 #[derive(Clone, Copy, Debug)]
@@ -274,7 +274,7 @@ pub fn status(ui: &mut egui::Ui, words: &str, voice: Voice, progress: Option<Opt
         }
     }
     // The sync key: refresh glyph, turning ring, check, crossfading in place.
-    let now = ui.input(|i| i.time);
+    let now = crate::motion::now(ui.ctx());
     let layer = match sync {
         Sync::Busy => 1u8,
         Sync::Done { at } if now - at < 1.1 => 2,
@@ -286,9 +286,9 @@ pub fn status(ui: &mut egui::Ui, words: &str, voice: Voice, progress: Option<Opt
     if hot > 0.0 {
         p.rect_filled(key, egui::CornerRadius::same(7), c(C::Hover).gamma_multiply(hot));
     }
-    let idle = motion::to(ui.ctx(), id.with("l0"), if layer == 0 { 1.0 } else { 0.0 }, 0.16, Curve::Ease);
-    let ring = motion::to(ui.ctx(), id.with("l1"), if layer == 1 { 1.0 } else { 0.0 }, 0.16, Curve::Ease);
-    let done = motion::to(ui.ctx(), id.with("l2"), if layer == 2 { 1.0 } else { 0.0 }, 0.16, Curve::Ease);
+    let idle = motion::to(ui.ctx(), id.with("l0"), if layer == 0 { 1.0 } else { 0.0 }, 0.16 * crate::tokens::PACE, Curve::Ease);
+    let ring = motion::to(ui.ctx(), id.with("l1"), if layer == 1 { 1.0 } else { 0.0 }, 0.16 * crate::tokens::PACE, Curve::Ease);
+    let done = motion::to(ui.ctx(), id.with("l2"), if layer == 2 { 1.0 } else { 0.0 }, 0.16 * crate::tokens::PACE, Curve::Ease);
     let grow = |on: f32, lo: f32| lo + (1.0 - lo) * Curve::Spring.at(on);
     if idle > 0.0 {
         icons::glyph_at(&p, Glyph::Refresh, key.center(), 14.0 * grow(idle, 0.6), palette::mix(c(C::Ink2), c(C::Ink), hot).gamma_multiply(idle));

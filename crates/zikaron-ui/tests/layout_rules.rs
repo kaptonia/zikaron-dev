@@ -235,3 +235,25 @@ fn a_cell_keeps_its_id_whatever_was_laid_before_it() {
     };
     assert_eq!(id_with(false), id_with(true), "the same cell, the same id");
 }
+
+/// A field's name stands as far over its control as the credential sheet's validity row's name stands over its
+/// box: the name centred on a key's height, then the row's gap (`fields::name_gap`).
+#[test]
+fn a_fields_name_stands_over_its_control_by_the_one_measure() {
+    let ctx = egui::Context::default();
+    let _ = zikaron_ui::skin::dress(&ctx);
+    let (mut name_bottom, mut control_top) = (0.0, 0.0);
+    let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(600.0, 400.0))), ..Default::default() };
+    let _ = ctx.run_ui(input, |ui| {
+        zikaron_ui::fields::stack(ui, |ui, st| {
+            let top = ui.cursor().min.y;
+            st.field(ui, "本机口令", None, None, |ui, w| {
+                control_top = ui.cursor().min.y;
+                let _ = ui.allocate_exact_size(egui::vec2(w, 44.0), egui::Sense::hover());
+            });
+            name_bottom = top + zikaron_ui::tokens::Type::Note.line();
+        });
+    });
+    let reference = (zikaron_ui::tokens::KEY_H - zikaron_ui::tokens::Type::Note.line()) / 2.0 + zikaron_ui::tokens::S2;
+    assert!((control_top - name_bottom - reference).abs() < 0.5, "name to control {} against the validity row's {reference}", control_top - name_bottom);
+}

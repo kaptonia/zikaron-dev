@@ -105,7 +105,7 @@ fn leaving_alpha(s: &Snap, now: f64) -> Option<f32> {
 /// (the layers it records with [`keep`]) is still leaving, the entrance takes up where the leaving stands now
 /// and that leaving stops: an overlay opened again halfway out comes back from halfway, not from nothing.
 pub fn entrance(ctx: &Context, keys: &[Id], age_id: Id, dur: f32) -> f32 {
-    let now = ctx.input(|i| i.time);
+    let now = crate::motion::now(ctx);
     let back = ctx.data_mut(|d| {
         let t = d.get_temp_mut_or_default::<Vec<(Id, Snap)>>(table_id());
         let mut at: Option<f32> = None;
@@ -145,7 +145,7 @@ pub fn leaving_colour(col: egui::Color32, alpha: f32) -> egui::Color32 {
 /// Draw the layers that have left and are still fading. Call once per frame, after everything else.
 pub fn fade_out(ctx: &Context) {
     let pass = ctx.cumulative_pass_nr();
-    let now = ctx.input(|i| i.time);
+    let now = crate::motion::now(ctx);
     let mut snaps: Vec<(Id, Snap)> = ctx.data(|d| d.get_temp::<Vec<(Id, Snap)>>(table_id())).unwrap_or_default();
     let mut keep_going = Vec::new();
     for (key, mut s) in snaps.drain(..) {
@@ -225,7 +225,9 @@ pub fn under(ui: &mut egui::Ui, under: Under) -> bool {
         let painted = ground(ui);
         ui.painter().rect_filled(painted, 0.0, fill);
     }
-    let pressed = ui.interact(all, ui.id().with("zikaron-under"), sense).clicked();
+    let under_resp = ui.interact(all, ui.id().with("zikaron-under"), sense);
+    crate::hand::sink(ui.ctx(), under_resp.id);
+    let pressed = under_resp.clicked();
     ui.set_clip_rect(clip);
     matches!(under, Under::Guard) && pressed
 }
@@ -249,7 +251,8 @@ pub fn ground(ui: &mut egui::Ui) -> Rect {
 /// lands here and does nothing (it neither closes the card nor reaches what is under it). Its rows, drawn after
 /// it, take their own presses.
 pub fn body(ui: &mut egui::Ui, card: Rect) {
-    let _ = ui.interact(card, ui.id().with("zikaron-card-body"), egui::Sense::click());
+    let r = ui.interact(card, ui.id().with("zikaron-card-body"), egui::Sense::click());
+    crate::hand::sink(ui.ctx(), r.id);
 }
 
 /// Where a floating card of `size` hangs off `anchor`: 6 under it, aligned to its left edge when `left` (its
@@ -314,7 +317,7 @@ fn card_rect_id(id: Id) -> Id {
 /// Record where a floating card under `id` lies this frame (its owner reads it in [`follow`]), and when it opened
 /// (a card not drawn the pass before opens now).
 pub fn card_at(ctx: &Context, id: Id, rect: Rect) {
-    let (now, pass) = (ctx.input(|i| i.time), ctx.cumulative_pass_nr());
+    let (now, pass) = (crate::motion::now(ctx), ctx.cumulative_pass_nr());
     ctx.data_mut(|d| {
         let opened = match d.get_temp::<(f64, u64)>(card_rect_id(id).with("seen")) {
             Some((at, last)) if last + 1 >= pass => at,
@@ -346,10 +349,10 @@ pub fn follow(ui: &egui::Ui, id: Id, anchor: Rect) -> bool {
     // The page is taken along only as the card opens (as a fold's body is revealed while it grows): the wheel
     // after that is the person's, never turned back.
     let opened = ctx.data(|d| d.get_temp::<(f64, u64)>(card_rect_id(id).with("seen"))).map(|(at, _)| at).unwrap_or(0.0);
-    let opening = ((ctx.input(|i| i.time) - opened) as f32) < crate::tokens::SLOW + 0.05;
+    let opening = ((crate::motion::now(ctx) - opened) as f32) < crate::tokens::SLOW + 0.05;
     let screen = ctx.content_rect();
     if opening && card.top() >= anchor.bottom() && card.bottom() + REVEAL_FOOT > screen.bottom() + 0.5 {
-        ui.scroll_to_rect(Rect::from_min_max(anchor.min, egui::pos2(anchor.right(), card.bottom() + REVEAL_FOOT)), None);
+        crate::fold::reveal(ui, Rect::from_min_max(anchor.min, egui::pos2(anchor.right(), card.bottom() + REVEAL_FOOT)));
     }
     false
 }

@@ -22,7 +22,8 @@ pub fn page_bar<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R
     // Room at the page's end: the bar stands over the page's own bottom margin and this.
     ui.allocate_space(vec2(col.width(), (h - tokens::PAGE_PAD).max(0.0)));
     let band = Rect::from_min_max(pos2(view.left(), view.bottom() - h), view.max);
-    let _ = ui.interact(band, ui.id().with("zikaron-page-bar"), egui::Sense::click());
+    let bar = ui.interact(band, ui.id().with("zikaron-page-bar"), egui::Sense::click());
+    crate::hand::sink(ui.ctx(), bar.id);
     let ground = c(C::Ground);
     let clear = ground.gamma_multiply(0.0);
     let fade = Rect::from_min_max(band.min, pos2(band.right(), band.top() + BAR_ABOVE));

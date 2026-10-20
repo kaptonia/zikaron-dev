@@ -240,6 +240,17 @@ impl Glyph {
     ];
 }
 
+/// The one chevron every arrow is made from (back and forward, open and shut, down), pointing right on the
+/// twenty-four-cell grid: the others are it mirrored or turned, so a pair is always one size and one stroke.
+fn chevron() -> Vec<Vec<(f32, f32)>> {
+    svg("m9 6 6 6-6 6")
+}
+
+/// Strokes with each point moved by `f` in the unit square (a mirror or a quarter turn about its middle).
+fn turned(v: Vec<Vec<(f32, f32)>>, f: impl Fn((f32, f32)) -> (f32, f32)) -> Vec<Vec<(f32, f32)>> {
+    v.into_iter().map(|s| s.into_iter().map(&f).collect()).collect()
+}
+
 /// A polyline on the sixteen-cell grid, mapped to the unit square.
 fn g(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
     points.iter().map(|(x, y)| (x / 16.0, y / 16.0)).collect()
@@ -552,10 +563,9 @@ pub fn glyph_path(k: Glyph) -> Vec<Vec<(f32, f32)>> {
             g(&[(6.0, 9.0), (4.0, 11.0), (6.0, 13.0)]),
         ],
         Glyph::Plus => svg("M12 5v14M5 12h14"),
-        Glyph::Back => svg("m15 6-6 6 6 6"),
-        Glyph::Fwd => vec![g(&[(6.0, 3.0), (11.0, 8.0), (6.0, 13.0)])],
-        Glyph::Chev => svg("m9 6 6 6-6 6"),
-        Glyph::Down => svg("m6 9 6 6 6-6"),
+        Glyph::Back => turned(chevron(), |(x, y)| (1.0 - x, y)),
+        Glyph::Fwd | Glyph::Chev => chevron(),
+        Glyph::Down => turned(chevron(), |(x, y)| (1.0 - y, x)),
         Glyph::File => svg("M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v5h5M9 13h7M9 17h5"),
         Glyph::Inbox => svg("M4 13h4l2 3h4l2-3h4M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z"),
         Glyph::Ok => svg("m5 12.5 4.5 4.5L19 7.5"),

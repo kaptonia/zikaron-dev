@@ -38,7 +38,7 @@ pub fn fold_ex<R>(ui: &mut egui::Ui, id_salt: &str, title: &str, first_open: boo
     if resp.clicked() {
         open = !open;
         if open {
-            let now = ui.input(|i| i.time);
+            let now = crate::motion::now(ui.ctx());
             ui.data_mut(|d| d.insert_temp(id.with("opened-at"), now));
         }
     }
@@ -77,10 +77,14 @@ pub fn fold_ex<R>(ui: &mut egui::Ui, id_salt: &str, title: &str, first_open: boo
         ui.ctx().request_discard("fold height changed");
     }
     let take = if grow >= 1.0 { measured } else { measured.min(full.max(measured) * grow) };
+    if grow < 1.0 {
+        // On its way: whatever holds the fold moves with it ([`crate::flow::mark_moving`]).
+        crate::flow::mark_moving(ui.ctx());
+    }
     ui.advance_cursor_after_rect(Rect::from_min_size(top, vec2(w, take.max(0.0))));
     // Opened by a press just now: the page follows the body as it grows (its foot 32 above the bottom; the
     // scroll never takes the head past the top).
-    let now = ui.input(|i| i.time);
+    let now = crate::motion::now(ui.ctx());
     let opened = ui.data(|d| d.get_temp::<f64>(id.with("opened-at")));
     if open && opened.map(|at| now >= at && ((now - at) as f32) < tokens::SLOW + 0.05).unwrap_or(false) {
         reveal(ui, Rect::from_min_max(head.min, pos2(head.right(), top.y + take + REVEAL_FOOT)));
@@ -97,6 +101,17 @@ pub use crate::layer::REVEAL_FOOT;
 pub fn reveal(ui: &egui::Ui, want: Rect) {
     let view = ui.clip_rect();
     if want.bottom() > view.bottom() + 0.5 && want.top() > view.top() {
-        ui.scroll_to_rect_animation(want, None, egui::style::ScrollAnimation::none());
+        // Scrolled to a place, not by an amount: asked on every frame of the opening (and twice in a frame laid out
+        // again), it lands where it would have once. egui aligns to its view less its clip margin and keeps the
+        // scrolled content's spacing from the edge; both are the style's, and are given back here.
+        let style = ui.ctx().global_style();
+        let (margin, gap) = (style.visuals.clip_rect_margin, style.spacing.item_spacing.y);
+        let (want, align) = if want.height() <= view.height() {
+            (Rect::from_min_max(want.min, egui::pos2(want.right(), want.bottom() + margin - gap)), egui::Align::BOTTOM)
+        } else {
+            (Rect::from_min_max(egui::pos2(want.left(), want.top() - margin + gap), want.max), egui::Align::TOP)
+        };
+        ui.scroll_to_rect_animation(want, Some(align), egui::style::ScrollAnimation::none());
+        crate::scroll::asked(ui.ctx());
     }
 }

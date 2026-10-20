@@ -260,8 +260,8 @@ impl Win {
             let mut rows = vec![
                 (t(Key::ContentHash), Val::mono(w.work.clone())),
                 (t(Key::DetailPick), Val::mono(w.id.clone())),
-                (t(Key::EntryPrev), Val::mono(w.row.prev.clone().unwrap_or_else(|| t(Key::None_).to_string()))),
-                (t(Key::CanonBytes), Val::mono(w.row.bytes.to_string())),
+                (t(Key::EntryPrev), w.row.prev.clone().map(Val::mono).unwrap_or_else(|| Val::text(t(Key::None_)))),
+                (t(Key::CanonBytes), Val::figure(w.row.bytes.to_string())),
             ];
             if let Some((chain, tx)) = w.row.tx.clone() {
                 rows.push((t(Key::AnchorTx), Val::mono(format!("{chain} \u{b7} {tx}"))));
@@ -350,8 +350,8 @@ impl Win {
         }
         raw.push((t(Key::DetailPick), Val::mono(q.id.clone())));
         if let Some(r) = row.as_ref() {
-            raw.push((t(Key::EntryPrev), Val::mono(r.prev.clone().unwrap_or_else(|| t(Key::None_).to_string()))));
-            raw.push((t(Key::CanonBytes), Val::mono(r.bytes.to_string())));
+            raw.push((t(Key::EntryPrev), r.prev.clone().map(Val::mono).unwrap_or_else(|| Val::text(t(Key::None_)))));
+            raw.push((t(Key::CanonBytes), Val::figure(r.bytes.to_string())));
         }
         stagger(ui, 3, |ui| details_card(ui, "pending-details", &raw));
         if let Some(cf) = confirm {

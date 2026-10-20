@@ -378,7 +378,7 @@ pub fn page_area<T: Pages + ?Sized>(ui: &mut egui::Ui, t: &mut T, tips: (&str, &
             .show(ui, |ui| {
                 width::body(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = tk::BLOCK_GAP;
-                    motion::shifted(ui, off, alpha, |ui| {
+                    motion::shifted(ui, off, alpha, key, |ui| {
                         ui.spacing_mut().item_spacing.y = tk::BLOCK_GAP;
                         if !in_bar && !detail {
                             crate::paint::text(ui, &title, crate::tokens::Type::Page, crate::palette::c(crate::palette::C::Ink));

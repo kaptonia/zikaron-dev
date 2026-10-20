@@ -33,6 +33,10 @@ pub fn pin_row(ui: &mut egui::Ui, id_salt: &str, value: &mut crate::secret::Secr
     } else if active && top && ui.memory(|m| m.focused().is_none()) {
         resp.request_focus();
     }
+    // A row typed into, as a field is: the text beam over it.
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
     let mut changed = false;
     let events = if held { ui.input(|i| i.events.clone()) } else { Vec::new() };
     for e in events {
@@ -53,7 +57,7 @@ pub fn pin_row(ui: &mut egui::Ui, id_salt: &str, value: &mut crate::secret::Secr
             _ => {}
         }
     }
-    let dx = motion::shake_at(ui.ctx(), shake_at, 0.4);
+    let dx = motion::shake_at(ui.ctx(), shake_at, 0.4 * crate::tokens::PACE);
     let filled = value.chars();
     let id = resp.id;
     let focus = motion::flag(ui.ctx(), id.with("focus"), resp.has_focus(), tokens::FAST);
@@ -172,7 +176,7 @@ pub fn mask(ui: &mut egui::Ui, id_salt: &str, words: Option<&[crate::secret::Sec
             let a = motion::age(ui.ctx(), id.with("reveal"), motion::key_of(&ws.len()));
             for (i, word) in ws.iter().enumerate().take(12) {
                 let (r, cc) = (i / cols, i % cols);
-                let t = ((a - i as f32 * 0.025) / tokens::MID).clamp(0.0, 1.0);
+                let t = ((a - i as f32 * 0.025 * crate::tokens::PACE) / tokens::MID).clamp(0.0, 1.0);
                 if t < 1.0 {
                     ui.ctx().request_repaint();
                 }

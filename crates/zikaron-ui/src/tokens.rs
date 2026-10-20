@@ -198,17 +198,21 @@ impl Radius {
     }
 }
 
+/// The pace of every animation: each duration in the kit (and any the window gives) is its base time times this, so
+/// all of them quicken or slow together from here (the owner's ruling: 0.7 of the times first set). Loop periods
+/// (`CYCLE` and the spinners), how long a toast stays and how long a key shows its result are not durations of a
+/// change and keep their times.
+pub const PACE: f32 = 0.7;
+
 /// Motion timings in seconds: fast for hover, press and switches; mid for page changes, folds, sheets and
 /// sliders; slow for toasts and the appearance blend. Loops run once per `CYCLE`, and only while a task runs.
-pub const FAST: f32 = 0.12;
-pub const MID: f32 = 0.2;
+pub const FAST: f32 = 0.12 * PACE;
+pub const MID: f32 = 0.2 * PACE;
 /// The identity lens slides between rows over this long (seconds).
-pub const LENS: f32 = 0.22;
-pub const SLOW: f32 = 0.3;
+pub const LENS: f32 = 0.22 * PACE;
+pub const SLOW: f32 = 0.3 * PACE;
 /// Pushing into or popping out of a detail page.
-pub const PUSH: f32 = 0.24;
-/// A sheet changing step.
-pub const STEP: f32 = 0.22;
+pub const PUSH: f32 = 0.24 * PACE;
 pub const CYCLE: f32 = 1.2;
 
 /// Key: one shape, 34 high, 14 text, 16 across, pressed to 0.97.

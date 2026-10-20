@@ -394,11 +394,11 @@ impl Win {
             }
             kv.extend([
                 (t(Key::DetailPick), Val::mono(row.id.clone())),
-                (t(Key::U3RawType), Val::mono(if row.facts.raw_type.is_empty() { row.kind.as_str().to_string() } else { row.facts.raw_type.clone() })),
-                (t(Key::U3RawSeq), Val::mono(row.seq.to_string())),
+                (t(Key::U3RawType), Val::figure(if row.facts.raw_type.is_empty() { row.kind.as_str().to_string() } else { row.facts.raw_type.clone() })),
+                (t(Key::U3RawSeq), Val::figure(row.seq.to_string())),
                 (t(Key::EntryAuthor), Val::mono(row.author.clone())),
-                (t(Key::EntryPrev), Val::mono(row.prev.clone().unwrap_or_else(|| t(Key::None_).to_string()))),
-                (t(Key::CanonBytes), Val::mono(row.bytes.to_string())),
+                (t(Key::EntryPrev), row.prev.clone().map(Val::mono).unwrap_or_else(|| Val::text(t(Key::None_)))),
+                (t(Key::CanonBytes), Val::figure(row.bytes.to_string())),
             ]);
             if let Some((chain, tx)) = row.tx.clone() {
                 kv.push((t(Key::AnchorTx), Val::mono(format!("{chain} \u{b7} {tx}"))));

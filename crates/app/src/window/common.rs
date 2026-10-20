@@ -174,9 +174,8 @@ fn detail_rows<'a>(ui: &egui::Ui, rows: &[(&'a str, Val)]) -> (Vec<(&'a str, car
         .iter()
         .map(|(k, v)| {
             let d = match v {
-                Val::Mono(s) if s.contains('\n') => card::Detail::Lines(s.lines().map(str::to_string).collect()),
                 Val::Mono(s) => card::Detail::Mono(s.clone()),
-                Val::Text(s) | Val::Quiet(s) | Val::Mark(_, s) if s.contains('\n') => card::Detail::Lines(s.lines().map(str::to_string).collect()),
+                Val::Figure(s) => card::Detail::Figure(s.clone()),
                 Val::Quiet(s) => card::Detail::Quiet(s.clone()),
                 Val::Text(s) | Val::Mark(_, s) => card::Detail::Text(s.clone()),
                 Val::Loading(_) => card::Detail::Quiet(String::new()),
@@ -251,8 +250,12 @@ impl Win {
     }
 
     /// The stage line under a long-running button: the stage the task reports, the previous one checked; a
-    /// counted stage shows its count. Nothing while the task is not running.
+    /// counted stage shows its count. Nothing while the task is not running, and nothing where the rail's status
+    /// line reports the task already (the line is for where no rail is drawn: the first-run wizard).
     pub(super) fn stage_line(&self, ui: &mut egui::Ui, k: crate::task::Kind) {
+        if self.status_reports(k) {
+            return;
+        }
         let words = stage_words(k);
         let running = self.shell.tasks.in_flight(k);
         let id = ui.id().with(("zikaron-stage", k as u8));

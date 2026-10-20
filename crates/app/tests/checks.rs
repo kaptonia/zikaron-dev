@@ -1404,8 +1404,6 @@ fn every_legal_action_names_a_verb_from_the_contract_six_table() {
         },
         Action::ReadGrants,
         Action::CheckClash { work: String::new(), from: String::new(), to: String::new() },
-        Action::WizardTick { step: String::new(), said: String::new() },
-        Action::WizardReset,
         Action::Revoke { grant: String::new(), case: String::new() },
         Action::ReadStory { grant: String::new() },
         Action::VerifyAnchors { rows: String::new() },
@@ -1718,45 +1716,6 @@ fn the_depth_reading_comes_from_the_kit_core_itself() {
     for w in ["fs::write", "File::create", "land_bytes", "fs::create_dir"] {
         assert!(!code.contains(w), "depthx.rs 里有落盘的路 {w}");
     }
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-/// The first-window checklist cannot skip steps, and can be left and resumed.
-#[test]
-fn the_first_window_checklist_refuses_a_skipped_step() {
-    vault_open();
-    use app::wizard::{Step, Wizard};
-    assert_eq!(Step::ALL.len(), 2, "两步,不多不少");
-    let mut w = Wizard::default();
-    assert_eq!(w.next(), Some(Step::Terms));
-    // Skipping a step is refused by name.
-    assert!(matches!(
-        w.tick(Step::Anchor, ""),
-        Err(f) if f.said().starts_with("STEP_SKIPPED")
-    ));
-    assert_eq!(w.done(), 0, "拒了就一步也没走");
-    for s in Step::ALL {
-        w.tick(s, s.as_str()).unwrap_or_else(|f| panic!("{} 勾不上:{}", s.as_str(), f.said()));
-    }
-    assert!(w.next().is_none(), "两步走完");
-    // Ticking after both are done is refused too.
-    assert!(w.tick(Step::Terms, "").is_err());
-
-    // Round trip to disk: a canonical value, read back identically.
-    let dir = std::env::temp_dir().join(format!("zk-wiz-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let home = app::home::Home::open_or_create(&dir).expect("铺得出家");
-    w.write(&home).expect("落得下");
-    assert_eq!(Wizard::read(&home).expect("读得回"), w, "落盘往返逐条相同");
-    // A file whose order was scrambled by hand is refused (written through the same seal as real data).
-    let put = |b: &[u8]| app::local::put(&home.dir(app::home::Slot::Settings), app::wizard::FILE, app::local::Doc::FirstWindow, b).expect("写得下");
-    put(br#"{"marks":[{"said":"","step":"anchor"}]}"#);
-    assert!(Wizard::read(&home).is_err(), "乱了次序的清单不许被读成一份清单");
-    // A line for a step this version does not have (`bond`, `undertaking`, steps an earlier version had) is
-    // refused by name, as any unknown step is.
-    put(br#"{"marks":[{"said":"a","step":"terms"},{"said":"b","step":"bond"},{"said":"c","step":"undertaking"}]}"#);
-    assert!(Wizard::read(&home).is_err(), "清单里有本版没有的步骤即拒");
-    assert!(Step::parse("undertaking").is_none(), "撤下的那一步认不出");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -4809,7 +4768,7 @@ fn a_file_that_does_not_read_is_never_written_over() {
     let kinds = [
         (app::local::Doc::Settings, app::settings::FILE),
         (app::local::Doc::Queue, app::queue::FILE),
-        (app::local::Doc::FirstWindow, app::wizard::FILE),
+        (app::local::Doc::FirstWindow, app::local::FIRST_WINDOW_FILE),
         (app::local::Doc::LastAudit, app::lastread::ANCHORED_FILE),
         (app::local::Doc::Unfetched, app::restorex::FILE),
     ];

@@ -112,7 +112,7 @@ fn install_colors(v: &mut egui::Visuals) {
 }
 
 /// How long a change of appearance takes: the whole window cross-fades from one appearance to the other.
-pub const THEME: f32 = 0.32;
+pub const THEME: f32 = 0.32 * crate::tokens::PACE;
 
 /// Follow the appearance this frame: ease the blend toward light (0) or dark (1) over [`THEME`] and install
 /// the blended colors while it moves. Returns the blend.

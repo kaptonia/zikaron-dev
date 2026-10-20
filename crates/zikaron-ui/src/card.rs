@@ -421,13 +421,16 @@ pub enum Fact<'a> {
 
 /// A value of the details list (the one details list).
 #[derive(Clone, Debug)]
+/// One details row's value. Its kind sets only the face and whether a copy key goes with it; a value with line
+/// breaks is drawn a line each, left-aligned from the label's line, the row as tall as its lines, whatever its kind.
 pub enum Detail {
-    /// Monospace, one line, elided in the middle.
+    /// A machine value (to be pasted elsewhere): monospace, elided in the middle, a copy key at the end (one for
+    /// all its lines).
     Mono(String),
-    /// Words.
+    /// A figure read, not pasted (a count, a size, a date or time, a state's token): monospace, no copy key.
+    Figure(String),
+    /// Words: no copy key.
     Text(String),
-    /// Several lines, each its own, left-aligned from the label's line.
-    Lines(Vec<String>),
     /// Words standing for a value that is not there (an empty seat, a value not read yet): quiet ink, and no
     /// copy key, as there is nothing to copy.
     Quiet(String),
@@ -817,10 +820,15 @@ impl Form {
         let mut open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(open_first);
         if resp.clicked() {
             open = !open;
+            if open {
+                let now = motion::now(ui.ctx());
+                ui.data_mut(|d| d.insert_temp(id.with("opened-at"), now));
+            }
         }
         ui.data_mut(|d| d.insert_temp(id, open));
         let t = motion::flag(ui.ctx(), id.with("t"), open, tokens::SLOW);
-        let hot = self.lit(ui, resp.id, rect, &resp, true);
+        // A fold is not a list's row: it lights no block under the pointer, a press opens it.
+        let hot = self.lit(ui, resp.id, rect, &resp, false);
         let p = ui.painter().clone();
         let right = rect.right() - self.pad_x();
         icons::draw_glyph_turned(&p, Glyph::Chev, Rect::from_center_size(pos2(right - 7.5, rect.center().y), vec2(COPY_SIZE, COPY_SIZE)), c(C::Ink3), t * std::f32::consts::FRAC_PI_2);
@@ -840,46 +848,68 @@ impl Form {
         if t <= 0.0 {
             return None;
         }
-        // The rows it holds: in this card, fading with the fold; the card's height follows them.
-        let r = ui
-            .scope(|ui| {
-                ui.multiply_opacity(t);
-                let mut inner = Form {
-                    rows: 1,
-                    width: self.width,
-                    bottom: ui.cursor().min.y,
-                    fills: Vec::new(),
-                    lights: Vec::new(),
-                    lines: Vec::new(),
-                    id: id.with("rows"),
-                    label_w: self.label_w,
-                    label_max: 0.0,
-                    top: ui.cursor().min,
-                    group: None,
-                    open_row: None,
-                    next_key: None,
-                    quiet: false,
-                    sheet: self.sheet,
-                    next_tag: None,
-                    corner: self.corner,
-                };
-                let r = add(ui, &mut inner);
-                self.label_max = self.label_max.max(inner.label_max);
-                self.fills.extend(inner.fills);
-                self.lights.extend(inner.lights);
-                self.lines.extend(inner.lines);
-                self.bottom = self.bottom.max(inner.bottom);
-                r
-            })
-            .inner;
+        // The rows it holds: in this card, fading with the fold and taking their height with it (open and close
+        // alike), drawn in a child of their own and clipped to what they have taken; what follows in the card is
+        // placed under what they take, and the card moves with them (`flow::mark_moving`), never after them.
+        let ctx = ui.ctx().clone();
+        let layer = ui.layer_id();
+        let start = crate::flow::mark(&ctx, layer);
+        let top0 = ui.cursor().min;
+        let w = ui.available_width();
+        let grow = if motion::reduced(&ctx) { if open { 1.0 } else { 0.0 } } else { t };
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(top0, vec2(w, f32::INFINITY))).layout(egui::Layout::top_down(egui::Align::Min)));
+        child.spacing_mut().item_spacing.y = 0.0;
+        child.multiply_opacity(t);
+        let mut inner = Form {
+            rows: 1,
+            width: self.width,
+            bottom: top0.y,
+            fills: Vec::new(),
+            lights: Vec::new(),
+            lines: Vec::new(),
+            id: id.with("rows"),
+            label_w: self.label_w,
+            label_max: 0.0,
+            top: top0,
+            group: None,
+            open_row: None,
+            next_key: None,
+            quiet: false,
+            sheet: self.sheet,
+            next_tag: None,
+            corner: self.corner,
+        };
+        let r = add(&mut child, &mut inner);
+        let laid = (inner.bottom.max(child.min_rect().bottom()) - top0.y).max(0.0);
+        let take = if grow >= 1.0 { laid } else { laid * grow };
+        self.label_max = self.label_max.max(inner.label_max);
+        if grow >= 1.0 {
+            // Lit rows are drawn only while the rows stand whole.
+            self.fills.extend(inner.fills);
+            self.lights.extend(inner.lights);
+        } else {
+            crate::flow::clip_below(&ctx, layer, start, top0.y + take);
+            crate::flow::mark_moving(&ctx);
+        }
+        self.lines.extend(inner.lines.into_iter().filter(|y| *y <= top0.y + take + 0.5));
+        ui.advance_cursor_after_rect(Rect::from_min_size(top0, vec2(w, take)));
+        self.bottom = self.bottom.max(top0.y + take);
         self.rows += 1;
+        // Opened by a press just now: the page follows the rows as they come, as a fold's body does
+        // ([`crate::fold::reveal`]: their foot 32 above the bottom, the head never past the top).
+        let now = motion::now(&ctx);
+        let opened = ui.data(|d| d.get_temp::<f64>(id.with("opened-at")));
+        if open && opened.is_some_and(|at| now >= at && ((now - at) as f32) < tokens::SLOW + 0.05) {
+            crate::fold::reveal(ui, Rect::from_min_max(rect.min, pos2(rect.right(), top0.y + take + crate::fold::REVEAL_FOOT)));
+        }
         Some(r)
     }
 
     /// The details fold: a row named `title` that opens the one details list — the label column as wide as
-    /// the widest label (both languages measured by the caller's labels), monospace values on one line elided in
-    /// the middle and whole on hover, a copy key at each row's end, a line between rows, several lines of a value
-    /// each its own from the label's line. Returns the words copied.
+    /// the widest label (both languages measured by the caller's labels), each value in the face its kind gives
+    /// ([`Detail`]: a machine value monospace and elided in the middle, whole on hover, with a copy key at the row's
+    /// end; a figure monospace; words in the body face), a line between rows, a value with line breaks a line each
+    /// from the label's line. Returns the words copied.
     pub fn details(&mut self, ui: &mut egui::Ui, id_salt: &str, title: &str, rows: &[(&str, Detail)], widest: f32) -> Option<String> {
         self.fold(ui, id_salt, title, "", |ui, f| f.detail_rows(ui, id_salt, rows, widest)).flatten()
     }
@@ -889,12 +919,14 @@ impl Form {
         let col = widest.ceil();
         let mut copied = None;
         for (i, (label, v)) in rows.iter().enumerate() {
+            // A line a break, for every kind alike.
             let lines: Vec<&str> = match v {
-                Detail::Lines(l) => l.iter().map(String::as_str).collect(),
-                Detail::Mono(s) | Detail::Text(s) | Detail::Quiet(s) => vec![s.as_str()],
+                Detail::Mono(s) | Detail::Figure(s) | Detail::Text(s) | Detail::Quiet(s) => s.split('\n').collect(),
             };
             let quiet = matches!(v, Detail::Quiet(_));
             let text = matches!(v, Detail::Text(_)) || quiet;
+            // Only a machine value is taken elsewhere: a copy key goes with it and nothing else.
+            let copies = matches!(v, Detail::Mono(_)) && !lines.iter().all(|l| l.trim().is_empty());
             let line_h = if lines.len() > 1 { 20.0 } else { 22.0 };
             let h = (lines.len() as f32 * line_h + 20.0).max(44.0);
             let (rect, _) = self.place(ui, h, egui::Sense::hover());
@@ -906,7 +938,7 @@ impl Form {
             p.text(pos2(x, ly), egui::Align2::LEFT_CENTER, *label, egui::FontId::new(14.0, egui::FontFamily::Proportional), c(C::Ink2));
             let key = Rect::from_center_size(pos2(right - (COPY_SIZE + 4.0) / 2.0, ly), vec2(COPY_SIZE + 4.0, COPY_SIZE + 4.0));
             let whole = lines.join("\n");
-            if !quiet {
+            if copies {
                 let kr = ui.interact(key, self.id.with((id_salt, "copy", i)), egui::Sense::click());
                 if kr.hovered() {
                     p.rect_filled(key, egui::CornerRadius::same(6), c(C::Tone));
@@ -918,7 +950,7 @@ impl Form {
                 }
             }
             let vx = x + col + 28.0;
-            let room = (key.left() - 28.0 - vx).max(20.0);
+            let room = (if copies { key.left() - 28.0 } else { right } - vx).max(20.0);
             let font = if text { egui::FontId::new(14.0, egui::FontFamily::Proportional) } else { Type::MonoSmall.font() };
             for (k, l) in lines.iter().enumerate() {
                 let y = if lines.len() > 1 { first_y + k as f32 * line_h } else { rect.center().y };

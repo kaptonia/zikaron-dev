@@ -21,8 +21,8 @@ pub fn glide(t: f32) -> f32 {
 }
 
 /// A cover's fade, its settle and the scale it settles from.
-const FADE: f32 = 0.3;
-const SETTLE: f32 = 0.4;
+const FADE: f32 = 0.3 * crate::tokens::PACE;
+const SETTLE: f32 = 0.4 * crate::tokens::PACE;
 const FROM: f32 = 1.004;
 
 /// What a cover lies on.
@@ -98,14 +98,23 @@ fn lit(p: &egui::Painter, rect: Rect, alpha: f32) {
 }
 
 /// The lock's head, centred: the app's name (12.5, second ink), 14 under it the title (22, bold), 6 more under it.
-pub fn lock_head(ui: &mut egui::Ui, app: &str, title: &str) {
-    ui.vertical_centered(|ui| {
+/// Returns where the title's drawn strokes end (the lowest point the eye sees of it), so what follows can measure
+/// its gaps from there.
+pub fn lock_head(ui: &mut egui::Ui, app: &str, title: &str) -> f32 {
+    let end = ui.vertical_centered(|ui| {
         ui.spacing_mut().item_spacing.y = 14.0;
         ui.label(egui::RichText::new(app).font(egui::FontId::new(Type::MonoSub.size(), egui::FontFamily::Proportional)).color(c(C::Ink2)));
-        ui.label(egui::RichText::new(title).font(egui::FontId::new(22.0, crate::fonts::strong())).color(c(C::Ink)));
+        let (at, g, _) = egui::Label::new(egui::RichText::new(title).font(egui::FontId::new(22.0, crate::fonts::strong())).color(c(C::Ink))).layout_in_ui(ui);
+        let end = at.y + g.mesh_bounds.max.y;
+        ui.painter().galley(at, g, c(C::Ink));
+        end
     });
-    ui.add_space(6.0);
+    ui.add_space(LOCK_HEAD_FOOT);
+    end.inner
 }
+
+/// The room under the lock's title, after its line.
+pub const LOCK_HEAD_FOOT: f32 = 6.0;
 
 /// A small key (28 high, 11 across its words): the lock's "Forgot passcode". Faint and taking nothing when off.
 pub fn small_key(ui: &mut egui::Ui, text: &str, enabled: bool) -> egui::Response {
@@ -150,8 +159,8 @@ pub struct Step<'a> {
 }
 
 /// How the step marks turn, and how long a newly done one pops.
-const TURN: f32 = 0.35;
-const POP2: f32 = 0.5;
+const TURN: f32 = 0.35 * crate::tokens::PACE;
+const POP2: f32 = 0.5 * crate::tokens::PACE;
 
 /// The wizard's steps: rows 32 high, 4 apart, a 20 circle and the words (13.5) 10 after it. The current step's
 /// circle has the accent's ring and number and its words are heavy in the first ink; a step not reached has the
@@ -258,9 +267,9 @@ pub fn seg_small(ui: &mut egui::Ui, id_salt: &str, labels: &[&str], current: usi
 }
 
 /// How a step's card comes in, and how the old one leaves.
-const PANE_IN: f32 = 0.38;
+const PANE_IN: f32 = 0.38 * crate::tokens::PACE;
 const PANE_FROM: f32 = 12.0;
-const PANE_OUT: f32 = 0.16;
+const PANE_OUT: f32 = 0.16 * crate::tokens::PACE;
 const PANE_TO: f32 = 10.0;
 
 /// A step's card in its own layer above the wizard's cover (`over`), inside `rect`: a new step (`step`) comes in
@@ -298,11 +307,11 @@ pub fn pane<R>(ctx: &egui::Context, over: egui::LayerId, step: u64, dir: f32, re
 }
 
 /// The window comes back under the lock once it has gone: from half its opacity and 0.993 of its size to the
-/// whole over 0.45 s. Call every frame with whether the lock is up.
+/// whole over 0.45 s at the kit's pace. Call every frame with whether the lock is up.
 pub fn app_in(ctx: &egui::Context, up: bool) {
-    const DUR: f32 = 0.45;
+    const DUR: f32 = 0.45 * crate::tokens::PACE;
     let id = egui::Id::new("zikaron-app-in");
-    let now = ctx.input(|i| i.time);
+    let now = crate::motion::now(ctx);
     let (was_up, since) = ctx.data(|d| d.get_temp::<(bool, Option<f64>)>(id)).unwrap_or((up, None));
     let since = if was_up && !up { Some(now) } else if up { None } else { since };
     ctx.data_mut(|d| d.insert_temp(id, (up, since)));

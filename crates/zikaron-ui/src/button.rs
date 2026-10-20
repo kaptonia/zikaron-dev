@@ -217,7 +217,7 @@ pub fn show(ui: &mut egui::Ui, k: Key) -> egui::Response {
 pub fn show_w(ui: &mut egui::Ui, k: Key, min_w: f32) -> egui::Response {
     let natural = size_of(ui, &k);
     let want = motion::size(ui.ctx(), ui.next_auto_id().with("zikaron-key-size"), vec2(natural.x.max(min_w), natural.y));
-    let now = ui.input(|i| i.time);
+    let now = crate::motion::now(ui.ctx());
     let phase = k.phase.now(now);
     let live = k.enabled && !phase.busy();
     let sense = if live { egui::Sense::click() } else { egui::Sense::hover() };
@@ -237,7 +237,7 @@ pub fn show_w(ui: &mut egui::Ui, k: Key, min_w: f32) -> egui::Response {
 /// Paint a key into `rect` (keys in toasts and table cells are placed by their owners).
 pub fn paint(ui: &egui::Ui, rect: Rect, resp: &egui::Response, k: &Key, phase: Phase) {
     let ctx = ui.ctx();
-    let now = ui.input(|i| i.time);
+    let now = crate::motion::now(ui.ctx());
     let id = resp.id;
     let f = face(k.role);
     let down = k.enabled && resp.is_pointer_button_down_on();
@@ -252,7 +252,7 @@ pub fn paint(ui: &egui::Ui, rect: Rect, resp: &egui::Response, k: &Key, phase: P
 
     // Failed: red and one shake.
     let (fail, shake) = match phase {
-        Phase::Fail { at } => (true, motion::shake_at(ctx, Some(at), 0.36)),
+        Phase::Fail { at } => (true, motion::shake_at(ctx, Some(at), 0.36 * crate::tokens::PACE)),
         _ => (false, 0.0),
     };
     // Hovered, the key rises: its shadow deepens (the key and its words stay where they are laid); pressed, it
@@ -406,9 +406,9 @@ pub fn paint(ui: &egui::Ui, rect: Rect, resp: &egui::Response, k: &Key, phase: P
 }
 
 /// How long a long action's words take to fade out for its bar, its check to be drawn, and its check's spring.
-const WORDS_OUT: f32 = 0.16;
-const CHECK_DRAW: f32 = 0.34;
-const CHECK_SPRING: f32 = 0.42;
+const WORDS_OUT: f32 = 0.16 * crate::tokens::PACE;
+const CHECK_DRAW: f32 = 0.34 * crate::tokens::PACE;
+const CHECK_SPRING: f32 = 0.42 * crate::tokens::PACE;
 
 /// An icon key in the toolbar and the rail: 26 (or `size`) across and round, the glyph in the second ink, a grey
 /// tone on hover, pressed to 0.94.

@@ -58,12 +58,12 @@ struct Slip {
 pub const LIFE_NOTE: f64 = 3.2;
 pub const LIFE_BAD: f64 = 6.0;
 /// The capsule opens over `IN` from `NARROW` of its width; its words come in from `WORDS_FROM` over `WORDS_IN`.
-const IN: f32 = 0.5;
+const IN: f32 = 0.5 * crate::tokens::PACE;
 const NARROW: f32 = 0.55;
-const WORDS_FROM: f32 = 0.18;
-const WORDS_IN: f32 = 0.24;
+const WORDS_FROM: f32 = 0.18 * crate::tokens::PACE;
+const WORDS_IN: f32 = 0.24 * crate::tokens::PACE;
 /// Leaving: fading and narrowing to `LEAVE_TO` of its width.
-const OUT: f32 = 0.26;
+const OUT: f32 = 0.26 * crate::tokens::PACE;
 const LEAVE_TO: f32 = 0.85;
 
 impl Slip {
@@ -160,7 +160,7 @@ impl Toasts {
 
     /// Draw, centered over `[left, right]` of the window, 14 from its top.
     pub fn draw(&mut self, ctx: &egui::Context, left: f32) -> Drawn {
-        let now = ctx.input(|i| i.time);
+        let now = crate::motion::now(ctx);
         let mut out = Drawn::default();
         if let Some(cur) = &self.cur {
             if !cur.open && now - cur.born > cur.life() {
@@ -199,12 +199,12 @@ impl Toasts {
             let since = (now - s.entered) as f32;
             let enter_t = (since / IN).clamp(0.0, 1.0);
             let e = Curve::Ease.at(enter_t);
-            let card = Curve::Ease.at((since / 0.2).clamp(0.0, 1.0));
+            let card = Curve::Ease.at((since / (0.2 * crate::tokens::PACE)).clamp(0.0, 1.0));
             let words = Curve::Ease.at(((since - WORDS_FROM) / WORDS_IN).clamp(0.0, 1.0));
             if enter_t < 1.0 || words < 1.0 {
                 ctx.request_repaint();
             }
-            let bump_t = ((now - s.bumped) as f32 / 0.22).clamp(0.0, 1.0);
+            let bump_t = ((now - s.bumped) as f32 / (0.22 * crate::tokens::PACE)).clamp(0.0, 1.0);
             let bump = if bump_t < 1.0 {
                 ctx.request_repaint();
                 motion::keys(&[(0.0, 1.0), (0.45, 1.035), (1.0, 1.0)], Curve::Ease.at(bump_t))

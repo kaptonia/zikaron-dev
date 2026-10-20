@@ -96,8 +96,6 @@ fn block_words(secs: u64, cross: bool) -> (String, String) {
 
 /// The grant number's column in the grants list.
 const GRANT_NO_W: f32 = 120.0;
-/// The note's cell in the checks before issuing.
-const CHECK_NOTE_W: f32 = 120.0;
 
 /// A sheet's place row: the folder glyph, the name, and the folder chosen at the right end (monospace,
 /// elided in the middle to the room the name leaves, whole on hover), or "not chosen" in the quiet ink.
@@ -260,11 +258,11 @@ impl Win {
             (t(Key::U3ToWhom), Val::mono(grantee.clone())),
             (t(Key::U3TermsHash), Val::mono(g.as_ref().map(|x| x.terms.clone()).unwrap_or_default())),
             (t(Key::DetailPick), Val::mono(row.id.clone())),
-            (t(Key::U3RawType), Val::mono(row.kind.as_str().to_string())),
-            (t(Key::U3RawSeq), Val::mono(row.seq.to_string())),
+            (t(Key::U3RawType), Val::figure(row.kind.as_str().to_string())),
+            (t(Key::U3RawSeq), Val::figure(row.seq.to_string())),
             (t(Key::EntryAuthor), Val::mono(row.author.clone())),
-            (t(Key::EntryPrev), Val::mono(row.prev.clone().unwrap_or_else(|| t(Key::None_).to_string()))),
-            (t(Key::CanonBytes), Val::mono(row.bytes.to_string())),
+            (t(Key::EntryPrev), row.prev.clone().map(Val::mono).unwrap_or_else(|| Val::text(t(Key::None_)))),
+            (t(Key::CanonBytes), Val::figure(row.bytes.to_string())),
         ];
         if let Some((chain, tx)) = row.tx.clone() {
             kv_rows.push((t(Key::AnchorTx), Val::mono(format!("{chain} \u{b7} {tx}"))));
@@ -474,8 +472,8 @@ impl Win {
         self.grant_form(ui, None, now);
     }
 
-    /// The grant form, shared by a new grant and a relicense (`upstream` names the upstream grant's record).
-    /// Left: the form's rows and "confirm", which opens the signing sheet. Right: the checks before issuing.
+    /// The grant form, shared by a new grant and a relicense (`upstream` names the upstream grant's record), the
+    /// page's whole width: the form's rows and "confirm", which opens the signing sheet.
     pub(super) fn grant_form(&mut self, ui: &mut egui::Ui, upstream: Option<String>, now: f64) {
         self.ensure_rows(now);
         self.ensure_grants(now);
@@ -572,190 +570,183 @@ impl Win {
         let queued = (upstream.is_some() && self.ux.u4.relicense_signed && self.shell.queue.len() > 0).then(|| self.shell.queue.len());
         let recent = self.recent_addresses();
         let (mut confirm, mut to_queue, mut flip, mut cancel) = (false, false, false, false);
-        card::two_cols(ui, tk::SIDE_W, tk::MAIN_MIN_W, |ui, side| match side {
-            card::Side::Main => {
-                // The form: the grantee, the record, the terms file and the validity, each named above its field.
-                stagger(ui, 0, |ui| {
-                    fields::card(ui, |ui, st| {
-                        // The grantee: the address, "recent addresses" inside the field's right end.
-                        let check = grantee_mixed.then(|| (t(Key::U3AddrMixedCase), true));
-                        st.field(ui, t(Key::U3ToWhom), None, check, |ui, w| {
-                            let heads: Vec<String> = recent.iter().map(|a| head_tail(a)).collect();
-                            let items: Vec<menu::Item> = heads.iter().map(|h| menu::Item::Row(menu::Row { lead: t(Key::Address), label: h, mono: true, ..Default::default() })).collect();
-                            let spec = pick::Spec { hint: t(Key::SearchAddress), empty: t(Key::SearchNone), w: PICK_W, dates: None };
-                            let keep = |i: usize, q: &str, _: &str, _: &str| matches(q, &[&recent[i]]);
-                            let mut picked = None;
-                            let look = fields::Look { mono: true, bad: grantee_mixed, ..Default::default() };
-                            let _ = fields::joined(
-                                ui,
-                                &mut self.typed.g_grantee,
-                                t(Key::U3ToWhomHint),
-                                w,
-                                look,
-                                Some(|ui: &mut egui::Ui| picked = formparts::inner_pick(ui, "grant-recent", t(Key::U3RecentDots), true, false, !recent.is_empty(), &spec, &items, &keep)),
-                            );
-                            if let Some(i) = picked {
-                                self.typed.g_grantee = recent[i].clone();
-                            }
-                        });
-                        // The record: fixed by the upstream grant for a relicense; otherwise chosen from anchored
-                        // records (the picker says why the others cannot be chosen), "change" inside the field.
-                        let file_look = fields::Look { icon: Some(Glyph::File), read_only: true, ..Default::default() };
-                        st.field(ui, t(Key::U3WhichWork), None, None, |ui, w| match &upstream {
-                            Some(name) => {
-                                let mut shown = name.clone();
-                                let _ = fields::line(ui, &mut shown, "", w, file_look);
-                            }
-                            None => {
-                                let lines = self.work_lines();
-                                let current = lines.iter().find(|w| w.work.eq_ignore_ascii_case(self.typed.g_work.trim())).map(|w| format!("#{} \u{b7} {}", w.seq, w.name));
-                                let labels: Vec<String> = lines.iter().map(|w| w.name.clone()).collect();
-                                let seqs: Vec<String> = lines.iter().map(|w| format!("#{}", w.seq)).collect();
-                                // The third column: the first anchor's block time, or "not on chain".
-                                let times: Vec<String> = lines.iter().map(|w| w.row.anchored_at.map(crate::when::when).unwrap_or_else(|| t(Key::V2StateLanded).to_string())).collect();
-                                let items: Vec<menu::Item> = lines
-                                    .iter()
-                                    .enumerate()
-                                    .map(|(i, w)| {
-                                        use crate::ledgerx::Lamp;
-                                        let why = match (w.deleted, w.lamp) {
-                                            (Some(_), _) => Some((t(Key::V2Deleted), PillTone::Grey)),
-                                            (None, Lamp::Anchored) => None,
-                                            (None, Lamp::Submitted | Lamp::Included) => Some((t(Key::V2OnChainWait), PillTone::Warn)),
-                                            (None, Lamp::Remembered | Lamp::RememberedStale) => Some((t(Key::V2AwaitThisCheck), PillTone::Warn)),
-                                            (None, _) => Some((t(Key::V2PendingGrey), PillTone::Warn)),
-                                        };
-                                        menu::Item::Row(menu::Row { lead: &seqs[i], label: &labels[i], struck: w.deleted.is_some(), disabled: why.is_some(), pill: why, trail: &times[i], ..Default::default() })
-                                    })
-                                    .collect();
-                                let words = date_words();
-                                let spec = pick::Spec {
-                                    hint: t(Key::SearchWorks),
-                                    empty: t(Key::SearchNone),
-                                    w: PICK_WIDE_W,
-                                    dates: Some(pick::Dates { words: &words, today: today_of(clock), from_hint: t(Key::DateFrom), to_hint: t(Key::DateTo) }),
+        // The form: the grantee, the record, the terms file and the validity, each named above its field.
+        stagger(ui, 0, |ui| {
+            fields::card(ui, |ui, st| {
+                // The grantee: the address, "recent addresses" inside the field's right end.
+                let check = grantee_mixed.then(|| (t(Key::U3AddrMixedCase), true));
+                st.field(ui, t(Key::U3ToWhom), None, check, |ui, w| {
+                    let heads: Vec<String> = recent.iter().map(|a| head_tail(a)).collect();
+                    let items: Vec<menu::Item> = heads.iter().map(|h| menu::Item::Row(menu::Row { lead: t(Key::Address), label: h, mono: true, ..Default::default() })).collect();
+                    let spec = pick::Spec { hint: t(Key::SearchAddress), empty: t(Key::SearchNone), w: PICK_W, dates: None };
+                    let keep = |i: usize, q: &str, _: &str, _: &str| matches(q, &[&recent[i]]);
+                    let mut picked = None;
+                    let look = fields::Look { mono: true, bad: grantee_mixed, ..Default::default() };
+                    let _ = fields::joined(
+                        ui,
+                        &mut self.typed.g_grantee,
+                        t(Key::U3ToWhomHint),
+                        w,
+                        look,
+                        Some(|ui: &mut egui::Ui| picked = formparts::inner_pick(ui, "grant-recent", t(Key::U3RecentDots), true, false, !recent.is_empty(), &spec, &items, &keep)),
+                    );
+                    if let Some(i) = picked {
+                        self.typed.g_grantee = recent[i].clone();
+                    }
+                });
+                // The record: fixed by the upstream grant for a relicense; otherwise chosen from anchored
+                // records (the picker says why the others cannot be chosen), "change" inside the field.
+                let file_look = fields::Look { icon: Some(Glyph::File), read_only: true, ..Default::default() };
+                st.field(ui, t(Key::U3WhichWork), None, None, |ui, w| match &upstream {
+                    Some(name) => {
+                        let mut shown = name.clone();
+                        let _ = fields::line(ui, &mut shown, "", w, file_look);
+                    }
+                    None => {
+                        let lines = self.work_lines();
+                        let current = lines.iter().find(|w| w.work.eq_ignore_ascii_case(self.typed.g_work.trim())).map(|w| format!("#{} \u{b7} {}", w.seq, w.name));
+                        let labels: Vec<String> = lines.iter().map(|w| w.name.clone()).collect();
+                        let seqs: Vec<String> = lines.iter().map(|w| format!("#{}", w.seq)).collect();
+                        // The third column: the first anchor's block time, or "not on chain".
+                        let times: Vec<String> = lines.iter().map(|w| w.row.anchored_at.map(crate::when::when).unwrap_or_else(|| t(Key::V2StateLanded).to_string())).collect();
+                        let items: Vec<menu::Item> = lines
+                            .iter()
+                            .enumerate()
+                            .map(|(i, w)| {
+                                use crate::ledgerx::Lamp;
+                                let why = match (w.deleted, w.lamp) {
+                                    (Some(_), _) => Some((t(Key::V2Deleted), PillTone::Grey)),
+                                    (None, Lamp::Anchored) => None,
+                                    (None, Lamp::Submitted | Lamp::Included) => Some((t(Key::V2OnChainWait), PillTone::Warn)),
+                                    (None, Lamp::Remembered | Lamp::RememberedStale) => Some((t(Key::V2AwaitThisCheck), PillTone::Warn)),
+                                    (None, _) => Some((t(Key::V2PendingGrey), PillTone::Warn)),
                                 };
-                                let keep = |i: usize, q: &str, from: &str, to: &str| {
-                                    let w = &lines[i];
-                                    matches(q, &[&w.name, &w.work, &seqs[i]]) && crate::when::within(w.row.anchored_at, from, to)
-                                };
-                                let label = t(if current.is_some() { Key::U3TermsSwap } else { Key::V2PickWorkBtn });
-                                let hint = t(if lines.is_empty() { Key::U3NoWorksYet } else { Key::U3PickWorkHint });
-                                let mut shown = current.clone().unwrap_or_default();
-                                let mut picked = None;
-                                let _ = fields::joined(ui, &mut shown, hint, w, file_look, Some(|ui: &mut egui::Ui| picked = formparts::inner_pick(ui, "grant-work", label, false, true, !lines.is_empty(), &spec, &items, &keep)));
-                                if let Some(i) = picked {
-                                    self.typed.g_work = lines[i].work.clone();
-                                    self.typed.g_history = lines[i].id.clone();
-                                }
-                            }
-                        });
-                        // The terms file, dropped or chosen: a one-line drop zone with "choose file" inside; once
-                        // chosen, the file in a field with "change"; its fingerprint fills the advanced field. A
-                        // fingerprint typed by hand shows as its own field.
-                        st.field(ui, t(Key::U3TermsFile), None, None, |ui, w| {
-                            if self.ux.u3.terms.as_ref().map(|x| x.hex != self.typed.g_terms.trim()).unwrap_or(false) {
-                                self.ux.u3.terms = None;
-                            }
-                            let mut pick = false;
-                            match self.ux.u3.terms.as_ref().map(|x| (x.name.clone(), x.size.map(size_say).unwrap_or_default())) {
-                                Some((name, size)) => {
-                                    let mut shown = if size.is_empty() { name } else { format!("{name} \u{b7} {size}") };
-                                    let _ = fields::joined(ui, &mut shown, "", w, file_look, Some(|ui: &mut egui::Ui| pick = fields::inner_face(ui, t(Key::U3TermsSwap)).clicked()));
-                                }
-                                None if !self.typed.g_terms.trim().is_empty() => {
-                                    let mut shown = t(Key::TermsTyped).to_string();
-                                    let _ = fields::line(ui, &mut shown, "", w, fields::Look { icon: Some(Glyph::Fingerprint), read_only: true, ..Default::default() });
-                                }
-                                None => {
-                                    let (d, key_hit) = formparts::drop_line(ui, "terms-file", t(Key::U3TermsDrop), t(Key::PickFile), true);
-                                    if let Some(p) = self.one_drop(&d, now) {
-                                        self.take_terms(&p, now);
-                                    } else if d.clicked || key_hit {
-                                        pick = true;
-                                    }
-                                }
-                            }
-                            if let Some(p) = path_answer(ui.ctx(), egui::Id::new("zikaron-path-grant-terms"), pick, crate::platform::Pick::File) {
-                                self.take_terms(&p, now);
-                            }
-                        });
-                        // Validity: the presets or custom at the left and the window as two date blocks at the
-                        // right (under the presets when the line has no room); custom blocks open the calendar.
-                        // The overlap check is the line under them.
+                                menu::Item::Row(menu::Row { lead: &seqs[i], label: &labels[i], struck: w.deleted.is_some(), disabled: why.is_some(), pill: why, trail: &times[i], ..Default::default() })
+                            })
+                            .collect();
                         let words = date_words();
-                        let today = today_of(clock);
-                        st.field(ui, t(Key::U3Window), None, None, |ui, w| {
-                            let presets = [(7u32, t(Key::U3Days7)), (30, t(Key::U3Days30)), (90, t(Key::U3Days90)), (0, t(Key::U3Custom))];
-                            let cells: Vec<seg::Cell> = presets.iter().map(|(_, l)| seg::Cell::from(*l)).collect();
-                            let cur = presets.iter().position(|(d, _)| *d == self.ux.u3.grant_days).unwrap_or(3);
-                            let need = Self::span_need(ui, &from_words, &between, &to_words, no_span);
-                            let mut below = false;
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 14.0;
-                                if let Some(i) = seg::seg(ui, "grant-days", &cells, cur) {
-                                    self.ux.u3.grant_days = presets[i].0;
-                                }
-                                if ui.available_width() >= need + 14.0 {
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.span_blocks(ui, &from_words, &between, &to_words, no_span, custom, today, &words, clock));
-                                } else {
-                                    below = true;
-                                }
-                            });
-                            if below {
-                                // Under the presets the date blocks keep to the card's right line; a sentence in
-                                // their place reads from the left, as the line under it does.
-                                let layout = if no_span.is_some() { egui::Layout::left_to_right(egui::Align::Center) } else { egui::Layout::right_to_left(egui::Align::Center) };
-                                ui.allocate_ui_with_layout(egui::vec2(w, 0.0), layout, |ui| self.span_blocks(ui, &from_words, &between, &to_words, no_span, custom, today, &words, clock));
+                        let spec = pick::Spec {
+                            hint: t(Key::SearchWorks),
+                            empty: t(Key::SearchNone),
+                            w: PICK_WIDE_W,
+                            dates: Some(pick::Dates { words: &words, today: today_of(clock), from_hint: t(Key::DateFrom), to_hint: t(Key::DateTo) }),
+                        };
+                        let keep = |i: usize, q: &str, from: &str, to: &str| {
+                            let w = &lines[i];
+                            matches(q, &[&w.name, &w.work, &seqs[i]]) && crate::when::within(w.row.anchored_at, from, to)
+                        };
+                        let label = t(if current.is_some() { Key::U3TermsSwap } else { Key::V2PickWorkBtn });
+                        let hint = t(if lines.is_empty() { Key::U3NoWorksYet } else { Key::U3PickWorkHint });
+                        let mut shown = current.clone().unwrap_or_default();
+                        let mut picked = None;
+                        let _ = fields::joined(ui, &mut shown, hint, w, file_look, Some(|ui: &mut egui::Ui| picked = formparts::inner_pick(ui, "grant-work", label, false, true, !lines.is_empty(), &spec, &items, &keep)));
+                        if let Some(i) = picked {
+                            self.typed.g_work = lines[i].work.clone();
+                            self.typed.g_history = lines[i].id.clone();
+                        }
+                    }
+                });
+                // The terms file, dropped or chosen: a one-line drop zone with "choose file" inside; once
+                // chosen, the file in a field with "change"; its fingerprint fills the advanced field. A
+                // fingerprint typed by hand shows as its own field.
+                st.field(ui, t(Key::U3TermsFile), None, None, |ui, w| {
+                    if self.ux.u3.terms.as_ref().map(|x| x.hex != self.typed.g_terms.trim()).unwrap_or(false) {
+                        self.ux.u3.terms = None;
+                    }
+                    let mut pick = false;
+                    match self.ux.u3.terms.as_ref().map(|x| (x.name.clone(), x.size.map(size_say).unwrap_or_default())) {
+                        Some((name, size)) => {
+                            let mut shown = if size.is_empty() { name } else { format!("{name} \u{b7} {size}") };
+                            let _ = fields::joined(ui, &mut shown, "", w, file_look, Some(|ui: &mut egui::Ui| pick = fields::inner_face(ui, t(Key::U3TermsSwap)).clicked()));
+                        }
+                        None if !self.typed.g_terms.trim().is_empty() => {
+                            let mut shown = t(Key::TermsTyped).to_string();
+                            let _ = fields::line(ui, &mut shown, "", w, fields::Look { icon: Some(Glyph::Fingerprint), read_only: true, ..Default::default() });
+                        }
+                        None => {
+                            let (d, key_hit) = formparts::drop_line(ui, "terms-file", t(Key::U3TermsDrop), t(Key::PickFile), true);
+                            if let Some(p) = self.one_drop(&d, now) {
+                                self.take_terms(&p, now);
+                            } else if d.clicked || key_hit {
+                                pick = true;
                             }
-                            said_line(ui, clash.0, &clash.1);
-                        });
-                        if custom {
-                            let mono = fields::Look { mono: true, ..Default::default() };
-                            st.pair(
-                                ui,
-                                |ui, st| st.field(ui, t(Key::GrantFrom), None, None, |ui, w| fields::line(ui, &mut self.typed.g_from, "", w, mono)),
-                                |ui, st| st.field(ui, t(Key::GrantTo), None, None, |ui, w| fields::line(ui, &mut self.typed.g_to, "", w, mono)),
-                            );
+                        }
+                    }
+                    if let Some(p) = path_answer(ui.ctx(), egui::Id::new("zikaron-path-grant-terms"), pick, crate::platform::Pick::File) {
+                        self.take_terms(&p, now);
+                    }
+                });
+                // Validity: the presets or custom at the left and the window as two date blocks at the
+                // right (under the presets when the line has no room); custom blocks open the calendar.
+                // The overlap check is the line under them.
+                let words = date_words();
+                let today = today_of(clock);
+                st.field(ui, t(Key::U3Window), None, None, |ui, w| {
+                    let presets = [(7u32, t(Key::U3Days7)), (30, t(Key::U3Days30)), (90, t(Key::U3Days90)), (0, t(Key::U3Custom))];
+                    let cells: Vec<seg::Cell> = presets.iter().map(|(_, l)| seg::Cell::from(*l)).collect();
+                    let cur = presets.iter().position(|(d, _)| *d == self.ux.u3.grant_days).unwrap_or(3);
+                    let need = Self::span_need(ui, &from_words, &between, &to_words, no_span);
+                    let mut below = false;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 14.0;
+                        if let Some(i) = seg::seg(ui, "grant-days", &cells, cur) {
+                            self.ux.u3.grant_days = presets[i].0;
+                        }
+                        if ui.available_width() >= need + 14.0 {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.span_blocks(ui, &from_words, &between, &to_words, no_span, custom, today, &words, clock));
+                        } else {
+                            below = true;
                         }
                     });
+                    if below {
+                        // Under the presets the date blocks keep to the card's right line; a sentence in
+                        // their place reads from the left, as the line under it does.
+                        let layout = if no_span.is_some() { egui::Layout::left_to_right(egui::Align::Center) } else { egui::Layout::right_to_left(egui::Align::Center) };
+                        ui.allocate_ui_with_layout(egui::vec2(w, 0.0), layout, |ui| self.span_blocks(ui, &from_words, &between, &to_words, no_span, custom, today, &words, clock));
+                    }
+                    said_line(ui, clash.0, &clash.1);
                 });
-                // The folds, each saying what it holds now: exclusivity, upstream and scope (open from the
-                // start for a relicense, whose upstream is set there); the fingerprint.
-                stagger(ui, 1, |ui| {
-                    card::form(ui, |ui, f| {
-                        let _ = f.fold_from(ui, "grant-more", t(Key::U3GrantMore), &more, upstream.is_some(), |ui, f| {
-                            flip = f.switch(ui, t(Key::GrantExclusive), t(Key::GrantExclusiveNote), self.typed.g_exclusive, true);
-                            f.panel(ui, |ui| {
-                                fields::stack(ui, |ui, st| {
-                                    let check = upstream_mixed.then(|| (t(Key::U3AddrMixedCase), true));
-                                    st.field(ui, t(Key::U3Upstream), None, check, |ui, w| {
-                                        fields::line(ui, &mut self.typed.g_upstream, "0x\u{2026}", w, fields::Look { mono: true, bad: upstream_mixed, ..Default::default() })
-                                    });
-                                    st.field(ui, t(Key::U3ScopeNote), Some(t(Key::U3Optional)), None, |ui, _| input::area_words(ui, &mut self.typed.g_scope, 2, ""));
-                                });
+                if custom {
+                    let mono = fields::Look { mono: true, ..Default::default() };
+                    st.pair(
+                        ui,
+                        |ui, st| st.field(ui, t(Key::GrantFrom), None, None, |ui, w| fields::line(ui, &mut self.typed.g_from, "", w, mono)),
+                        |ui, st| st.field(ui, t(Key::GrantTo), None, None, |ui, w| fields::line(ui, &mut self.typed.g_to, "", w, mono)),
+                    );
+                }
+            });
+        });
+        // The folds, each saying what it holds now: exclusivity, upstream and scope (open from the
+        // start for a relicense, whose upstream is set there); the fingerprint.
+        stagger(ui, 1, |ui| {
+            card::form(ui, |ui, f| {
+                let _ = f.fold_from(ui, "grant-more", t(Key::U3GrantMore), &more, upstream.is_some(), |ui, f| {
+                    flip = f.switch(ui, t(Key::GrantExclusive), t(Key::GrantExclusiveNote), self.typed.g_exclusive, true);
+                    f.panel(ui, |ui| {
+                        fields::stack(ui, |ui, st| {
+                            let check = upstream_mixed.then(|| (t(Key::U3AddrMixedCase), true));
+                            st.field(ui, t(Key::U3Upstream), None, check, |ui, w| {
+                                fields::line(ui, &mut self.typed.g_upstream, "0x\u{2026}", w, fields::Look { mono: true, bad: upstream_mixed, ..Default::default() })
                             });
+                            st.field(ui, t(Key::U3ScopeNote), Some(t(Key::U3Optional)), None, |ui, _| input::area_words(ui, &mut self.typed.g_scope, 2, ""));
                         });
-                        let _ = f.fold(ui, "grant-adv", t(Key::U3MoreOptions), &adv, |ui, f| {
-                            f.panel(ui, |ui| {
-                                fields::stack(ui, |ui, st| {
-                                    let check = terms_mixed.then(|| (t(Key::U3AddrMixedCase), true));
-                                    st.field(ui, t(Key::U3TermsHash), None, check, |ui, w| {
-                                        fields::line(ui, &mut self.typed.g_terms, "0x\u{2026}", w, fields::Look { mono: true, bad: terms_mixed, ..Default::default() })
-                                    });
-                                });
-                            });
-                        });
-                        // A relicense signed here joins this seat's queue, so the way to anchor it is offered here.
-                        if let Some(n) = queued {
-                            to_queue = f.act(ui, &fill1(Key::U4RecentQueued, &n.to_string()), "", key::Key::new(t(Key::GoAnchor), Role::Secondary)).clicked();
-                        }
                     });
                 });
-            }
-            card::Side::Side => {
-                stagger(ui, 2, |ui| self.grant_checks(ui, now));
-            }
+                let _ = f.fold(ui, "grant-adv", t(Key::U3MoreOptions), &adv, |ui, f| {
+                    f.panel(ui, |ui| {
+                        fields::stack(ui, |ui, st| {
+                            let check = terms_mixed.then(|| (t(Key::U3AddrMixedCase), true));
+                            st.field(ui, t(Key::U3TermsHash), None, check, |ui, w| {
+                                fields::line(ui, &mut self.typed.g_terms, "0x\u{2026}", w, fields::Look { mono: true, bad: terms_mixed, ..Default::default() })
+                            });
+                        });
+                    });
+                });
+                // A relicense signed here joins this seat's queue, so the way to anchor it is offered here.
+                if let Some(n) = queued {
+                    to_queue = f.act(ui, &fill1(Key::U4RecentQueued, &n.to_string()), "", key::Key::new(t(Key::GoAnchor), Role::Secondary)).clicked();
+                }
+            });
         });
         // The page's foot: cancel, and "confirm", which opens the signing sheet (what it still needs on hover).
         formparts::page_bar(ui, |ui| {
@@ -825,46 +816,6 @@ impl Win {
                 self.ux.u3.terms = Some(TermsFile { path: path.to_string(), name, size: x.size, hex: x.hex() });
             }
             Err(f) => self.say_fault(&f, now),
-        }
-    }
-
-    /// "Checks before issuing": the first-grant checklist's two manual steps and the key's balance, one row each
-    /// with its mark at the right; the next step's row marks it done (with an optional note in the row under it);
-    /// "reset checklist" at the card's foot.
-    fn grant_checks(&mut self, ui: &mut egui::Ui, now: f64) {
-        let w = self.shell.wizard.clone();
-        let next = w.next();
-        let gas = match self.chain_read() {
-            Err(f) => (Mark::Bad, fill1(Key::SetReadFailedNow, f.human())),
-            Ok(Some(Done::Chain { gas_wei: Some(g), .. })) if *g > 0 => (Mark::Ok, fill1(Key::U3GasLeft, &eth_held(*g))),
-            Ok(Some(Done::Chain { gas_wei: Some(_), .. })) => (Mark::Bad, t(Key::GuideGas).to_string()),
-            _ => (Mark::Todo, t(Key::U3GasUnread).to_string()),
-        };
-        let (mut tick, mut reset) = (false, false);
-        let said = &mut self.typed.wiz_said;
-        card::section(ui, t(Key::U3BeforeSigning), if next.is_none() { t(Key::WizardDone) } else { "" }, |ui| {
-            card::form(ui, |ui, f| {
-                for s in crate::wizard::Step::ALL.iter() {
-                    if Some(*s) == next {
-                        tick = f.act(ui, t(step_name(*s)), "", key::Key::new(t(Key::TickDone), Role::Secondary)).clicked();
-                        f.with(ui, t(Key::WizardSaid), "", |ui| fields::small(ui, said, t(Key::U3Optional), CHECK_NOTE_W, false));
-                    } else {
-                        let _ = f.info(ui, t(step_name(*s)), card::Show::Mark(if w.has(*s) { Mark::Ok } else { Mark::Todo }, ""));
-                    }
-                }
-                let _ = f.info(ui, &gas.1, card::Show::Mark(gas.0, ""));
-                if w.has(crate::wizard::Step::ALL[0]) {
-                    f.keys(ui, |ui| reset = key::key(ui, t(Key::DoWizardReset), Role::Secondary, true).clicked());
-                }
-            });
-        });
-        if let (true, Some(s)) = (tick, next) {
-            let a = Action::WizardTick { step: s.as_str().to_string(), said: self.typed.wiz_said.clone() };
-            self.act(a, now);
-            self.typed.wiz_said.clear();
-        }
-        if reset {
-            self.act(Action::WizardReset, now);
         }
     }
 

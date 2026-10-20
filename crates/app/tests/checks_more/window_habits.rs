@@ -88,6 +88,44 @@ fn typing_under_an_overlay_never_lands_in_the_passcode_row() {
 }
 
 #[test]
+fn the_passcode_cells_sit_in_the_middle_of_the_gates_group() {
+    if super::alone_in(module_path!(), "the_passcode_cells_sit_in_the_middle_of_the_gates_group") {
+        return;
+    }
+    let ctx = egui::Context::default();
+    super::vault_open();
+    app::keybox::lock();
+    for lang in app::lang::Lang::ALL {
+        app::lang::set(lang);
+        let (_, g) = app::window::probe_gate_column(&ctx, app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx)), None, W, H);
+        let above = g.cells.top() - g.title_ink_bottom;
+        let below = g.forgot.top() - g.cells.bottom();
+        assert!(above > 10.0 && (above - below).abs() < 0.5, "{lang:?}: the key stands as far under the cells as the title's strokes stand over them: {above} and {below} ({g:?})");
+        let (top, bottom) = (g.group_top, g.window_h - g.forgot.bottom());
+        assert!((top - bottom).abs() < 1.5, "{lang:?}: the group is centred in the window: {top} over, {bottom} under");
+        // With a refusal said under the cells, the same gap above and under its box.
+        let (_, g) = app::window::probe_gate_column(&ctx, app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx)), Some("refused"), W, H);
+        let said = g.said.expect("the refusal is said in its box");
+        let above = g.cells.top() - g.title_ink_bottom;
+        assert!((said.top() - g.cells.bottom() - above).abs() < 0.5 && (g.forgot.top() - said.bottom() - above).abs() < 0.5, "{lang:?}: {above}, then {} and {} ({g:?})", said.top() - g.cells.bottom(), g.forgot.top() - said.bottom());
+    }
+    app::lang::set(app::lang::Lang::Zh);
+}
+
+#[test]
+fn a_chain_read_the_status_line_reports_grows_no_card() {
+    if super::alone_in(module_path!(), "a_chain_read_the_status_line_reports_grows_no_card") {
+        return;
+    }
+    let ctx = egui::Context::default();
+    super::vault_open();
+    let s = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
+    let (_, before, during, reported) = app::window::probe_network_reading(&ctx, s, W, H);
+    assert!(reported, "the rail's status line says the read is in progress");
+    assert!(before.is_some() && before == during, "what is under the network's card stays where it was while the read runs: {before:?} then {during:?}");
+}
+
+#[test]
 fn a_page_set_from_outside_the_window_is_shown_next() {
     if super::alone_in(module_path!(), "a_page_set_from_outside_the_window_is_shown_next") {
         return;

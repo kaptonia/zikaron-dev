@@ -9,8 +9,8 @@ use egui::{pos2, vec2, Rect};
 
 /// Paint a switch in `rect` (34 × 20) for state `on`.
 /// How long the knob takes to cross, and to stretch before it settles.
-pub const CROSS: f32 = 0.34;
-pub const STRETCH: f32 = 0.22;
+pub const CROSS: f32 = 0.34 * crate::tokens::PACE;
+pub const STRETCH: f32 = 0.22 * crate::tokens::PACE;
 
 /// When the switch under `id` last flipped and which way it stands.
 #[derive(Clone, Copy)]
@@ -21,7 +21,7 @@ struct Flip {
 
 pub fn paint_switch(ui: &egui::Ui, rect: Rect, id: egui::Id, on: bool, enabled: bool) {
     let ctx = ui.ctx();
-    let now = ui.input(|i| i.time);
+    let now = crate::motion::now(ui.ctx());
     let ground = motion::flag(ctx, id.with("ground"), on, tokens::FAST);
     let knob = motion::glide(ctx, id.with("knob"), if on { 1.0 } else { 0.0 }, CROSS, Curve::Ease);
     // The stretch: up to 22 by STRETCH after the flip, back to round as the knob arrives.
@@ -86,7 +86,7 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool, label: &str, note: &str, enabled
             .with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
-                let l = ui.add(egui::Label::new(egui::RichText::new(label).font(Type::Body.font()).color(c(C::Ink))).sense(sense));
+                let l = ui.add(egui::Label::new(egui::RichText::new(label).font(Type::Body.font()).color(c(C::Ink))).selectable(false).sense(sense));
                 if !note.is_empty() {
                     crate::paint::text(ui, note, Type::Small, c(C::Ink3));
                 }

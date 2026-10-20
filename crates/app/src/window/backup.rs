@@ -101,15 +101,14 @@ impl Win {
                                     "bk-export-details",
                                     &[
                                         (t(Key::BackupFileName), Val::mono(stem)),
-                                        (t(Key::BackupHeader), Val::mono(t(Key::BackupHeaderSay).to_string())),
-                                        (t(Key::BackupCipher), Val::mono(t(Key::DataBackupHowSay).to_string())),
+                                        (t(Key::BackupHeader), Val::figure(t(Key::BackupHeaderSay).to_string())),
+                                        (t(Key::BackupCipher), Val::figure(t(Key::DataBackupHowSay).to_string())),
                                         (t(Key::BackupWithout), Val::text(t(Key::BackupWithoutSay))),
                                     ],
                                 );
                             });
                             st.field(ui, t(Key::BackupPasswordPlain), None, None, |ui, w| secret_strength(ui, "bk-export-pw", &mut me.ux.bk_pw, t(Key::IdPasswordHint), w));
                             st.field(ui, t(Key::BackupPasswordAgain), None, None, |ui, w| secret_again(ui, "bk-export-pw2", &mut me.ux.bk_pw2, &me.ux.bk_pw, w));
-                            zikaron_ui::callout::callout(ui, t(Key::BackupForgetNote));
                             pin_field(st, ui, t(Key::IdPinGate), None, "bk-export-pin", &mut me.ux.bk_pin, me.ux.pin_shake, !busy);
                         });
                         show_trouble(ui);
@@ -154,7 +153,6 @@ impl Win {
                             st.field(ui, t(Key::BackupPasswordPlain), None, None, |ui, w| input::secret_line_w_marked(ui, &mut me.ux.bk_pw, "", w, false));
                             if settings {
                                 pin_field(st, ui, t(Key::IdPinGate), None, "bk-restore-pin", &mut me.ux.bk_pin, me.ux.pin_shake, !busy);
-                                zikaron_ui::callout::callout(ui, t(Key::BackupReplaceNote));
                             }
                         });
                         show_trouble(ui);
@@ -210,7 +208,6 @@ impl Win {
                                 let _ = f.info(ui, t(Key::BackupConfirmFile), card::Show::Text(&file));
                                 content_row(f, ui, &content);
                             });
-                            zikaron_ui::callout::callout(ui, t(Key::BackupConfirmNote));
                         });
                     },
                     |ui, _me| {

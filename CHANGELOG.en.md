@@ -20,7 +20,11 @@ This version lays out and draws the whole app anew, with motion that flows and n
 - **Words**: explanatory small print is kept to what is needed; the app has no small blue links any more, plain keys or whole clickable rows stand in their place; a time is just the time (e.g. `2026-10-17 00:42:11`).
 - **A new record** is made in one step; its name defaults to the file's full name, extension and all.
 - **Network**: nodes and chain settings are edited in one "Edit nodes and chain" sheet, with one "Save".
+- **A new grant**: the "Checks before issuing" card and the first-grant checklist (its two ticks and its reset) are gone; the form takes the page's whole width.
 - **The "Command line" page is now "Command line and AI control"**.
+- **Sheets**: the fixed reminder notes on confirmation cards are gone.
+- **Copy keys**: in details only machine values (addresses, fingerprints, hashes, paths and the like) carry a copy key; words and counts do not.
+- **On macOS the window is drawn through Metal**; Windows and Linux keep OpenGL.
 
 ### Alerts
 

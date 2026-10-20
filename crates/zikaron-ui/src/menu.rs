@@ -216,6 +216,8 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
         // The lens lies under the identity rows: kept a place before them, filled once they are laid.
         let lens_slot = ui.painter().add(egui::Shape::Noop);
         let mut y = rect.top() + PAD;
+        // The separators go on after the rows: a lit row's edge lies under the line beside it.
+        let mut seps = Vec::new();
         for (i, it) in items.iter().enumerate() {
             match it {
                 Item::Head(s) => {
@@ -223,7 +225,7 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
                     y += 24.0;
                 }
                 Item::Sep => {
-                    ui.painter().hline((rect.left() + PAD + 6.0)..=(rect.right() - PAD - 6.0), y + PAD + 0.5, egui::Stroke::new(1.0_f32, c(C::Line2)));
+                    seps.push(y + PAD + crate::band::LINE_HALF);
                     y += SEP_H;
                 }
                 Item::Row(r) => {
@@ -234,8 +236,7 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
                         Some(Item::Sep) => crate::band::Bound::Line,
                         Some(_) => crate::band::Bound::Row,
                     };
-                    let corners = crate::band::corners(Radius::Menu.px(), rh, bound(i.checked_sub(1).and_then(|k| items.get(k))), bound(items.get(i + 1)));
-                    if draw_row(ui, id.with(("row", i)), rr, r, corners).clicked() {
+                    if draw_row(ui, id.with(("row", i)), rr, r, (bound(i.checked_sub(1).and_then(|k| items.get(k))), bound(items.get(i + 1)))).clicked() {
                         picked = Some(i);
                     }
                     y += rh;
@@ -253,6 +254,9 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
                 }
             }
         }
+        for sy in seps {
+            ui.painter().hline((rect.left() + PAD + 6.0)..=(rect.right() - PAD - 6.0), sy, egui::Stroke::new(1.0_f32, c(C::Line2)));
+        }
         // The lens: one block of the hover tone under the identity rows only (hovered > moved to by keys > in
         // use), gliding between them.
         if lens && !who_rows.is_empty() {
@@ -267,7 +271,7 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
             let opened = ctx.data(|d| d.get_temp::<u64>(id.with("opened"))).unwrap_or(0);
             let top = motion::to(ctx, id.with(("lens", opened)), who_rows[target].1, tokens::LENS, Curve::Ease);
             let lr = Rect::from_min_size(pos2(rect.left() + PAD, top), vec2(w - 2.0 * PAD, WHO_H));
-            ui.painter().set(lens_slot, egui::epaint::RectShape::filled(lr, crate::band::corners(Radius::Menu.px(), WHO_H, crate::band::Bound::Row, crate::band::Bound::Row), c(C::Hover)));
+            ui.painter().set(lens_slot, egui::epaint::RectShape::filled(lr, crate::band::corners(Radius::Menu.px(), WHO_H), c(C::Hover)));
         }
         ui.allocate_rect(rect, egui::Sense::hover());
     });
@@ -324,17 +328,21 @@ pub fn plain_key(ui: &mut egui::Ui, id_salt: &str, label: &str, enabled: bool, l
     picked
 }
 
-/// One plain row drawn in `rr` (menus and the pickers share it): a hovered row keeps its ink on a light grey
-/// ground, darker when pressed, the block's corners as [`crate::band`] gives them for where the row stands.
-pub(crate) fn draw_row(ui: &mut egui::Ui, id: egui::Id, rr: Rect, r: &Row, corners: egui::CornerRadius) -> egui::Response {
+/// One plain row drawn in `rr` (menus and the pickers share it), `bounds` what lies above and below it: a hovered
+/// row keeps its ink on a light grey ground, darker when pressed, the block [`crate::band`] gives for where the row
+/// stands.
+pub(crate) fn draw_row(ui: &mut egui::Ui, id: egui::Id, rr: Rect, r: &Row, bounds: (crate::band::Bound, crate::band::Bound)) -> egui::Response {
     let sense = if r.disabled { egui::Sense::hover() } else { egui::Sense::click() };
-    let resp = ui.interact(rr, id, sense);
+    // The row takes the pointer over the very block it lights (reaching a separator's line beside it).
+    let lit = lit_rect(ui, rr, bounds);
+    let resp = ui.interact(lit, id, sense);
     // Lit at once while under the pointer this frame (one row in a list), never while the list scrolls.
-    let hovered = !r.disabled && crate::flow::pointer_on(ui, rr);
+    let hovered = !r.disabled && crate::flow::pointer_on(ui, lit);
     if hovered {
         let press = resp.is_pointer_button_down_on();
-        ui.painter().rect_filled(rr, corners, c(if press { C::Press } else { C::Hover }));
-        lit_probe(ui, rr, corners);
+        let corners = crate::band::corners(Radius::Menu.px(), lit.height());
+        ui.painter().with_clip_rect(ui.clip_rect().union(lit)).rect_filled(lit, corners, c(if press { C::Press } else { C::Hover }));
+        lit_probe(ui, rr, lit, corners, bounds);
     }
     let alpha = if r.disabled { 0.4 } else { 1.0 };
     let ink = c(C::Ink).gamma_multiply(alpha);
@@ -417,14 +425,32 @@ pub(crate) fn card_is(ctx: &egui::Context, rect: Rect) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(CARD), rect));
 }
 
-/// A menu row's block for the readings. Across, the card's edges. Above and below: a square side meets a line
-/// `PAD` out; a round side `PAD` in from the card's edge is bounded by that edge; any other round side reaches
-/// the next row, which bounds it.
-fn lit_probe(ui: &egui::Ui, rr: Rect, corners: egui::CornerRadius) {
+/// A menu row's lit fill: the row, reaching out on a side that meets a separator or the picker's head line (whose
+/// middle is `PAD` and a half beyond the row) to that line's middle, under the line drawn over it
+/// ([`crate::band`]); only while the row's own edge on that side is in view (a row scrolled half out of a list
+/// never lights the room above the list).
+fn lit_rect(ui: &egui::Ui, rr: Rect, bounds: (crate::band::Bound, crate::band::Bound)) -> Rect {
+    use crate::band::Bound;
+    let clip = ui.clip_rect();
+    let reach = PAD + crate::band::LINE_HALF;
+    let up = if bounds.0 == Bound::Line && rr.top() >= clip.top() - 0.5 { reach } else { 0.0 };
+    let down = if bounds.1 == Bound::Line && rr.bottom() <= clip.bottom() + 0.5 { reach } else { 0.0 };
+    Rect::from_min_max(pos2(rr.left(), rr.top() - up), pos2(rr.right(), rr.bottom() + down))
+}
+
+/// A menu row's block for the readings. Across, the card's edges. Above and below: a side at a line is bounded by
+/// the line's middle, `PAD` and a half out; a side at the list's end `PAD` in from the card's edge by that edge;
+/// a side at the next row by that row.
+fn lit_probe(ui: &egui::Ui, rr: Rect, lit: Rect, corners: egui::CornerRadius, bounds: (crate::band::Bound, crate::band::Bound)) {
+    use crate::band::Bound;
     let card = ui.ctx().data(|d| d.get_temp::<Rect>(egui::Id::new(CARD))).unwrap_or(rr.expand(PAD));
-    let out = |round: u8, gap_to_edge: f32| if round == 0 || (gap_to_edge - PAD).abs() < 0.5 { PAD } else { 0.0 };
-    let up = out(corners.nw, rr.top() - card.top());
-    let down = out(corners.sw, card.bottom() - rr.bottom());
+    let out = |b: Bound, gap_to_edge: f32| match b {
+        Bound::Line => PAD + crate::band::LINE_HALF,
+        _ if (gap_to_edge - PAD).abs() < 0.5 => PAD,
+        _ => 0.0,
+    };
+    let up = out(bounds.0, rr.top() - card.top());
+    let down = out(bounds.1, card.bottom() - rr.bottom());
     let slot = Rect::from_min_max(pos2(card.left(), rr.top() - up), pos2(card.right(), rr.bottom() + down));
-    crate::probe::lit(ui.ctx(), crate::probe::Lit { block: rr, corners, slot, card, card_corner: Radius::Menu.px() });
+    crate::probe::lit(ui.ctx(), crate::probe::Lit { block: lit, corners, slot, card, card_corner: Radius::Menu.px() });
 }

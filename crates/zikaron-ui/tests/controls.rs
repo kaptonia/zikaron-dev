@@ -173,7 +173,7 @@ fn the_corners_are_the_designed_family() {
     assert_eq!(Radius::Tag.px(), 12.0, "type tag corners");
     assert_eq!(Radius::Sheet.px(), 22.0, "sheet corners");
     assert_eq!(Radius::Menu.px(), 14.0, "menu corners");
-    assert_eq!(f32::from(zikaron_ui::band::corners(Radius::Menu.px(), 34.0, zikaron_ui::band::Bound::Row, zikaron_ui::band::Bound::Row).nw), Radius::Menu.px() - zikaron_ui::band::GAP, "a menu row's lit corners: the menu's less the gap");
+    assert_eq!(f32::from(zikaron_ui::band::corners(Radius::Menu.px(), 34.0).nw), Radius::Menu.px() - zikaron_ui::band::GAP, "a menu row's lit corners: the menu's less the gap");
     assert_eq!((Radius::Track.px(), Radius::Thumb.px()), (17.0, 15.0), "segmented track and thumb");
     assert!(Radius::Pill.px() >= PILL_H / 2.0, "pills are fully round");
 }
@@ -230,11 +230,13 @@ fn the_spacing_and_sizes_are_the_designed_ones() {
     assert_eq!(k::RAIL_W, 216.0, "the rail");
 }
 
-/// Motion: fast 120, middle 200, slow 300 ms; loops of 1.2 s.
+/// Motion: fast 120, middle 200, slow 300 ms as designed, each at the kit's pace (0.7 of those, the owner's
+/// ruling); loops of 1.2 s, which the pace does not touch.
 #[test]
 fn the_timings_are_the_designed_ones() {
     use zikaron_ui::tokens as k;
-    assert_eq!((k::FAST, k::MID, k::SLOW, k::CYCLE), (0.12, 0.2, 0.3, 1.2));
+    assert_eq!(k::PACE, 0.7);
+    assert_eq!((k::FAST, k::MID, k::SLOW, k::CYCLE), (0.12 * k::PACE, 0.2 * k::PACE, 0.3 * k::PACE, 1.2));
     // The eased-out curve ends where it should and never overshoots; the spring does, and comes back.
     use zikaron_ui::motion::Curve;
     assert!((Curve::Ease.at(1.0) - 1.0).abs() < 1e-4 && Curve::Ease.at(0.0).abs() < 1e-4);

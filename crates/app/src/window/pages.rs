@@ -405,13 +405,6 @@ pub(super) fn tab_key(v: View, tab: u8) -> Key {
     }
 }
 
-pub(super) fn step_name(s: crate::wizard::Step) -> Key {
-    match s {
-        crate::wizard::Step::Terms => Key::StepTerms,
-        crate::wizard::Step::Anchor => Key::StepAnchor,
-    }
-}
-
 /// Where a watch row's "next" leads: an unanswered node goes to network settings; expiring holdings and
 /// missing chains go to my grants.
 pub(super) fn gap_target(g: crate::watchx::Gap) -> Place {

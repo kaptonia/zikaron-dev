@@ -33,14 +33,6 @@ impl Win {
         }
     }
 
-    /// What changing identity does to the seat's records, said once on the sheets that make one (a recorder's
-    /// ledger needs a handover first; a grantee's grants stay with the old key). Not on the first run, which has
-    /// no identity to change from.
-    fn id_change_note(&self) -> Option<&'static str> {
-        let has_one = self.shell.identities.as_ref().is_some_and(|r| !r.rows.is_empty());
-        (self.ux.wizard.is_none() && has_one).then(|| t(if self.shell.settings.role == crate::roles::Role::Author { Key::IdChangeAuthorHint } else { Key::IdChangeGranteeHint }))
-    }
-
     pub(super) fn id_sheets(&mut self, ctx: &egui::Context, now: f64) {
         use crate::action::ImportForm;
         let Some(which) = self.ux.id_modal.clone() else { return };
@@ -61,7 +53,6 @@ impl Win {
             }
         };
         let len = crate::keybox::PIN_LEN;
-        let change_note = self.id_change_note();
         let name_of = |r: &crate::identity::Row| if r.label.trim().is_empty() { t(Key::Unnamed).to_string() } else { r.label.clone() };
         let (mut close, mut ask_words, mut copied, mut first_pin) = (false, false, false, false);
         let mut esc;
@@ -90,16 +81,13 @@ impl Win {
                                     zikaron_ui::fields::rows(ui, |ui, f| me.id_network_row(f, ui, "id-new-network"));
                                 }
                                 // Under a veil by default: twelve words in plain view reach anyone behind the screen,
-                                // and screen recording and sharing. A click on the veil shows them.
+                                // and screen recording and sharing. A click on the veil shows them. No words yet (being
+                                // made, or refused, said under the form): no empty grid holding their place.
                                 let words = fresh.as_ref().map(|(w, _)| w.clone());
-                                let asked = st.field(ui, t(Key::IdTabWords), None, None, |ui, _| parts::words(ui, "id-new-words", words.as_deref(), open, t(Key::IdShowNewWords)).clicked());
-                                if asked && words.is_some() {
+                                let asked = words.is_some() && st.field(ui, t(Key::IdTabWords), None, None, |ui, _| parts::words(ui, "id-new-words", words.as_deref(), open, t(Key::IdShowNewWords)).clicked());
+                                if asked {
                                     me.ux.id_words_open = true;
                                     me.ux.id_words_seen = true;
-                                }
-                                zikaron_ui::callout::callout(ui, t(Key::IdCopyWords));
-                                if let Some(n) = change_note {
-                                    zikaron_ui::callout::callout(ui, n);
                                 }
                             } else if let Some((_, picks)) = fresh.as_ref() {
                                 for (k, p) in picks.iter().enumerate() {
@@ -196,7 +184,6 @@ impl Win {
                                         let bad = crate::cryptx::strangers(&me.ux.id_words);
                                         pin::words_grid_marked(ui, "id-import-words", &mut me.ux.id_words, &bad);
                                     });
-                                    zikaron_ui::callout::callout(ui, t(Key::IdNoAssets));
                                 }
                                 1 => {
                                     st.field(ui, t(Key::IdTabHex), None, None, |ui, w| input::secret_key_line(ui, &mut me.ux.id_hex, t(Key::IdHexHint), w, false));
@@ -216,9 +203,6 @@ impl Win {
                             st.field(ui, t(Key::IdLabel), Some(t(Key::U3Optional)), None, |ui, w| fields::line(ui, &mut me.ux.id_new_label, t(Key::IdLabelExample), w, fields::Look::default()));
                             if me.ux.wizard.is_none() {
                                 zikaron_ui::fields::rows(ui, |ui, f| me.id_network_row(f, ui, "id-import-network"));
-                            }
-                            if let Some(n) = change_note {
-                                zikaron_ui::callout::callout(ui, n);
                             }
                         });
                         show_trouble(ui);
@@ -276,7 +260,6 @@ impl Win {
                                 zikaron_ui::callout::callout(ui, t(Key::IdNoWordsHint));
                                 return;
                             }
-                            zikaron_ui::callout::callout(ui, &format!("{}{}", t(Key::IdWordsWarn), t(Key::IdWordsWarnNext)));
                             // Shown only after the passcode.
                             match words.as_deref() {
                                 None => {
@@ -286,7 +269,6 @@ impl Win {
                                 }
                                 Some(w) => {
                                     parts::words(ui, "id-words-grid", Some(w), true, "");
-                                    zikaron_ui::callout::callout(ui, t(Key::IdNoAssets));
                                 }
                             }
                         });
@@ -460,7 +442,6 @@ impl Win {
                 let addr = row.as_ref().and_then(|r| r.address(seat).or_else(|| r.address(r.first_seat()))).map(|a| a.hex()).unwrap_or_default();
                 let name = row.as_ref().map(name_of).unwrap_or_default();
                 let effect = t(if author { Key::IdDeleteAuthorEffect } else { Key::IdDeleteGranteeEffect });
-                let said = t(if author { Key::IdDeleteAuthorNote } else { Key::IdDeleteGranteeNote }).to_string();
                 let ledgers_say = if ledgers.is_empty() { None } else { Some(fill1(Key::IdDeleteLedgerSome, &ledgers.join(" \u{b7} "))) };
                 let mut delete = false;
                 let out = sheet::show(
@@ -486,7 +467,6 @@ impl Win {
                                     states::err_box(ui, "id-delete-backup", t(Key::IdBackupGone), t(Key::FaultNextBackupNotLanded), t(Key::U3RawError), &b.at);
                                 }
                             }
-                            zikaron_ui::callout::callout(ui, &said);
                             // The user is identified before keys are deleted, with the same passcode and failure count
                             // as at launch.
                             pin_field(st, ui, t(Key::IdPinGate), None, "id-delete-pin", &mut me.ux.id_pin, me.ux.pin_shake, true);

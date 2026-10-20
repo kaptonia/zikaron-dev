@@ -218,7 +218,10 @@ impl Win {
             }
             // Details: the raw values, every label a name.
             let what = if remote.is_some() { x.path.clone() } else { format!("{} \u{b7} {}", width::file_name(&x.path), t(source_key(&x.source))) };
-            let mut rows: Vec<(&str, Val)> = vec![(t(Key::U4Source), Val::text(what)), (t(Key::LedgerEntries), Val::mono(x.entries.to_string())), (t(Key::U4Rejected), Val::mono(x.rejected.len().to_string()))];
+            // A remote source is its path or address (taken elsewhere: a copy key); a local one, its file's name and
+            // the words for where it came from.
+            let what = if remote.is_some() { Val::mono(what) } else { Val::text(what) };
+            let mut rows: Vec<(&str, Val)> = vec![(t(Key::U4Source), what), (t(Key::LedgerEntries), Val::figure(x.entries.to_string())), (t(Key::U4Rejected), Val::figure(x.rejected.len().to_string()))];
             rows.push((t(Key::PageKit), Val::text(kit.1.clone())));
             rows.push((t(Key::NavAnchoring), Val::text(review.1.clone())));
             rows.push((t(Key::CheckIssuerLedger), Val::text(label.1.clone())));
@@ -231,7 +234,7 @@ impl Win {
             }
             if let Some(k) = &x.kit {
                 rows.push((t(Key::KitId), Val::mono(k.kit_id.clone())));
-                rows.push((t(Key::U3Verdict), Val::mono(k.verdict.clone())));
+                rows.push((t(Key::U3Verdict), Val::figure(k.verdict.clone())));
             }
             // Where each record's first anchor is: chain, registry, and per record its time, block and full
             // transaction.
@@ -252,7 +255,7 @@ impl Win {
             registries.sort();
             registries.dedup();
             if !chains.is_empty() {
-                rows.push((t(Key::BasisChain), Val::mono(chains.join("\n"))));
+                rows.push((t(Key::BasisChain), Val::figure(chains.join("\n"))));
             }
             if !registries.is_empty() {
                 rows.push((t(Key::SetRegistry), Val::mono(registries.join("\n"))));
@@ -273,11 +276,11 @@ impl Win {
             }
             match &x.filed {
                 Some(Ok(p)) => rows.push((t(Key::VerifyResultFile), Val::mono(p.clone()))),
-                Some(Err(e)) => rows.push((t(Key::VerifyResultFile), Val::Mark(Mark::Bad, e.clone()))),
+                Some(Err(e)) => rows.push((t(Key::VerifyResultFile), Val::mono(e.clone()))),
                 None => {}
             }
             match &x.review {
-                Ok(a) => rows.push((t(Key::AuditLabel), Val::mono(a.label.clone()))),
+                Ok(a) => rows.push((t(Key::AuditLabel), Val::figure(a.label.clone()))),
                 Err(said) => rows.push((t(Key::U3RawError), Val::mono(said.clone()))),
             }
             stagger(ui, 5, |ui| details_card(ui, "verify-evidence", &rows));

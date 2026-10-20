@@ -133,16 +133,20 @@ pub fn widths(cols: &[Column], inner: f32) -> Vec<f32> {
 
 /// A lit row's block ([`crate::band`]): across, the card's edges; above, the head's rule, the line over the row
 /// or the card's top; below, the line under it or the card's bottom (`last`, the card ending `LIST_PAD_Y` under).
-pub fn lit_block(card_x: (f32, f32), row: Rect, head_rule: Option<f32>, first: bool, last: bool) -> (Rect, egui::CornerRadius) {
+/// Answers the block, its corners and the slot it was cut from.
+pub fn lit_block(card_x: (f32, f32), row: Rect, head_rule: Option<f32>, first: bool, last: bool) -> (Rect, egui::CornerRadius, Rect) {
     use crate::band::Bound;
     let (top, above) = match (first, head_rule) {
-        (true, Some(y)) => (y, Bound::Line),
+        // The head's rule is drawn centred half a point above the head's foot (`y`): the slot starts at its middle,
+        // as it does at a line between rows.
+        (true, Some(y)) => (y - crate::band::LINE_HALF, Bound::Line),
         (true, None) => (row.top() - tokens::LIST_PAD_Y, Bound::Edge),
         (false, _) => (row.top(), Bound::Line),
     };
     let (bottom, below) = if last { (row.bottom() + tokens::LIST_PAD_Y, Bound::Edge) } else { (row.bottom(), Bound::Line) };
     let slot = Rect::from_min_max(pos2(card_x.0, top), pos2(card_x.1, bottom));
-    crate::band::block(slot, Radius::Card.px(), above, below)
+    let (block, corners) = crate::band::block(slot, Radius::Card.px(), above, below);
+    (block, corners, slot)
 }
 
 /// Each row's identity in this table, one per row: its sequence number when it has one, else its first words (a
@@ -205,9 +209,11 @@ fn table_body(ui: &mut egui::Ui, id: egui::Id, cols: &[Column], head: bool, rows
     let ws = widths(cols, cell_room);
     let mut y = top.y + tokens::LIST_PAD_Y;
     let mut head_rule = y;
+    let mut head_line = None;
     let p = ui.painter().clone();
     if head {
-        // The head spans the card edge to edge, with the rule under it.
+        // The head spans the card edge to edge, with the rule under it (drawn after the rows: the first row's lit
+        // edge lies under it).
         let hr = Rect::from_min_size(pos2(top.x, top.y), vec2(w, tokens::TABLE_HEAD_H));
         let mut x = inner_x + tokens::ROW_INSET;
         for (col, cw) in cols.iter().zip(&ws) {
@@ -217,7 +223,7 @@ fn table_body(ui: &mut egui::Ui, id: egui::Id, cols: &[Column], head: bool, rows
             }
             x += cw + tokens::CELL_GAP;
         }
-        p.hline(hr.x_range(), hr.bottom() - 0.5, egui::Stroke::new(1.0_f32, c(C::Line2)));
+        head_line = Some(egui::Shape::hline(hr.x_range(), hr.bottom() - crate::band::LINE_HALF, egui::Stroke::new(1.0_f32, c(C::Line2))));
         head_rule = hr.bottom();
         y = hr.bottom();
     }
@@ -239,8 +245,14 @@ fn table_body(ui: &mut egui::Ui, id: egui::Id, cols: &[Column], head: bool, rows
             let resp = ui.interact(r, rid.with("hit"), sense);
             let hot = if hovered == Some(i) { 1.0 } else { 0.0 };
             let down = row.click && hot > 0.0 && resp.is_pointer_button_down_on();
-            let ground = if row.on {
-                Some(c(C::Sel))
+            // Chosen rows that touch are one block, drawn once, from the run's first row to its last.
+            let run = row.on.then(|| {
+                let first = (0..=i).rev().take_while(|k| rows[*k].on).last().unwrap_or(i);
+                let last = (i..rows.len()).take_while(|k| rows[*k].on).last().unwrap_or(i);
+                (first, last)
+            });
+            let ground = if let Some((first, _)) = run {
+                (first == i).then(|| c(C::Sel))
             } else if down {
                 Some(c(C::Press))
             } else if hot > 0.0 {
@@ -248,11 +260,13 @@ fn table_body(ui: &mut egui::Ui, id: egui::Id, cols: &[Column], head: bool, rows
             } else {
                 None
             };
-            let (band, corners) = lit_block((top.x, top.x + w), r, head.then_some(head_rule), i == 0, i + 1 == rows.len());
+            let (band, corners, slot) = match run {
+                Some((first, last)) => lit_block((top.x, top.x + w), rects[first].union(rects[last]), head.then_some(head_rule), first == 0, last + 1 == rows.len()),
+                None => lit_block((top.x, top.x + w), r, head.then_some(head_rule), i == 0, i + 1 == rows.len()),
+            };
             if let Some(g) = ground {
                 p.rect_filled(band, corners, g);
                 let card = Rect::from_min_max(top, pos2(top.x + w, rects.last().map(|l| l.bottom()).unwrap_or(y) + tokens::LIST_PAD_Y));
-                let slot = Rect::from_min_max(pos2(top.x, band.top() - crate::band::GAP), pos2(top.x + w, band.bottom() + crate::band::GAP));
                 crate::probe::lit(ui.ctx(), crate::probe::Lit { block: band, corners, slot, card, card_corner: Radius::Card.px() });
             }
             if row.click {
@@ -263,7 +277,9 @@ fn table_body(ui: &mut egui::Ui, id: egui::Id, cols: &[Column], head: bool, rows
                     }
                 }
             }
-            if i > 0 && hovered != Some(i) && hovered != Some(i - 1) && !row.on && !rows[i - 1].on {
+            // The line between two rows stays when either is lit, drawn over the lit block, whose edge lies on its
+            // middle ([`crate::band`]); two chosen rows in one block have none between them.
+            if i > 0 && !(row.on && rows[i - 1].on) {
                 p.hline((r.left() + tokens::ROW_INSET)..=(r.right() - tokens::ROW_INSET), r.top(), egui::Stroke::new(1.0_f32, c(C::Line2).gamma_multiply(0.7)));
             }
             let mut x = r.left() + tokens::ROW_INSET;
@@ -284,6 +300,9 @@ fn table_body(ui: &mut egui::Ui, id: egui::Id, cols: &[Column], head: bool, rows
         y = rects.last().map(|r| r.bottom()).unwrap_or(y);
     }
     let _ = group.finish(ui.ctx());
+    if let Some(line) = head_line {
+        p.add(line);
+    }
     let card = Rect::from_min_max(top, pos2(top.x + w, y + tokens::LIST_PAD_Y));
     ui.advance_cursor_after_rect(card);
     (hit, card)

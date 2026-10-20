@@ -73,11 +73,11 @@ struct StepState {
 /// How the sheet condenses: the scale it grows from, over how long; its content's delay and fade; and how it
 /// leaves.
 const GROW_FROM: f32 = 0.92;
-const GROW: f32 = 0.44;
-const CONTENT_DELAY: f32 = 0.07;
-const CONTENT_IN: f32 = 0.24;
+const GROW: f32 = 0.44 * crate::tokens::PACE;
+const CONTENT_DELAY: f32 = 0.07 * crate::tokens::PACE;
+const CONTENT_IN: f32 = 0.24 * crate::tokens::PACE;
 const LEAVE_TO: f32 = 0.97;
-const LEAVE: f32 = 0.14;
+const LEAVE: f32 = 0.14 * crate::tokens::PACE;
 
 pub(crate) fn inside_id() -> egui::Id {
     egui::Id::new("zikaron-sheet-inside")
@@ -104,7 +104,7 @@ pub fn up(ctx: &egui::Context) -> bool {
 /// right (laid right to left, 8 apart). Both get the caller's state.
 pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl FnOnce(&mut egui::Ui, &mut T) -> B, foot: impl FnOnce(&mut egui::Ui, &mut T) -> F) -> Out<B, F> {
     let id = egui::Id::new(("zikaron-sheet", spec.id));
-    let now = ctx.input(|i| i.time);
+    let now = crate::motion::now(ctx);
     // The pass number is read before taking the data lock (asking the context inside it would deadlock).
     let pass = ctx.cumulative_pass_nr();
     ctx.data_mut(|d| d.insert_temp(egui::Id::new("zikaron-sheet-up"), pass));
@@ -146,15 +146,19 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
         *s
     });
     let since = if now >= st.t0 { (now - st.t0) as f32 } else { f32::INFINITY };
-    let step_p = (since / tokens::STEP).clamp(0.0, 1.0);
-    // The new content after a step or tab change: fades in once the height is on its way.
-    let step_in = Curve::Ease.at(((since - CONTENT_DELAY) / CONTENT_IN).clamp(0.0, 1.0));
+    // A step or tab change: the new content slides and fades in on the height's own clock, from the same frame, so
+    // content and card arrive together.
+    let step_p = (since / tokens::SLOW).clamp(0.0, 1.0);
+    let step_in = Curve::Ease.at(step_p);
     if step_p < 1.0 || step_in < 1.0 {
         ctx.request_repaint();
     }
-    // Height: follows the content in place, always (the library's one height curve).
-    let card_h = crate::flow::height(ctx, id.with("card-h"), natural, w).round();
-    let shake = motion::shake_at(ctx, spec.shake_at, 0.36);
+    // Height: follows the content in place, always (the library's one height curve); when the content was itself
+    // changing height last pass (a card or fold in it easing), the card takes it as it is and moves with it.
+    let inner_id = id.with("inner-moving");
+    let inner_was = ctx.data(|d| d.get_temp::<bool>(inner_id)).unwrap_or(false);
+    let card_h = crate::flow::height_following(ctx, id.with("card-h"), natural, w, inner_was).round();
+    let shake = motion::shake_at(ctx, spec.shake_at, 0.36 * crate::tokens::PACE);
     let card = Rect::from_center_size(screen.center(), vec2(w, card_h)).translate(vec2(shake, 0.0));
     let scale = 1.0 - (1.0 - GROW_FROM) * (1.0 - grow) * motion::travel(ctx);
     ctx.set_transform_layer(layer, egui::emath::TSTransform { scaling: scale, translation: origin.to_vec2() * (1.0 - scale) });
@@ -200,7 +204,8 @@ pub fn show<T, B, F>(ctx: &egui::Context, spec: Spec, state: &mut T, body: impl 
                         ui.ctx().data_mut(|d| d.insert_temp(inside_id(), true));
                         let corner_was = ui.ctx().data(|d| d.get_temp::<f32>(rows_corner_id()));
                         ui.ctx().data_mut(|d| d.insert_temp(rows_corner_id(), Radius::Sheet.px()));
-                        let b = motion::shifted(ui, vec2(slide_x, 0.0), slide_a, |ui| body(ui, state));
+                        let (b, inner) = crate::flow::watch_moving(&ui.ctx().clone(), || motion::shifted(ui, vec2(slide_x, 0.0), slide_a, motion::key_of(&st.step), |ui| body(ui, state)));
+                        ui.ctx().data_mut(|d| d.insert_temp(inner_id, inner));
                         ui.ctx().data_mut(|d| d.insert_temp(inside_id(), was));
                         ui.ctx().data_mut(|d| {
         if let Some(c) = corner_was {

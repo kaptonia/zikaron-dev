@@ -321,8 +321,6 @@ pub struct Shell {
     pub kit: Option<crate::task::Done>,
     /// How many entries the last pick chose and which were pulled in.
     pub picked: Option<(usize, Vec<String>)>,
-    /// The first-window checklist.
-    pub wizard: crate::wizard::Wizard,
     /// What the double-sale guard hit this pass (listed in a dialog).
     pub clash: Vec<crate::grantx::Row>,
     /// Who writes this ledger from now on. Present means this desk handed it over by succession, and the
@@ -624,7 +622,6 @@ impl Shell {
             depth: None,
             kit: None,
             picked: None,
-            wizard: crate::wizard::Wizard::default(),
             clash: Vec::new(),
             handed: None,
             proofs: None,
@@ -914,7 +911,6 @@ impl Shell {
         self.seat_identities(None);
         self.settings = Settings { role: self.settings.role, ..Settings::default() };
         self.endpoints = Vec::new();
-        self.wizard = crate::wizard::Wizard::default();
         self.kits_index = None;
         self.kits_root = None;
         self.vetted.clear();
@@ -1366,8 +1362,7 @@ impl Shell {
 
     /// The only place the shell's copies of disk state are loaded; opening a home comes here.
     ///
-    /// Endpoints, the anchor queue and the first-window checklist live on disk with a copy in the shell for
-    /// the frame. A malformed file is reported at once instead of being read as empty.
+    /// Endpoints and the anchor queue live on disk with a copy in the shell for the frame. A malformed file is reported at once instead of being read as empty.
     pub fn hydrate(&mut self, home: &crate::home::Home) -> Result<(), Fault> {
         // Unreadable settings mean the home cannot open: endpoints, basis and registrations live there, and
         // continuing with empty ones would make the screen show something else entirely.
@@ -1391,13 +1386,6 @@ impl Shell {
             Ok(q) => self.queue = q,
             Err(f) => {
                 self.queue = crate::queue::Queue::default();
-                self.faults.push(f);
-            }
-        }
-        match crate::wizard::Wizard::read(home) {
-            Ok(w) => self.wizard = w,
-            Err(f) => {
-                self.wizard = crate::wizard::Wizard::default();
                 self.faults.push(f);
             }
         }
@@ -1649,7 +1637,6 @@ impl Shell {
             // the settings file:
             settings: _,
             queue: _,
-            wizard: _,
             rooted: _,
             // Read from the ledger (cleared in both scopes):
             rows,

@@ -272,8 +272,8 @@ impl Win {
                 // Where the content came from, only when it failed somewhere (the source itself is under details).
                 if let Some((_, _, misses)) = &supply {
                     if unobtained || !misses.is_empty() {
-                        if let Some((m, said)) = &source {
-                            let _ = f.row_with(ui, Some(*m), &fill1(Key::CheckSourceLine, said), "", card::Value::None, |_| ());
+                        if let Some((m, whence)) = &source {
+                            let _ = f.row_with(ui, Some(*m), &fill1(Key::CheckSourceLine, whence), "", card::Value::None, |_| ());
                         }
                         for (level, miss) in misses {
                             let _ = f.row_with(ui, Some(Mark::Warn), &fill2(Key::CheckMissRow, t(level_key(*level)), miss.human()), "", card::Value::None, |_| ());
@@ -341,10 +341,10 @@ impl Win {
         if let Some((_, said)) = &source {
             rows.push((t(Key::LedgerSources), Val::text(said.clone())));
         }
-        rows.push((t(Key::AnchorsOnChain), Val::mono(v.anchors.to_string())));
-        rows.push((t(Key::AuditLabel), Val::mono(v.label.clone())));
+        rows.push((t(Key::AnchorsOnChain), Val::figure(v.anchors.to_string())));
+        rows.push((t(Key::AuditLabel), Val::figure(v.label.clone())));
         if let Some(x) = v.dil.as_ref() {
-            rows.push((t(Key::Lineage), Val::mono(if x.lineage.is_empty() { t(Key::None_).to_string() } else { x.lineage.join(" \u{2192} ") })));
+            rows.push((t(Key::Lineage), if x.lineage.is_empty() { Val::text(t(Key::None_)) } else { Val::mono(x.lineage.join(" \u{2192} ")) }));
             if !x.successions.is_empty() {
                 rows.push((t(Key::TagHandover), Val::mono(x.successions.iter().map(|one| format!("#{} \u{b7} {} \u{b7} {}", one.seq, one.kind, one.to)).collect::<Vec<_>>().join("\n"))));
             }
@@ -352,11 +352,11 @@ impl Win {
                 // A network left out this pass: "deepest" with no anchor read says the chain was not read (same
                 // rule as the verify page, `depthx::said`).
                 let deepest = match crate::depthx::said(&three, !x.missed.is_empty()).1 {
-                    crate::depthx::Said::Is(n) => n.to_string(),
-                    _ => t(Key::U4ChainUnread).to_string(),
+                    crate::depthx::Said::Is(n) => Val::figure(n.to_string()),
+                    _ => Val::text(t(Key::U4ChainUnread)),
                 };
-                rows.push((t(Key::U3Deepest), Val::mono(deepest)));
-                rows.push((t(Key::AuditLabel), Val::mono(three.label.clone())));
+                rows.push((t(Key::U3Deepest), deepest));
+                rows.push((t(Key::AuditLabel), Val::figure(three.label.clone())));
             }
         }
         stagger(ui, 6, |ui| details_card(ui, "others-lineage", &rows));
@@ -415,7 +415,7 @@ impl Win {
             details_card(
                 ui,
                 "other-entry-details",
-                &[(t(Key::EntryAuthor), Val::mono(v.who.clone())), (t(Key::DetailPick), Val::mono(row.id.clone())), (t(Key::U4RecordFirstAt), Val::mono(first_anchor_say(row.anchored_at)))],
+                &[(t(Key::EntryAuthor), Val::mono(v.who.clone())), (t(Key::DetailPick), Val::mono(row.id.clone())), (t(Key::U4RecordFirstAt), Val::figure(first_anchor_say(row.anchored_at)))],
             )
         });
     }

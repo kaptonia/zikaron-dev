@@ -66,7 +66,9 @@ impl Win {
                 } else {
                     Key::PinRecoverTitle
                 };
-                gate_head(ui, t(title));
+                // The cells sit in the middle of the group: what comes under them stands as far below them as the
+                // title's strokes stand above them.
+                let around = gate_head(ui, t(title));
                 if !recover {
                     let row = ui.vertical_centered(|ui| parts::pins(ui, "gate-pin", &mut self.ux.pin, len, self.ux.pin_shake, !busy)).inner;
                     // Typing again clears the last refusal, except on the reseal path, whose sentence says what
@@ -78,8 +80,8 @@ impl Win {
                         let pin = std::mem::take(&mut self.ux.pin);
                         act = Some(if self.ux.gate_reseal { Action::Reseal { pin } } else { Action::Unlock { pin } });
                     }
-                    gate_message(ui, busy, self.ux.gate_trouble.as_deref(), 14.0);
-                    ui.add_space(14.0);
+                    gate_message(ui, busy, self.ux.gate_trouble.as_deref(), around);
+                    ui.add_space(around);
                     if ui.vertical_centered(|ui| covers::small_key(ui, t(Key::PinForgot), true).clicked()).inner {
                         self.ux.gate_recover = true;
                         self.ux.gate_trouble = None;
@@ -88,8 +90,8 @@ impl Win {
                 }
                 if empty_out {
                     centred_note(ui, t(Key::PinEmptySay));
-                    gate_message(ui, false, self.ux.gate_trouble.as_deref(), 12.0);
-                    ui.add_space(14.0);
+                    gate_message(ui, false, self.ux.gate_trouble.as_deref(), around);
+                    ui.add_space(around);
                     // The one key, centred under the words as the unlock gate's is.
                     if ui.vertical_centered(|ui| key::key(ui, t(Key::PinDoReset), Role::Secondary, true).clicked()).inner {
                         act = Some(Action::ResetEmptyKeybox);
@@ -144,7 +146,7 @@ impl Win {
                 }
                 // The third way, restoring a whole-machine backup (new passcode, everything resealed), at the left of
                 // the bottom row; going back to the passcode at its right.
-                gate_keys(ui, |ui| {
+                gate_keys(ui, around, |ui| {
                     if !locked_out && key::key(ui, t(Key::CfBack), Role::Secondary, true).clicked() {
                         self.ux.gate_back();
                     }
@@ -165,16 +167,19 @@ impl Win {
     }
 }
 
-/// The gate's head, centred: the app's name small, the title under it, then the column's room.
-fn gate_head(ui: &mut egui::Ui, title: &str) {
+/// The gate's head, centred: the app's name small, the title under it, then the column's room. Returns the gap
+/// from the title's strokes to what comes next, the one the group keeps under it too.
+fn gate_head(ui: &mut egui::Ui, title: &str) -> f32 {
     ui.spacing_mut().item_spacing.y = 0.0;
-    covers::lock_head(ui, t(Key::AppName), title);
+    let strokes_end = covers::lock_head(ui, t(Key::AppName), title);
     ui.add_space(14.0);
+    ui.cursor().min.y - strokes_end
 }
 
-/// The gate's bottom row of keys, laid from the right (`add` draws them; [`lead_key`] puts one at the left).
-fn gate_keys(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
-    ui.add_space(tk::S4);
+/// The gate's bottom row of keys, `gap` under what is above it, laid from the right (`add` draws them;
+/// [`lead_key`] puts one at the left).
+fn gate_keys(ui: &mut egui::Ui, gap: f32, add: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(gap);
     ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), tk::KEY_H), egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = tk::S2;
         add(ui)

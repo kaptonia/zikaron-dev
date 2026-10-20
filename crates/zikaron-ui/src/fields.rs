@@ -82,6 +82,7 @@ impl Stack {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
             name(ui, label, optional);
+            ui.add_space(name_gap() - 8.0);
             let w = ui.available_width();
             let r = add(ui, w);
             if let Some((s, bad)) = line.filter(|(s, _)| !s.is_empty()) {
@@ -133,6 +134,13 @@ impl Stack {
         })
         .inner
     }
+}
+
+/// From a field's name to the control under it, the one measure for every name over its control: what the
+/// credential sheet's validity row leaves between its name (centred on a key's height, the switch beside it) and
+/// the box under it.
+pub fn name_gap() -> f32 {
+    (tokens::KEY_H - Type::Note.line()) / 2.0 + tokens::S2
 }
 
 /// A field's name: 14 medium, and the quiet word after it.

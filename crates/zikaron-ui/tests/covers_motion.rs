@@ -109,14 +109,15 @@ fn the_window_comes_back_from_half_and_0993_over_045() {
     assert!(seen[10].1.is_none(), "whole again by 0.5 s");
 }
 
-/// A passcode dot pops in from half its size on the spring over 0.35 s; a refused row shakes 8, 7, 5, 3 over 0.42 s.
+/// A passcode dot pops in from half its size on the spring over 0.35 s; a refused row shakes 8, 7, 5, 3 over 0.42 s;
+/// both at the kit's pace (read at those shares of the paced times).
 #[test]
 fn a_dot_pops_and_a_refused_row_shakes() {
     let c = ctx();
     let mut pin = zikaron_ui::secret::Secret::of("a");
     let mut radii = Vec::new();
     for k in 0..=8 {
-        let t = 2.0 + k as f64 * 0.05;
+        let t = 2.0 + k as f64 * 0.05 * f64::from(zikaron_ui::tokens::PACE);
         let out = frame(&c, t, |ui| {
             let _ = sheetparts::pins(ui, "dots", &mut pin, 8, None, false);
         });
@@ -130,7 +131,7 @@ fn a_dot_pops_and_a_refused_row_shakes() {
     let at = 5.0;
     let mut swings = Vec::new();
     for p in [0.0f64, 0.2, 0.4, 0.6, 0.8, 1.0] {
-        let _ = frame(&c, at + p * 0.42, |_| ());
+        let _ = frame(&c, at + p * 0.42 * f64::from(zikaron_ui::tokens::PACE), |_| ());
         swings.push((p, sheetparts::shake_of(&c, Some(at))));
     }
     eprintln!("shake by share of 0.42 s: {swings:?}");

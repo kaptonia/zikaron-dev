@@ -448,6 +448,11 @@ code: `blockNumber`, `tx`; `E_TX_STATUS`, `E_TX_NOT_YET`, `E_TX_VOID`, `E_UNREAC
 Forty-three members, matching `codes::Key` entry by entry; every member in the table can actually be
 printed (the closed table has no dead entries).
 
+**`contract` is a shape of its own.** Its answer has `ok` from this table and every other member name from
+the closed table `codes::Contract` (section 10): `exits`, `code`, `name`, `reasons`, `standsFor`, `flag`,
+`for`, `verbs`, `flags`, `homeFlags`. Those ten are not members of `codes::Key` and are not counted above.
+The messages of `mcp` are JSON-RPC and the Model Context Protocol's own (section 13), outside both tables.
+
 **`detail` of a storage or landing refusal** (`E_LEDGER`) is the refusing layer's code (`E_IO`,
 `E_OCCUPIED`, …). For `E_IO`, a disk operation that failed, it goes on after `: ` with what the system
 said: the operation, the path it was done on and the system's own words (for example

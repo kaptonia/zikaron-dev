@@ -222,11 +222,10 @@ impl Win {
             self,
             |ui, me| {
                 sheet::title(ui, t(Key::SetCliAlone), "");
-                zikaron_ui::callout::callout(ui, t(Key::SetCliAloneGas));
                 fields::stack(ui, |ui, st| {
                     // The validity: its name, then "does not expire" and its switch right after it on the same line;
                     // days, hours and minutes in one box under it (faint while it never expires); the line under the
-                    // box keeps its room while empty, so nothing moves as it comes and goes.
+                    // box takes room only while it has words, opening and closing with them.
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = tk::S2;
                         ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), tk::KEY_H), egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -234,7 +233,7 @@ impl Win {
                             // A field's name is set in the key face (14, medium).
                             let named = ui.painter().layout_no_wrap(t(Key::U3Window).to_string(), key::key_font(), c(C::Ink)).size().x;
                             ui.allocate_ui(egui::vec2(named, Type::Note.line()), |ui| fields::name(ui, t(Key::U3Window), None));
-                            let w = ui.add(egui::Label::new(egui::RichText::new(t(Key::CliLastsNever)).font(Type::Note.font()).color(c(C::Ink2))).sense(egui::Sense::click()));
+                            let w = ui.add(egui::Label::new(egui::RichText::new(t(Key::CliLastsNever)).font(Type::Note.font()).color(c(C::Ink2))).selectable(false).sense(egui::Sense::click()));
                             let s = toggle::switch(ui, me.ux.cli_never, true);
                             if s.clicked() || w.clicked() {
                                 me.ux.cli_never = !me.ux.cli_never;
@@ -247,10 +246,8 @@ impl Win {
                         for cell in me.ux.cli_span.iter_mut() {
                             *cell = cli_cell(cell);
                         }
-                        let (line, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), Type::Small.line()), egui::Sense::hover());
-                        if !said.0.is_empty() {
-                            paint::at(ui.painter(), ui, line.left_center(), egui::Align2::LEFT_CENTER, &said.0, Type::Small, if said.1 { c(C::BadInk) } else { c(C::Ink2) }, line.width());
-                        }
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        passing_line(ui, egui::Id::new("cli-span-said"), &said.0, said.1);
                     });
                     let _ = pin_field(st, ui, t(Key::IdPinGate), None, "cli-alone-pin", &mut me.ux.cli_pin, me.ux.pin_shake, !busy);
                 });
@@ -301,7 +298,7 @@ impl Win {
         let can_sign = !unseated && self.shell.anchor.is_some();
         let name = current.as_ref().map(|(r, _)| if r.label.trim().is_empty() { t(Key::Unnamed).to_string() } else { r.label.clone() }).unwrap_or_else(|| t(Key::IdNone).to_string());
         let kind = current.as_ref().map(|(r, _)| format!("{} \u{b7} {}", t(id_seat_key(seat)), t(id_kind_key(r.kind())))).unwrap_or_default();
-        if self.shell.tasks.in_flight(crate::task::Kind::Keystore) {
+        if self.shell.tasks.in_flight(crate::task::Kind::Keystore) && !self.status_reports(crate::task::Kind::Keystore) {
             states::note_box(ui, t(Key::V2Encrypting));
         }
         if unseated {
@@ -452,10 +449,10 @@ impl Win {
         raw.push((t(Key::IdSeatRowAuthor), seat_addr(crate::roles::Role::Author)));
         raw.push((t(Key::IdSeatRowGrantee), seat_addr(crate::roles::Role::Grantee)));
         if let Some(b) = seen.as_ref().filter(|b| b.at != crate::identity::NO_BACKUP_AT) {
-            raw.push((t(Key::IdBackupAt), Val::mono(b.at.clone())));
+            raw.push((t(Key::IdBackupAt), Val::figure(b.at.clone())));
         }
         raw.push((t(Key::IdBackupAt), Val::text(backup_at.1.clone())));
-        raw.push((t(Key::IdCreated), Val::mono(created.clone())));
+        raw.push((t(Key::IdCreated), Val::figure(created.clone())));
         raw.push((t(Key::IdStore), Val::text(t(Key::IdKeybox))));
         if has_words {
             raw.push((t(Key::IdPaths), Val::mono(format!("{} \u{b7} {}", crate::family::path_text(crate::roles::Role::Author), crate::family::path_text(crate::roles::Role::Grantee)))));
@@ -618,9 +615,9 @@ impl Win {
         let none = || Val::text(t(Key::SetNone));
         let rows = [
             (t(Key::SetNodes), if s.endpoints.is_empty() { none() } else { Val::mono(s.endpoints.join("\n")) }),
-            (t(Key::BasisChain), s.chain_id.map(|n| Val::mono(n.to_string())).unwrap_or_else(none)),
+            (t(Key::BasisChain), s.chain_id.map(|n| Val::figure(n.to_string())).unwrap_or_else(none)),
             (t(Key::SetRegistry), s.registry.map(|a| Val::mono(a.hex())).unwrap_or_else(none)),
-            (t(Key::BasisFrom), Val::mono(s.from_block.to_string())),
+            (t(Key::BasisFrom), Val::figure(s.from_block.to_string())),
         ];
         stagger(ui, 5, |ui| details_card(ui, "network-details", &rows));
     }
@@ -1427,9 +1424,9 @@ impl Win {
                 &[
                     (t(Key::SetHomeOfSeat), root.clone().map(Val::mono).unwrap_or_else(|| Val::text(t(Key::HomeNotOpen)))),
                     (t(Key::DataContent), Val::text(content.clone())),
-                    (t(Key::DataEncrypt), Val::mono(t(Key::DataEncryptHow).to_string())),
+                    (t(Key::DataEncrypt), Val::figure(t(Key::DataEncryptHow).to_string())),
                     (t(Key::DataBackupFile), last.as_ref().map(|b| Val::mono(b.path.clone())).unwrap_or_else(none)),
-                    (t(Key::DataBackupHow), Val::mono(t(Key::DataBackupHowSay).to_string())),
+                    (t(Key::DataBackupHow), Val::figure(t(Key::DataBackupHowSay).to_string())),
                     (t(Key::HomeWhere), Val::text(t(Key::HomeWhereNote))),
                     (t(Key::HomeInstance), Val::mono(lock.clone())),
                     (t(Key::HomeMissingRooms), if miss.is_empty() { Val::text(t(Key::Nothing)) } else { Val::mono(miss.join(" ")) }),
@@ -1716,10 +1713,10 @@ impl Win {
         let flying = self.shell.tasks.flying();
         let rows = [
             (t(Key::SetCores), Val::mono(crate::sign::domains().join(" \u{b7} "))),
-            (t(Key::BuildKind), Val::mono(build_kind().to_string())),
-            (t(Key::FontGroup), Val::mono(fonts.join("\n"))),
+            (t(Key::BuildKind), Val::figure(build_kind().to_string())),
+            (t(Key::FontGroup), Val::figure(fonts.join("\n"))),
             (t(Key::TraceSink), Val::mono(sink)),
-            (t(Key::TaskInFlight), if flying.is_empty() { Val::text(t(Key::Nothing)) } else { Val::mono(flying.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" ")) }),
+            (t(Key::TaskInFlight), if flying.is_empty() { Val::text(t(Key::Nothing)) } else { Val::figure(flying.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" ")) }),
         ];
         stagger(ui, 2, |ui| details_card(ui, "about-details", &rows));
         // The third-party licences embedded in the binary (generated from Cargo.lock at build time): the crates,
@@ -2091,6 +2088,40 @@ pub(super) fn cli_expiry_said(expires: Option<u64>) -> String {
 mod cli_lasts_tests {
     use super::*;
 
+    /// The line under the validity box takes no room while it has no words; words open it to its height (a gap and
+    /// a small line), passing through the heights between, and it closes again when they go.
+    #[test]
+    fn the_line_under_the_box_takes_room_only_with_words() {
+        let ctx = egui::Context::default();
+        let _ = zikaron_ui::skin::dress(&ctx);
+        let mut t = 1.0;
+        let mut run = |words: &str, dt: f64| {
+            t += dt;
+            let mut h = 0.0;
+            let input = egui::RawInput { time: Some(t), ..Default::default() };
+            let _ = ctx.run_ui(input, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let top = ui.cursor().min.y;
+                passing_line(ui, egui::Id::new("line"), words, false);
+                h = ui.cursor().min.y - top;
+            });
+            h
+        };
+        assert_eq!(run("", 0.1), 0.0, "no words, no room");
+        let full = tk::S2 + Type::Small.line();
+        let mut seen = vec![run("Until 2026-10-21", 0.016)];
+        for _ in 0..30 {
+            seen.push(run("Until 2026-10-21", 0.016));
+        }
+        assert!((seen.last().copied().unwrap_or(0.0) - full).abs() < 0.5, "open: {seen:?}");
+        assert!(seen.iter().any(|h| *h > 0.5 && *h < full - 0.5), "through the heights between: {seen:?}");
+        let mut gone = 1.0;
+        for _ in 0..30 {
+            gone = run("", 0.016);
+        }
+        assert_eq!(gone, 0.0, "closed again once the words go");
+    }
+
     fn cells(d: &str, h: &str, m: &str) -> [String; 3] {
         [d.to_string(), h.to_string(), m.to_string()]
     }
@@ -2138,4 +2169,26 @@ mod cli_lasts_tests {
         assert_eq!(cli_span_said(Span::Empty, 0), (String::new(), false));
         assert_eq!(cli_span_said(Span::Lasts(Lasts::Never), 0), (String::new(), false));
     }
+}
+
+/// A line under a field that takes room only while it has words (`bad`: in the warning ink): it opens to its height
+/// and fades in as words come, and closes and fades out with the last words as they go, the sheet following it.
+fn passing_line(ui: &mut egui::Ui, id: egui::Id, words: &str, bad: bool) {
+    let open = motion::flag(ui.ctx(), id.with("open"), !words.is_empty(), tk::MID);
+    let last = id.with("last");
+    if !words.is_empty() {
+        ui.ctx().data_mut(|d| d.insert_temp(last, (words.to_string(), bad)));
+    }
+    if open <= 0.0 {
+        return;
+    }
+    let (said, bad) = if words.is_empty() { ui.ctx().data(|d| d.get_temp::<(String, bool)>(last)).unwrap_or_default() } else { (words.to_string(), bad) };
+    if open < 1.0 {
+        zikaron_ui::flow::mark_moving(ui.ctx());
+    }
+    let full = tk::S2 + Type::Small.line();
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), full * open), egui::Sense::hover());
+    let line = egui::Rect::from_min_size(egui::pos2(rect.left(), rect.top() + tk::S2), egui::vec2(rect.width(), Type::Small.line()));
+    let ink = if bad { c(C::BadInk) } else { c(C::Ink2) };
+    paint::at(&ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())), ui, line.left_center(), egui::Align2::LEFT_CENTER, &said, Type::Small, ink.gamma_multiply(open), line.width());
 }

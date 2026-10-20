@@ -306,7 +306,7 @@ impl Win {
             rows.push((t(Key::U3ToWhom).to_string(), Val::mono(h.grantee.clone())));
             rows.push((t(Key::OsWork).to_string(), Val::mono(h.work.clone())));
         }
-        rows.push((t(Key::U3Verdict).to_string(), Val::mono(x.judged.verdict.clone())));
+        rows.push((t(Key::U3Verdict).to_string(), Val::figure(x.judged.verdict.clone())));
         // The evidence behind the summary: each refused file's reason, for each side.
         if !x.refused.is_empty() {
             rows.push((t(Key::RefusedFiles).to_string(), Val::mono(x.refused.iter().map(|r| format!("{} \u{b7} {}", width::file_name(&r.file), r.why)).collect::<Vec<_>>().join("\n"))));
@@ -321,11 +321,11 @@ impl Win {
             for (tok, state) in &h.lights {
                 let name = t(u3_check_name(tok));
                 let label = if several { format!("{} \u{b7} {name}", fill1(Key::CheckHop, &(i + 1).to_string())) } else { name.to_string() };
-                rows.push((label, Val::mono(state.clone())));
+                rows.push((label, Val::figure(state.clone())));
             }
         }
         if let Some(ch) = x.judged.chain.as_ref() {
-            rows.push((t(Key::U3Hops).to_string(), Val::mono(format!("{} {} {}", ch.verdict, ch.token, ch.failing_kind))));
+            rows.push((t(Key::U3Hops).to_string(), Val::figure(format!("{} {} {}", ch.verdict, ch.token, ch.failing_kind))));
         }
         for (which, side) in [(OneStop::File, &x.file), (OneStop::Terms, &x.terms)] {
             if let crate::checkx::Side::Compared(d) = side {

@@ -113,5 +113,4 @@ pub mod watchx;
 pub mod widex;
 pub mod window;
 pub mod when;
-pub mod wizard;
 pub mod zlibx;

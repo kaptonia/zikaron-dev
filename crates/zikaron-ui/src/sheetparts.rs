@@ -28,6 +28,10 @@ pub fn pins(ui: &mut egui::Ui, id_salt: &str, value: &mut crate::secret::Secret,
     } else if active && top && ui.memory(|m| m.focused().is_none()) {
         resp.request_focus();
     }
+    // A row typed into, as a field is: the text beam over it.
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
     let mut changed = false;
     let events = if held { ui.input(|i| i.events.clone()) } else { Vec::new() };
     for e in events {
@@ -81,14 +85,14 @@ pub fn pins(ui: &mut egui::Ui, id_salt: &str, value: &mut crate::secret::Secret,
 }
 
 /// How long a dot takes to pop in, and a refused row to shake.
-const DOT_POP: f32 = 0.35;
-const SHAKE: f32 = 0.42;
+const DOT_POP: f32 = 0.35 * crate::tokens::PACE;
+const SHAKE: f32 = 0.42 * crate::tokens::PACE;
 
 /// The passcode row's shake started at frame time `at`: four swings, 8 left, 7 right, 5 left, 3 right, over
 /// 0.42 s; zero when not shaking.
 pub fn shake_of(ctx: &egui::Context, at: Option<f64>) -> f32 {
     let Some(at) = at else { return 0.0 };
-    let p = ((ctx.input(|i| i.time) - at) as f32 / SHAKE).max(0.0);
+    let p = ((crate::motion::now(ctx) - at) as f32 / SHAKE).max(0.0);
     if p >= 1.0 {
         return 0.0;
     }
@@ -154,7 +158,7 @@ pub fn radio(ui: &mut egui::Ui, id_salt: &str, on: bool) {
     p.circle_stroke(r.center(), 8.25, egui::Stroke::new(1.5_f32, palette::mix(c(C::Dash), c(C::Accent), lit)));
     if on {
         let a = motion::age(ui.ctx(), id.with("dot"), u64::from(on));
-        let t = (a / 0.3).clamp(0.0, 1.0);
+        let t = (a / (0.3 * crate::tokens::PACE)).clamp(0.0, 1.0);
         if t < 1.0 {
             ui.ctx().request_repaint();
         }
@@ -187,8 +191,8 @@ pub fn title_seg(ui: &mut egui::Ui, title: &str, id_salt: &str, labels: &[&str],
 pub fn done(ui: &mut egui::Ui, id_salt: &str, word: &str) {
     let id = ui.id().with(("zikaron-done-mark", id_salt));
     let a = motion::age(ui.ctx(), id, 0);
-    let pop = (a / 0.6).clamp(0.0, 1.0);
-    let draw = ((a - 0.15) / 0.5).clamp(0.0, 1.0);
+    let pop = (a / (0.6 * crate::tokens::PACE)).clamp(0.0, 1.0);
+    let draw = ((a - 0.15 * crate::tokens::PACE) / (0.5 * crate::tokens::PACE)).clamp(0.0, 1.0);
     if pop < 1.0 || draw < 1.0 {
         ui.ctx().request_repaint();
     }

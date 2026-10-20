@@ -311,7 +311,7 @@ fn calendar(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::Id, an
     if !crate::menu::is_open(ctx, id) {
         return None;
     }
-    let now = ctx.input(|i| i.time);
+    let now = crate::motion::now(ctx);
     let e = crate::layer::entrance(ctx, &[id.with("keep")], id.with("age"), tokens::FAST);
     let view_id = id.with("view");
     let (vy, vm) = ctx.data(|d| d.get_temp::<(i32, u32)>(view_id)).unwrap_or((today.0, today.1));

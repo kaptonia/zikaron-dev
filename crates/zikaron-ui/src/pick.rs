@@ -130,10 +130,12 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
             });
         }
         let top = inner.top() + head_h + INSET;
-        ui.painter().hline((rect.left() + 11.0)..=(rect.right() - 11.0), top - PAD - 0.5, egui::Stroke::new(1.0_f32, c(C::Line2)));
+        // The head's line goes on after the rows: the first row's lit edge lies under it.
+        let line = egui::Shape::hline((rect.left() + 11.0)..=(rect.right() - 11.0), top - PAD - crate::band::LINE_HALF, egui::Stroke::new(1.0_f32, c(C::Line2)));
         let list = Rect::from_min_max(pos2(rect.left() + PAD, top), pos2(rect.right() - PAD, top + list_h));
         let mut lu = ui.new_child(egui::UiBuilder::new().max_rect(list).layout(egui::Layout::top_down(egui::Align::Min)));
         if kept.is_empty() {
+            ui.painter().add(line);
             lu.painter().text(list.center(), egui::Align2::CENTER_CENTER, spec.empty, Type::Note.font(), c(C::Ink3));
             return;
         }
@@ -145,9 +147,8 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
                 // Under the head's line, the rows one after another, the last at the card's foot.
                 let below = if n + 1 == kept.len() { crate::band::Bound::Edge } else { crate::band::Bound::Row };
                 let above = if n == 0 { crate::band::Bound::Line } else { crate::band::Bound::Row };
-                let corners = crate::band::corners(Radius::Menu.px(), rr.height(), above, below);
                 let resp = match it {
-                    Item::Row(r) => menu::draw_row(ui, id.with(("row", *i)), rr, r, corners),
+                    Item::Row(r) => menu::draw_row(ui, id.with(("row", *i)), rr, r, (above, below)),
                     Item::Who(wr) => menu::draw_who(ui, id.with(("who", *i)), rr, wr),
                     _ => continue,
                 };
@@ -156,6 +157,7 @@ pub fn show_from(ctx: &egui::Context, parent: Option<egui::LayerId>, id: egui::I
                 }
             }
         });
+        ui.painter().add(line);
         ui.allocate_rect(rect, egui::Sense::hover());
     });
     ctx.data_mut(|d| d.insert_temp(id.with("typed"), typed));

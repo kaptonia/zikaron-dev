@@ -89,7 +89,7 @@ fn fills(out: &egui::FullOutput, fill: egui::Color32) -> Vec<Rect> {
 
 /// The thumb's leading edge gets there first and its trailing edge follows: on the way it is longer (by six
 /// tenths of the distance, at most 56; most near half way), neither edge ever moves back, it lands at its own
-/// size within 0.32 s, and it never passes where it is going.
+/// size within 0.32 s at the kit's pace, and it never passes where it is going. Read at 120 frames a second.
 #[test]
 fn the_thumb_stretches_on_its_way_and_lands_at_its_size() {
     let mut f = Frames::new();
@@ -98,9 +98,9 @@ fn the_thumb_stretches_on_its_way_and_lands_at_its_size() {
     f.run(0.0, vec![], |ui| got = seg::slide(ui.ctx(), id, 0.0, 60.0));
     assert_eq!(got, (0.0, 60.0), "first seen, it is where it belongs");
     let mut seen: Vec<(f32, f32, f64)> = Vec::new();
-    let t0 = f.t + 1.0 / 60.0;
-    for _ in 0..30 {
-        f.run(1.0 / 60.0, vec![], |ui| got = seg::slide(ui.ctx(), id, 200.0, 60.0));
+    let t0 = f.t + 1.0 / 120.0;
+    for _ in 0..60 {
+        f.run(1.0 / 120.0, vec![], |ui| got = seg::slide(ui.ctx(), id, 200.0, 60.0));
         seen.push((got.0, got.1, f.t - t0));
     }
     let widest = seen.iter().map(|s| s.1).fold(0.0, f32::max);
@@ -115,8 +115,9 @@ fn the_thumb_stretches_on_its_way_and_lands_at_its_size() {
     let leading_first = seen.iter().find(|s| s.0 + s.1 >= 259.0).map(|s| s.2).unwrap_or(9.0);
     let trailing_last = seen.iter().find(|s| s.0 >= 199.0).map(|s| s.2).unwrap_or(9.0);
     assert!(leading_first < trailing_last, "the leading edge arrives first ({leading_first} < {trailing_last})");
-    let end = seen.iter().find(|s| s.2 >= 0.32).expect("a frame past 0.32 s");
-    assert!((end.0 - 200.0).abs() < 0.5 && (end.1 - 60.0).abs() < 0.5, "landed at its size by 0.32 s: {end:?}");
+    let by = 0.32 * f64::from(zikaron_ui::tokens::PACE);
+    let end = seen.iter().find(|s| s.2 >= by).expect("a frame past the slide");
+    assert!((end.0 - 200.0).abs() < 0.5 && (end.1 - 60.0).abs() < 0.5, "landed at its size by {by} s: {end:?}");
 }
 
 /// Under reduced motion the thumb is where it goes at once.
@@ -136,7 +137,7 @@ fn under_reduced_motion_the_thumb_arrives_at_once() {
 // ───────────────────────── Liquid ④: the switch ─────────────────────────
 
 /// Flipped, the knob first stretches (16 to 22 by 0.22 s), crossing as it does, and settles round where it goes
-/// by 0.34 s; it never passes the far end.
+/// by 0.34 s, both at the kit's pace; it never passes the far end.
 #[test]
 fn the_knob_stretches_then_settles_round() {
     let mut f = Frames::new();
@@ -154,11 +155,12 @@ fn the_knob_stretches_then_settles_round() {
     let widest = seen.iter().map(|s| s.0.width()).fold(0.0, f32::max);
     assert!(widest > 20.0 && widest <= 22.01, "stretched toward 22: {widest}");
     let at_widest = seen.iter().find(|s| s.0.width() >= widest - 0.01).map(|s| s.1).unwrap_or(0.0);
-    assert!((0.15..=0.27).contains(&at_widest), "widest about 0.22 s after the flip: {at_widest}");
+    let pace = f64::from(zikaron_ui::tokens::PACE);
+    assert!((0.15 * pace..=0.27 * pace).contains(&at_widest), "widest about {} s after the flip: {at_widest}", 0.22 * pace);
     for s in &seen {
         assert!(s.0.right() <= rect.right() - 2.0 + 0.01, "inside the track: {s:?}");
     }
-    let end = seen.iter().find(|s| s.1 >= 0.35).expect("a frame past 0.34 s");
+    let end = seen.iter().find(|s| s.1 >= 0.35 * pace).expect("a frame past the cross");
     assert!((end.0.width() - 16.0).abs() < 0.01 && (end.0.right() - (rect.left() + 10.0 + 14.0 + 8.0)).abs() < 0.5, "round and there: {end:?}");
 }
 
@@ -481,4 +483,72 @@ fn a_sheet_follows_its_content_in_height() {
     assert!(jumps < (end - settled) * 0.5, "never in one jump: largest step {jumps} of {}: {ys:?}", end - settled);
     let there = ys.iter().position(|v| (v - end).abs() < 0.5).unwrap_or(99);
     assert!(there as f32 / 60.0 <= 0.4, "there within 0.4 s: {there} frames");
+}
+
+// ───────────────────────── Steady light ─────────────────────────
+
+/// The pointer on the line between two rows of a form card lights one row, the lower: a row owns its top edge and
+/// not its bottom one, and one place a pass holds the light.
+#[test]
+fn the_pointer_on_the_line_between_two_rows_lights_one() {
+    use zikaron_ui::card;
+    let mut f = Frames::new();
+    let draw = |ui: &mut egui::Ui| {
+        card::form(ui, |ui, f| {
+            for i in 0..3 {
+                let _ = f.line(ui, None, &format!("第 {i} 行"), "", false, true, egui::Color32::BLACK, |_| ());
+            }
+        });
+    };
+    let out = f.run(0.1, vec![], draw);
+    let mut lines: Vec<f32> = flat(&out).into_iter().filter_map(|(_, s)| match s {
+        egui::Shape::LineSegment { points: [a, b], .. } if (a.y - b.y).abs() < 0.01 => Some(a.y),
+        _ => None,
+    }).collect();
+    lines.sort_by(f32::total_cmp);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    let hover = c(C::Hover);
+    for y in [lines[0], lines[1], lines[0] - 0.25, lines[0] + 0.25] {
+        let mut n = 0;
+        for _ in 0..4 {
+            let out = f.run(0.1, moved(pos2(300.0, y)), draw);
+            n = fills(&out, hover).len();
+        }
+        assert_eq!(n, 1, "one row lit with the pointer at {y} (lines at {lines:?})");
+    }
+}
+
+/// A trackpad's scroll and its momentum, its events thinning out and frames with none between them: no row is lit
+/// at any frame while it goes on, and once it has stood still the row under the pointer lights and stays lit.
+#[test]
+fn momentum_scrolling_lights_no_row_until_it_stands_still() {
+    let mut f = Frames::new();
+    let rows: Vec<table::Row> = (0..60).map(|i| table::Row { cells: vec![table::Cell::Seq(i + 1), table::Cell::Text(format!("第 {i} 行"))], click: true, ..Default::default() }).collect();
+    let draw = |ui: &mut egui::Ui| {
+        scroll::page(ui, egui::ScrollArea::vertical().id_salt("u1-momentum"), |ui| {
+            let _ = table::table(ui, "u1-momentum-list", &COLS, false, &rows, "");
+        });
+    };
+    let at = pos2(300.0, 300.0);
+    f.run(0.0, vec![], draw);
+    f.run(0.1, moved(at), draw);
+    let hover = c(C::RowHover);
+    let step = 1.0 / 120.0;
+    let mut lit_while_moving = 0;
+    for dy in [-12.0, -12.0, -10.0, -8.0, -6.0, -4.0, -2.0, -1.0, -0.5, -0.2, -0.08, -0.03] {
+        let out = f.run(step, wheel(at, dy), draw);
+        lit_while_moving += fills(&out, hover).len();
+        for _ in 0..2 {
+            let out = f.run(step, vec![], draw);
+            lit_while_moving += fills(&out, hover).len();
+        }
+    }
+    assert_eq!(lit_while_moving, 0, "no row lit at any frame of the movement");
+    let mut seen = Vec::new();
+    for _ in 0..60 {
+        let out = f.run(step, vec![], draw);
+        seen.push(fills(&out, hover).len());
+    }
+    let first = seen.iter().position(|n| *n == 1).expect("the row under the pointer lights once it stands still");
+    assert!(seen[first..].iter().all(|n| *n == 1), "and stays lit, never going dark again: {seen:?}");
 }

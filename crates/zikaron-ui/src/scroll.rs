@@ -61,10 +61,11 @@ fn note<R>(ctx: &egui::Context, out: &egui::scroll_area::ScrollAreaOutput<R>) {
     let pass = ctx.cumulative_pass_nr();
     let moved = ctx.data(|d| d.get_temp::<egui::Vec2>(id)).map(|p| (p - at).length() > 0.1).unwrap_or(false);
     let room = (out.content_size.y - out.inner_rect.height() - at.y).max(0.0);
+    let now = ctx.input(|i| i.time);
     ctx.data_mut(|d| {
         d.insert_temp(id, at);
         if moved {
-            d.insert_temp(moved_id(), pass);
+            d.insert_temp(moved_id(), now);
         }
         let r = d.get_temp_mut_or_default::<Rooms>(rooms_id());
         if r.pass != pass {
@@ -83,12 +84,46 @@ pub fn room_below(ctx: &egui::Context, at: egui::Rect) -> f32 {
     list.iter().filter(|(rect, _)| rect.contains(at.center())).min_by(|a, b| a.0.area().total_cmp(&b.0.area())).map(|x| x.1).unwrap_or(0.0)
 }
 
-/// Whether something is scrolling: an area moved this pass or the last, or wheel motion is still being spent
-/// (egui spreads a wheel turn over the next frames). Settled one pass after the last move.
+/// Whether something is scrolling: wheel motion is being spent (egui spreads a turn over the next frames) or
+/// still coming (a trackpad's gesture and its momentum, between their events too), or an area moved, within the
+/// last [`SETTLE`] of the time. Settled only that long after the last of these, so the frames between two events
+/// of one movement never read as settled.
 pub fn moving(ctx: &egui::Context) -> bool {
-    let pass = ctx.cumulative_pass_nr();
-    let moved = ctx.data(|d| d.get_temp::<u64>(moved_id())).map(|p| p + 1 >= pass).unwrap_or(false);
-    moved || ctx.input(|i| i.smooth_scroll_delta != egui::Vec2::ZERO)
+    let (now, wheel) = ctx.input(|i| (i.time, i.smooth_scroll_delta != egui::Vec2::ZERO || i.is_scrolling()));
+    let seen = egui::Id::new("zikaron-scroll-wheel-seen");
+    if wheel {
+        ctx.data_mut(|d| d.insert_temp(seen, now));
+        return true;
+    }
+    let last = |id| ctx.data(|d| d.get_temp::<f64>(id)).is_some_and(|at| now >= at && now - at < SETTLE);
+    last(seen) || last(moved_id())
+}
+
+/// How long after the last wheel event or move a scroll counts as settled.
+pub const SETTLE: f64 = 0.15;
+
+fn asked_id() -> egui::Id {
+    egui::Id::new("zikaron-scroll-asked")
+}
+
+/// The window scrolls on its own this frame (bringing what opens into view, [`crate::fold::reveal`]): a move it makes
+/// is not the person's.
+pub fn asked(ctx: &egui::Context) {
+    let now = ctx.input(|i| i.time);
+    ctx.data_mut(|d| d.insert_temp(asked_id(), now));
+}
+
+/// Whether the person is scrolling: the wheel (or a trackpad and its momentum), or an area moved that the window did
+/// not move itself, within the last [`SETTLE`]. A list keeps its rows' comings and goings through a scroll the
+/// window makes ([`crate::flow::Group`]); the light under the pointer goes out for any scroll ([`moving`]).
+pub fn by_hand(ctx: &egui::Context) -> bool {
+    let (now, wheel) = ctx.input(|i| (i.time, i.smooth_scroll_delta != egui::Vec2::ZERO || i.is_scrolling()));
+    if wheel {
+        return true;
+    }
+    let at = |id| ctx.data(|d| d.get_temp::<f64>(id));
+    let recent = |t: Option<f64>| t.is_some_and(|at| now >= at && now - at < SETTLE);
+    recent(at(egui::Id::new("zikaron-scroll-wheel-seen"))) || (recent(at(moved_id())) && !recent(at(asked_id())))
 }
 
 /// Drop what is left of this frame's wheel when the area just shown is the one being scrolled: it has more than it

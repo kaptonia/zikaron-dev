@@ -538,10 +538,10 @@ pub struct WizardExit {
     /// Whether the way out was offered, and whether the wizard was still open after Esc.
     pub offered: bool,
     pub still_open: bool,
-    /// With new words shown and not yet checked: whether Esc asked first (and said the words would be void),
-    /// and whether leaving dropped them.
+    /// With new words shown and not yet checked: whether Esc asked first, whether the question was drawn (its title
+    /// and its leaving key on the frame), and whether pressing that key dropped them.
     pub asked: bool,
-    pub said_void: bool,
+    pub asked_drawn: bool,
     pub words_dropped: bool,
     /// The window's own structural state, not what was drawn: where the wizard recorded it was opened from
     /// (`ux.wiz_from`: seat, stack, place) while it was up, and the seat, stack and place after leaving.
@@ -613,9 +613,6 @@ pub struct CliSheet {
     pub never_on: bool,
     pub days_while_never: String,
     pub quiet_while_never: bool,
-    /// Whether the sheet said, as it opened, that the command line may spend this identity's gas while
-    /// putting on chain from the command line sends automatically.
-    pub gas_said: bool,
 }
 
 /// What typing at the passcode gate did, with nothing over it and with the lock screen's restore sheet over it.
@@ -630,6 +627,22 @@ pub struct TypedUnder {
     pub under: usize,
     /// Whether the vault stayed locked throughout.
     pub locked: bool,
+}
+
+/// The passcode gate's column read by [`probe_gate_column`] (rectangles in points; the title by its drawn strokes).
+#[derive(Clone, Debug)]
+pub struct GateColumn {
+    /// The window's height.
+    pub window_h: f32,
+    /// The top of the app's name over the title (its line), and the bottom of the title's strokes.
+    pub group_top: f32,
+    pub title_ink_bottom: f32,
+    /// The passcode cells' row.
+    pub cells: egui::Rect,
+    /// The refusal under the cells, when one is said (the box it is said in).
+    pub said: Option<egui::Rect>,
+    /// The "forgot passcode" key.
+    pub forgot: egui::Rect,
 }
 
 /// One rail item walked by [`probe_rail_walk`]: its label and the route drawn after each move (`None` where the
@@ -651,9 +664,6 @@ pub struct RailWalk {
     pub rail_again: Option<String>,
 }
 
-pub(super) fn t_void() -> &'static str {
-    t(Key::WizExitWords)
-}
 
 /// A record row's state pill: deleted grey, confirmed green, on its way amber, failed red.
 pub(super) fn work_state(w: &WorkLine, at: Option<u64>) -> (String, PillTone, bool) {

@@ -237,7 +237,6 @@ impl Win {
                 self,
                 |ui, _me| {
                     sheet::title(ui, t(Key::WizExitTitle), "");
-                    zikaron_ui::callout::callout(ui, t(Key::WizExitWords));
                 },
                 |ui, _me| {
                     keep = page::Page::new().primary(ui, t(Key::WizExitKeep)).1.clicked();
@@ -415,7 +414,7 @@ impl Win {
                 };
                 let addr = self.shell.anchor.map(|a| a.hex());
                 // No code until the chain is known: a code without it lets a wallet pay on whichever network it is on.
-                let code = addr.as_deref().zip(self.shell.settings.chain_id).map(|(a, chain)| crate::wizard::gas_request(a, chain));
+                let code = addr.as_deref().zip(self.shell.settings.chain_id).map(|(a, chain)| gas_request(a, chain));
                 let (copied, _) = gas_face(ui, addr.as_deref(), code.as_deref(), &gas);
                 tell_copied(ui.ctx(), copied);
                 self.stage_line(ui, crate::task::Kind::Chain);
@@ -457,7 +456,6 @@ impl Win {
                         f.info(ui, t(Key::CfWhere), if root.is_empty() { card::Show::Empty(t(Key::PickNone)) } else { card::Show::Copy(&root) })
                     });
                     tell_copied(ui.ctx(), copied);
-                    zikaron_ui::callout::callout(ui, t(Key::CfGenesisNote));
                 });
             },
             |ui, _me| {
@@ -675,8 +673,24 @@ pub(super) fn foot_left(ui: &mut egui::Ui, text: &str) -> bool {
     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| key::key(ui, text, Role::Secondary, true).clicked()).inner
 }
 
+/// The payment request the gas step's code carries (EIP-681): this address on the chain of the network the
+/// wizard chose (`ethereum:<address>@<chain id>`), so a wallet set to another network asks to switch rather than
+/// paying on that one.
+fn gas_request(address: &str, chain_id: u64) -> String {
+    format!("ethereum:{address}@{chain_id}")
+}
+
 #[cfg(test)]
 mod gas_address {
+    /// The code names the address and the chain, in EIP-681's form: a wallet on another network is asked to
+    /// switch to this one, never left to pay on its own.
+    #[test]
+    fn the_gas_code_names_the_chosen_networks_chain() {
+        let a = "0x5d5a0de8ac3b41b649e0985c141d1735832cbf8f";
+        assert_eq!(super::gas_request(a, 11_155_111), "ethereum:0x5d5a0de8ac3b41b649e0985c141d1735832cbf8f@11155111");
+        assert_eq!(super::gas_request(a, 1), "ethereum:0x5d5a0de8ac3b41b649e0985c141d1735832cbf8f@1");
+    }
+
     use super::*;
 
     const ADDR: &str = "0x5d5a0de8ac3b41b649e0985c141d1735832cbf8f";
@@ -689,7 +703,7 @@ mod gas_address {
         };
         ctx.run_ui(input, |ui| {
             egui::CentralPanel::default().show_inside(ui, |ui| {
-                let (c, r) = gas_face(ui, Some(ADDR), Some(&crate::wizard::gas_request(ADDR, 11_155_111)), &(Mark::Ok, "0.0000 ETH".to_string()));
+                let (c, r) = gas_face(ui, Some(ADDR), Some(&gas_request(ADDR, 11_155_111)), &(Mark::Ok, "0.0000 ETH".to_string()));
                 list.set(r);
                 if c.is_some() {
                     *copied.borrow_mut() = c;

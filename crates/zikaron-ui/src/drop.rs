@@ -202,7 +202,7 @@ pub fn file_row(ui: &mut egui::Ui, id_salt: &str, name: &str, sub: &str, bad: bo
     let id = ui.id().with(("zikaron-file-row", id_salt));
     let enter = motion::enter(ui.ctx(), id, motion::key_of(&name), 0.0, tokens::MID, Curve::Ease);
     let mut hit = false;
-    motion::shifted(ui, vec2(0.0, 6.0 * (1.0 - enter)), enter, |ui| {
+    motion::shifted(ui, vec2(0.0, 6.0 * (1.0 - enter)), enter, motion::key_of(&name), |ui| {
         let w = ui.available_width();
         let (rect, _) = ui.allocate_exact_size(vec2(w, 52.0), egui::Sense::hover());
         let p = ui.painter();

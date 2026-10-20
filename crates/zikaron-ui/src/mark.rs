@@ -130,7 +130,7 @@ struct Pop {
 /// Pop progress of a pill whose words changed after it was first seen (0..1 then settled at 1). `delay`
 /// staggers pills that pop together.
 fn popped(ctx: &egui::Context, id: egui::Id, key: u64, force: bool, delay: f32) -> f32 {
-    let now = ctx.input(|i| i.time);
+    let now = crate::motion::now(ctx);
     let t0 = ctx.data_mut(|d| {
         let first = d.get_temp::<Pop>(id).is_none();
         let s = d.get_temp_mut_or_insert_with(id, || Pop { key, t0: if force { now } else { f64::NEG_INFINITY } });
@@ -170,7 +170,7 @@ struct Was {
 
 fn paint_pill(ui: &egui::Ui, id: egui::Id, rect: egui::Rect, s: &str, state: &str, tone: Tone, live: bool, pop: f32) {
     let p = ui.painter();
-    let now = ui.input(|i| i.time);
+    let now = crate::motion::now(ui.ctx());
     let k = if pop < 1.0 { 0.6 + 0.4 * Curve::Spring.at(pop) } else { 1.0 };
     let k = 1.0 + (k - 1.0) * motion::travel(ui.ctx());
     let alpha = if pop < 1.0 { pop } else { 1.0 };
@@ -298,7 +298,7 @@ pub enum Count {
 /// width it takes now.
 pub fn count_live(ui: &egui::Ui, id: egui::Id, right: f32, y: f32, n: usize, how: Count) -> f32 {
     let ctx = ui.ctx();
-    let now = ui.input(|i| i.time);
+    let now = crate::motion::now(ui.ctx());
     let shown = motion::flag(ctx, id.with("count-on"), n > 0, crate::tokens::MID);
     // The figure last shown, kept to draw while it shrinks away, and when it last changed.
     let kid = id.with("count-n");
@@ -313,7 +313,7 @@ pub fn count_live(ui: &egui::Ui, id: egui::Id, right: f32, y: f32, n: usize, how
     if shown <= 0.0 || figure == 0 {
         return 0.0;
     }
-    let jump_t = ((now - changed) as f32 / 0.22).clamp(0.0, 1.0);
+    let jump_t = ((now - changed) as f32 / (0.22 * crate::tokens::PACE)).clamp(0.0, 1.0);
     if jump_t < 1.0 {
         ctx.request_repaint();
     }

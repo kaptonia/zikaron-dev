@@ -18,6 +18,47 @@ pub fn run_on(start: Page) -> i32 {
 
 /// Open the window at a given place (the test hooks use it; the shipped build only goes through `run`).
 pub fn run_at(start: Start) -> i32 {
+    run_hooked(start, None)
+}
+
+/// What a driver outside the product (the door) hangs on a window it opens, to read how the window draws: whether
+/// the window floats over the others (a window covered by others is not drawn), what it adds to the input of each
+/// frame before the window takes it (the pointer moves and presses of a walk through the window), and what it reads
+/// after each frame (that frame's own work). The product itself hangs none.
+pub struct Hooks {
+    pub float: bool,
+    pub input: Box<dyn FnMut(&egui::Context, &mut egui::RawInput)>,
+    pub frame: Box<dyn FnMut(&egui::Context, Option<f32>)>,
+}
+
+/// The window with a driver's [`Hooks`] on it.
+struct Hooked {
+    win: Win,
+    hooks: Hooks,
+}
+
+impl eframe::App for Hooked {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        (self.hooks.input)(ctx, raw);
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, f: &mut eframe::Frame) {
+        eframe::App::ui(&mut self.win, ui, f);
+        (self.hooks.frame)(ui.ctx(), f.info().cpu_usage);
+    }
+
+    fn clear_color(&self, v: &egui::Visuals) -> [f32; 4] {
+        eframe::App::clear_color(&self.win, v)
+    }
+
+    fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        eframe::App::on_exit(&mut self.win, gl);
+    }
+}
+
+/// [`run_at`] with a driver's [`Hooks`] on the window.
+pub fn run_hooked(start: Start, hooks: Option<Hooks>) -> i32 {
+    let float = hooks.as_ref().is_some_and(|h| h.float);
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(t(Key::AppName))
@@ -35,7 +76,11 @@ pub fn run_at(start: Start) -> i32 {
             .with_title_shown(false)
             .with_titlebar_shown(false)
             // Transparent where the system can put its own material under the window (`zikaron_os::backdrop`).
-            .with_transparent(zikaron_os::backdrop_available()),
+            .with_transparent(zikaron_os::backdrop_available())
+            .with_window_level(if float { egui::WindowLevel::AlwaysOnTop } else { egui::WindowLevel::Normal }),
+        // On macOS through Metal: one frame presented per refresh, at the screen's own rate.
+        #[cfg(target_os = "macos")]
+        renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
     // The window system the platform interface chose (on Linux, X11 when there is an X display: files are
@@ -118,7 +163,10 @@ pub fn run_at(start: Start) -> i32 {
                     win.backdrop = Some((w, dark, follows));
                 }
             }
-            Ok(Box::new(win))
+            Ok(match hooks {
+                Some(hooks) => Box::new(Hooked { win, hooks }) as Box<dyn eframe::App>,
+                None => Box::new(win),
+            })
         }),
     ) {
         Ok(()) => 0,
@@ -597,13 +645,15 @@ pub fn probe_wizard_exit(ctx: &egui::Context, shell: Shell, place: Place, step: 
         last = Some(run(&mut win, Vec::new()));
     }
     let asked = had_words && win.ux.wiz_exit_ask;
-    let said_void = last
-        .as_ref()
-        .map(|(_, out)| out.shapes.iter().any(|c| matches!(&c.shape, egui::Shape::Text(s) if s.galley.job.text.contains(t_void()))))
-        .unwrap_or(false);
-    if asked {
-        let now = last.as_ref().map(|(n, _)| *n).unwrap_or(0.0);
-        win.wizard_exit(now);
+    // The question is drawn (its title and its leaving key on the frame), and leaving is the press of that key.
+    let drawn = last.as_ref().map(|(_, out)| texts_of(out)).unwrap_or_default();
+    let title_drawn = drawn.iter().any(|d| d.text == crate::lang::t(Key::WizExitTitle));
+    let leave_at = drawn.iter().find(|d| d.text == crate::lang::t(Key::WizExitGo)).map(|d| d.rect.center());
+    let asked_drawn = asked && title_drawn && leave_at.is_some();
+    if let (true, Some(at)) = (asked, leave_at) {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(at)]);
+        let _ = run(&mut win, vec![press(true), press(false)]);
         for _ in 0..4 {
             let _ = run(&mut win, Vec::new());
         }
@@ -615,7 +665,7 @@ pub fn probe_wizard_exit(ctx: &egui::Context, shell: Shell, place: Place, step: 
         offered,
         still_open: win.ux.wizard.is_some(),
         asked,
-        said_void,
+        asked_drawn,
         words_dropped: had_words && win.shell.new_words.is_none(),
         wiz_from,
         place_after: format!("{}:{:?}:{:?}", win.shell.settings.role.as_str(), win.ux.nav.stack, win.ux.nav.place),
@@ -953,6 +1003,51 @@ pub fn probe_typed_under(ctx: &egui::Context, shell: Shell, width: f32, height: 
     (win.shell, reading)
 }
 
+/// The passcode gate (the vault locked) at rest, with `trouble` said under its cells when given: where its title's
+/// strokes end, its cells, the refusal's box and the "forgot passcode" key lie.
+pub fn probe_gate_column(ctx: &egui::Context, shell: Shell, trouble: Option<&str>, width: f32, height: f32) -> (Shell, GateColumn) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Home, role));
+    ux.wizard_asked = true;
+    ux.gate_trouble = trouble.map(str::to_string);
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut out = None;
+    for k in 0..12 {
+        // Two pixels a point, as the window has on the screens it ships to (layout rounds to pixels).
+        let mut input = egui::RawInput { screen_rect: Some(screen), time: Some(0.1 * (k + 1) as f64), ..Default::default() };
+        input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(2.0);
+        out = Some(ctx.run_ui(input, |ui| win.draw(ui)));
+    }
+    let out = out.unwrap_or_default();
+    let mut reading = GateColumn { window_h: height, group_top: 0.0, title_ink_bottom: 0.0, cells: egui::Rect::NOTHING, said: None, forgot: egui::Rect::NOTHING };
+    let mut rects = Vec::new();
+    for c in &out.shapes {
+        match &c.shape {
+            egui::Shape::Text(s) if s.galley.job.text == t(Key::PinGateTitle) => {
+                reading.title_ink_bottom = s.visual_bounding_rect().bottom();
+            }
+            egui::Shape::Text(s) if s.galley.job.text == t(Key::AppName) => reading.group_top = s.pos.y,
+            egui::Shape::Rect(r) => rects.push(r.rect),
+            _ => {}
+        }
+    }
+    let forgot_at = texts_of(&out).iter().find(|d| d.text == t(Key::PinForgot)).map(|d| d.rect.center());
+    let cells: Vec<egui::Rect> = rects.iter().copied().filter(|r| (r.width() - 36.0).abs() < 0.5 && (r.height() - 44.0).abs() < 0.5).collect();
+    reading.cells = cells.iter().fold(egui::Rect::NOTHING, |a, b| a.union(*b));
+    if let Some(at) = forgot_at {
+        // The key's own face: the last drawn of the smallest under its words (its shadow is drawn first, offset).
+        reading.forgot = rects.iter().rev().copied().filter(|r| r.contains(at) && r.height() < 40.0).min_by(|a, b| a.area().total_cmp(&b.area())).unwrap_or(egui::Rect::NOTHING);
+    }
+    if let Some(said) = trouble {
+        let at = texts_of(&out).iter().find(|d| d.text == said).map(|d| d.rect.center());
+        reading.said = at.and_then(|p| rects.iter().rev().copied().filter(|r| r.contains(p) && r.width() < width - 100.0).min_by(|a, b| a.area().total_cmp(&b.area())));
+    }
+    (win.shell, reading)
+}
+
 /// The "with a credential" sheet opened over the command line's page and driven by the window's own input: the days cell
 /// clicked and "400" typed, then cleared and "2" typed; the "does not expire" switch's title clicked, and "9"
 /// typed into the days cell while it is on. Read after each: the cell, and the line under the switch.
@@ -984,13 +1079,13 @@ pub fn probe_cli_sheet(ctx: &egui::Context, shell: Shell, width: f32, height: f3
     };
     let key = |k: egui::Key| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
     let drawn = settle(&mut win, &mut run);
-    let gas_said = drawn.iter().any(|d| d.text == t(Key::SetCliAloneGas));
     // The days cell is the number before the word "days": its middle sits half a number and the gap left of the word.
-    let unit = drawn.iter().find(|d| d.text == t(Key::CliLastsDays)).map(|d| d.rect);
-    let toggle = drawn.iter().find(|d| d.text == t(Key::CliLastsNever)).map(|d| d.rect.center());
-    let mut reading = CliSheet { gas_said, ..Default::default() };
-    let (Some(unit), Some(toggle)) = (unit, toggle) else { return (win.shell, reading) };
-    let cell = egui::pos2(unit.left() - settings::CLI_SPAN_GAP - settings::CLI_SPAN_NUM_W / 2.0, unit.center().y);
+    // Both are read off the frame each press lands on (the line under the box takes room only with words, so what
+    // is below it moves).
+    let cell_in = |texts: &[Drawn]| texts.iter().find(|d| d.text == t(Key::CliLastsDays)).map(|d| egui::pos2(d.rect.left() - settings::CLI_SPAN_GAP - settings::CLI_SPAN_NUM_W / 2.0, d.rect.center().y));
+    let toggle_in = |texts: &[Drawn]| texts.iter().find(|d| d.text == t(Key::CliLastsNever)).map(|d| d.rect.center());
+    let mut reading = CliSheet::default();
+    let Some(cell) = cell_in(&drawn) else { return (win.shell, reading) };
     let said_has = |texts: &[Drawn], s: &str| texts.iter().any(|d| d.text == s);
     let until = crate::lang::fill1(Key::CliAloneUntil, "");
     let _ = run(&mut win, click(cell));
@@ -1003,9 +1098,11 @@ pub fn probe_cli_sheet(ctx: &egui::Context, shell: Shell, width: f32, height: f3
     let texts = settle(&mut win, &mut run);
     reading.days_fixed = win.ux.cli_span[0].clone();
     reading.expiry_said = texts.iter().any(|d| !until.is_empty() && d.text.starts_with(&until));
+    let Some(toggle) = toggle_in(&texts) else { return (win.shell, reading) };
     let _ = run(&mut win, click(toggle));
-    let _ = settle(&mut win, &mut run);
+    let texts = settle(&mut win, &mut run);
     reading.never_on = win.ux.cli_never;
+    let Some(cell) = cell_in(&texts) else { return (win.shell, reading) };
     let _ = run(&mut win, click(cell));
     let _ = run(&mut win, vec![egui::Event::Text("9".into())]);
     let texts = settle(&mut win, &mut run);
@@ -1055,6 +1152,43 @@ pub fn probe_proxy_section(ctx: &egui::Context, shell: Shell, width: f32, height
     }
     let texts = texts_of(&out).into_iter().map(|d| d.text).collect();
     (win.shell, texts)
+}
+
+/// Settings, network, at rest and then with a chain read the person started in flight (held running until the
+/// probe is done): where the section under the network's card starts, before and while it runs, and whether the
+/// rail's status line says the read is in progress.
+pub fn probe_network_reading(ctx: &egui::Context, shell: Shell, width: f32, height: f32) -> (Shell, Option<f32>, Option<f32>, bool) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Settings(crate::nav::Section::Network), role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut settle = |win: &mut Win| {
+        let mut out = egui::FullOutput::default();
+        for _ in 0..10 {
+            clock += 0.1;
+            let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), ..Default::default() };
+            out = ctx.run_ui(input, |ui| win.draw(ui));
+        }
+        out
+    };
+    let under = |out: &egui::FullOutput| texts_of(out).iter().find(|d| d.text == t(Key::NetGroup)).map(|d| d.rect.top());
+    let before = under(&settle(&mut win));
+    let (hold, wait) = std::sync::mpsc::channel::<()>();
+    let _ = win.shell.tasks.spawn_turnless(crate::task::Kind::Chain, move || {
+        let _ = wait.recv();
+        Err(crate::fault::Fault::known(crate::fault::Known::Denied, "held by the probe"))
+    });
+    win.ux.asked.push(crate::task::Kind::Chain);
+    let out = settle(&mut win);
+    let during = under(&out);
+    let said = fill1(Key::NavDoing, t(Key::TaskChain));
+    let reported = texts_of(&out).iter().any(|d| d.text == said);
+    drop(hold);
+    (win.shell, before, during, reported)
 }
 
 /// The proxy section with "custom" open and its cells filled as given (as if typed or pasted, no cell holding the

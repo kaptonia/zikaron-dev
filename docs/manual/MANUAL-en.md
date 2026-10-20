@@ -111,7 +111,7 @@ Encrypted local files written by this version cannot be read by earlier versions
 - No Start menu entry or desktop shortcut is added. To type `zikaron` in any terminal, turn on "Enable the zikaron command" in Settings > Command line and AI control, which adds the command line's folder to this user's `PATH` (no administrator rights needed); terminals opened after that find `zikaron`. If you move the unpacked folder elsewhere, the switch shows off; turn it on again to add the new place. Replacing the folder in place, as when upgrading, needs nothing.
 - On Windows, as on Linux, a drop zone that takes either a file or a folder opens a dialog that picks files only; to give a folder, drag the folder in.
 
-The window program takes no arguments: started with any, it opens no window and only says why. To work with a file, open the window and drop the file on it; for the command line, use `zikaron`. If the window cannot open (usually the graphics driver does not support the OpenGL it needs, or it runs in a virtual machine or remote desktop without 3D acceleration), it says why as well; on Windows, started by double-clicking in Explorer, it says so in a system dialog.
+The window program takes no arguments: started with any, it opens no window and only says why. To work with a file, open the window and drop the file on it; for the command line, use `zikaron`. If the window cannot open (usually the graphics driver does not support the graphics interface it needs, Metal on macOS and OpenGL on Windows and Linux, or it runs in a virtual machine or remote desktop without 3D acceleration), it says why as well; on Windows, started by double-clicking in Explorer, it says so in a system dialog.
 
 Building from source on macOS and Windows is also described in the repository's README.
 
@@ -145,7 +145,7 @@ Without a passcode, the wizard stays on step 1. With a passcode but no identity,
 
 **Leaving the wizard.** "Exit setup" at the bottom left of the sidebar (the language switch just above it), or Esc, returns you to where you were before the wizard opened. It is there once this machine has a passcode and an identity: on the first start it appears as soon as both are set, and the same after a restart; before that there is nowhere to go back to. Leaving at "Create the ledger" keeps the identity and creates no ledger. Finished steps stay finished. At the next start the wizard opens again only if the passcode or identity is still missing, or a Recorder's ledger has not been created; for the other unfinished steps, use "Run wizard again" in Settings > About.
 
-- If fresh recovery words have not been checked yet, it asks "Exit setup?" first: "These words haven't been checked; exiting discards them." "Exit" discards the words and leaves; "Keep checking" or Esc stays in the wizard.
+- If fresh recovery words have not been checked yet, it asks "Exit setup?" first: "Exit" discards the words and leaves; "Keep checking" or Esc stays in the wizard.
 - While the passcode or the identity is still missing (on a true first run, both are), there is no way out and Esc does not leave.
 
 **Other ways to open it**
@@ -206,7 +206,7 @@ Anchoring on mainnet costs real ETH in gas.
 An identity imported in step 2 creates its ledger once it has been checked against the chain after step 3 (see step 2).
 
 1. Describe what the ledger is for in "Ledger description (optional)".
-2. Press "Create the ledger". A confirmation card shows "Ledger description" and "Cost" ("Free (local only)"), with the note "Cannot be changed after creation". The ledger's location is under "Details".
+2. Press "Create the ledger". A confirmation card shows "Ledger description" and "Cost" ("Free (local only)"). The ledger's location is under "Details".
 3. Press "Create the ledger" on the card to write it.
 
 **Adopting an existing ledger folder.** With a ledger already at hand (a ledger folder, or a mirror "Export ledger mirror" wrote), there is no need to create one: "Adopt existing ledger folder", beside "Create the ledger" (there while this data folder has no ledger), opens a card of the same name. The card says to choose a ledger folder, or the folder an earlier version's "Export ledger mirror" wrote: its entries are checked one by one and sealed into this data folder, and the folder itself is not changed.
@@ -300,7 +300,7 @@ List pages (Records, Pending, Ledger, Grant, My grants; Pending is the second ha
 
 Wherever you choose one item from a list ("Choose a record" and "Recent addresses" in a new grant, the address books, an annotation's target entry), a floating card opens with a search field; lists whose rows carry a time ("Choose a record", the target entry) have the two date fields too; the "Choose entries" card for picking a record kit's entries has the search field and the two date fields as well. Click a row to open its detail page; use the toolbar's back arrow or ⌘[ (Ctrl+[ on Linux and other systems) to return. As you scroll down a detail page, its title moves up into the toolbar.
 
-On a narrow window, pages with a side column (New grant, Draft sublicense, Export record kit) move the side column below the form.
+On a narrow window, pages with a side column (Export record kit) move the side column below the form.
 
 #### 4.3 Bars at the top of the page
 
@@ -416,7 +416,7 @@ Then set a new passcode, entering it twice ("Set a passcode", then "Enter it aga
 At the bottom of the recovery card is "Restore from backup":
 
 1. Choose a whole-machine backup file, enter the "Backup password" and press "Recover".
-2. "Replace this machine with the backup?" shows the backup's name and contents, with the note "The backup will replace this machine's identities and data; anything here that isn't in the backup will be lost." Press "Replace".
+2. "Replace this machine with the backup?" shows the backup's name and contents. Press "Replace".
 3. "Set a new passcode", entering it twice.
 
 The machine's identities, keys and data are replaced by the backup's, re-encrypted under the new passcode, and the wrong-try count is cleared. The toast reads "Restored from backup" followed by what the backup held. Common refusals:
@@ -517,11 +517,11 @@ The "New record" card has two steps.
    - The reading below: "No repository linked" until one is saved; "Linked, not checked yet" after "Add repository"; "N commits since the last record" after "Check commits".
    - "Add repository" saves the chosen repository in settings.
    - "Check commits" counts the new commits of the saved repository again.
-5. Press "Add to ledger" (it reads "Send to chain now" when "Auto put on chain" is on). The note says "Cannot be changed once recorded, only annotated."; with "Auto put on chain" on it says "Cannot be changed once recorded, only annotated. Putting it on chain costs gas."
+5. Press "Add to ledger" (it reads "Send to chain now" when "Auto put on chain" is on).
 
 **Step two: confirm**
 
-- The card is titled with the write button's label and lists "File", "Recorded for (optional)" and "Cost" ("Charged when put on chain", or "Gas estimated in the next step" with "Auto put on chain" on); "Content fingerprint" and "Ledger location" are under "Details". The note says "Cannot be changed once recorded; notes can be added later".
+- The card is titled with the write button's label and lists "File", "Recorded for (optional)" and "Cost" ("Charged when put on chain", or "Gas estimated in the next step" with "Auto put on chain" on); "Content fingerprint" and "Ledger location" are under "Details".
 - The solid red "Add to ledger" writes the entry and queues it, with the toast "#N added to pending, N in total" and a second line "Waiting in the ledger to be put on chain by hand" ("Offline: check against the chain before anchoring" when offline).
 - "Back" returns to step one; "Cancel" closes the card.
 - With "Auto put on chain" on, the app estimates gas right after writing and opens the "Put on chain" card. The card covers every entry in the queue that can be sent.
@@ -554,7 +554,7 @@ Click a row in the record table. The title is the record's name, with "#N · Rec
 
 #### Deleting a record
 
-"Delete record" opens the card "Delete this record?", with the note "The record will be marked as deleted. Grants already issued are not affected." Press "Delete".
+"Delete record" opens the card "Delete this record?". Press "Delete".
 
 - A "Deletion" entry pointing at the record is added to the ledger. The original entry is not changed by a single byte.
 - From then on the record is struck through, its page says "Deleted by entry #N. It can no longer be granted.", its page no longer offers the grant and export buttons, and New grant no longer offers it.
@@ -585,7 +585,7 @@ For the entry's format and how it is read, see Appendix C.
 
 **Putting entries on chain**
 
-1. Press "Put all on chain" or "Put on chain now". The "Put on chain" card opens, showing "Entry count" ("First N") and the "Gas cap"; the gas estimate is under "Details". The note says "Once on chain it cannot be withdrawn; it usually confirms within minutes".
+1. Press "Put all on chain" or "Put on chain now". The "Put on chain" card opens, showing "Entry count" ("First N") and the "Gas cap"; the gas estimate is under "Details".
 2. Each time the card opens the gas is estimated again (an earlier estimate is not reused). The estimate runs in the background; meanwhile "Confirm and send" says "Estimating" with a turning ring and cannot be pressed, while "Cancel" can (not while sending). Once the estimate is in, press "Confirm and send". The app signs, sends the transaction and waits for the receipt; meanwhile the key says "Sending" with a turning ring.
 
 All entries in a batch travel in one transaction.
@@ -750,7 +750,7 @@ Text the app cannot read gives "This is not a claim text."
    - "Statement" (optional). Left empty, the kind's words are written.
 2. Check "Kind" and "Statement" (the address is under "Details") and press the solid red "Hand over" to write it. "Back" returns to step one.
 
-The note says "The new key must have no ledger, and this cannot be undone." The toast reads "Handed over to a new key. N pending". From then on the new key continues the ledger. This machine becomes read-only, with "Ledger handed over to a new key; read-only" at the top of the page; entries already queued, the handover entry among them, can still be put on chain; the handover entry must go on chain, or the new key cannot verify the handover.
+The toast reads "Handed over to a new key. N pending". From then on the new key continues the ledger. This machine becomes read-only, with "Ledger handed over to a new key; read-only" at the top of the page; entries already queued, the handover entry among them, can still be put on chain; the handover entry must go on chain, or the new key cannot verify the handover.
 
 ### Grant list
 
@@ -795,19 +795,15 @@ Addresses and hashes in the grantee, terms file fingerprint and upstream fields 
 
 **Signing**
 
-1. Press "Add to ledger" (or "Send to chain now"); beside it the form says "Once signed, a grant can only be revoked". It works once the grantee, the record and the terms file fingerprint are all filled in, and, with a preset validity, once there is chain time.
-2. The confirmation card "Sign grant" shows "Entry", "Validity", "Terms file" (the file's name, or "Terms fingerprint typed by hand") and "Cost"; the grantee and the fingerprints are under "Details". The note says "After signing it can only be revoked".
+1. Press "Add to ledger" (or "Send to chain now"). It works once the grantee, the record and the terms file fingerprint are all filled in, and, with a preset validity, once there is chain time.
+2. The confirmation card "Sign grant" shows "Entry", "Validity", "Terms file" (the file's name, or "Terms fingerprint typed by hand") and "Cost"; the grantee and the fingerprints are under "Details".
 3. Press it again on the card to sign. The toast reads "Issued #N. N pending". Then put it on chain as described under "Pending queue".
 
 If the same record already has an exclusive grant with an overlapping period, signing is refused and the card "Exclusive grant conflict" lists the grants that clash; "Cancel" closes it.
 
 ### Pre-signing checklist
 
-The "Before signing" side column of the New grant page is a two-step checklist:
-
-- The two steps are "Fill in terms" and "Draft your first grant", with the key's balance below: "Key balance N ETH", "Add gas to the key address" at zero, or "Key balance not read".
-- You can type a note in "Hash or note" and press "Mark done: …" to tick the next step; when both are done it reads "All steps done". "Reset checklist", shown once the first step is ticked, starts over.
-- The checklist is kept in the data folder.
+"Pre-signing checklist" opens the New grant form (see "Draft a grant" above). The form takes the page's full width, with no side column and no checklist.
 
 #### Grant detail
 
@@ -836,7 +832,6 @@ Click a row in the grant list. The title is "#N · Grant".
 "Revoke grant" opens the card "Revoke this grant":
 
 - The card shows "Entry" and "Original validity". "Details" holds the grantee and a field "Ruling file fingerprint (optional)".
-- The note says "This cannot be undone. The grantee will be alerted".
 
 Press "Revoke" to write the revocation entry and queue it; the toast reads "Revoked #N. N pending". Once it is on chain, the grantee's revocation watch will find it.
 
@@ -1006,7 +1001,7 @@ The other party verifies it by pasting the text into Verify > Verify grant.
 
 **Starting.** A grant that this session's re-verification has passed on all six checks has "Sublicense to others" on its detail page:
 
-1. A confirmation card "Sublicense" shows "Entry", "Issuer" and "Upstream validity", with the note "The sublicense ends when the upstream grant is revoked or expires."
+1. A confirmation card "Sublicense" shows "Entry", "Issuer" and "Upstream validity".
 2. "Draft" opens the sublicense page. Nothing is written at this point.
 
 **The sublicense page.** The upper half shows the upstream grant; the lower half is the same form as "Draft a grant":
@@ -1311,7 +1306,7 @@ If the current role's key cannot be found, an extra "Key address" row explains w
   - The row is unavailable while the current role has no signing key.
 - **"Show recovery phrase"**: after you enter the passcode, the 12 words are shown. "Hide and close" clears them. A local-key identity has no recovery phrase: this row is unavailable, and the group notes "No recovery phrase for this identity. Back it up with a key file."
 
-**The "Change identity" group** (its note reads "Record a handover first, or the new key cannot continue this ledger." for a Recorder and "After changing, existing grants are no longer yours." for a User)
+**The "Change identity" group**
 
 - **"Switch identity"**: available when there is more than one identity. It lists every identity, the one in use marked "In use" and the primary one "Primary". Click a row to expand it and see both roles' full addresses; only "Switch" actually switches.
 - **"New identity"**: an optional "Label", then under it "Network" for the network this identity uses, then generate, write down and check 12 words, as in wizard step 2.
@@ -1522,7 +1517,7 @@ Settings > Command line and AI control: the `zikaron` command in the terminal an
 **"Automation level"**: two switches decide how the command line may write the data this machine keeps sealed and send its pending queue. The higher outranks the lower, so there is one way at any time.
 
 - "Through the desktop app" (on by default): while the desktop is unlocked with this data folder open, the command line hands writes and putting on chain to it with `--home` (see "Through the desktop" in section 12); no passcode. Switching it says "The command line may work through the desktop app" or "The command line no longer works through the desktop app".
-- "With a credential" (off by default): switching it on opens a card of the same name, which says "While putting on chain from the command line sends automatically, the command line can spend this identity's gas."; enter the passcode and a validity (days, hours and minutes, together a minute to a year; or "Does not expire" switched on) and press "Turn on". The command line then writes the sealed data and sends a data folder's pending queue itself, without `--home`, with a credential, whether the desktop is open or not (see "With a credential" in section 12). Turning it on says "With a credential is on, …" (followed by "Expires: …" or "Does not expire"); turning it off says "With a credential is off". The credential is kept in the machine folder, readable and writable by you only; turning the switch off removes it, its expiry removes it with a line saying so, and a new master key (another primary identity, a whole-machine restore) makes it worthless and turns the switch off, saying "The master key was replaced; “With a credential” is off."; changing the passcode leaves it working. While it is on, the line under the switch says when it expires.
+- "With a credential" (off by default): switching it on opens a card of the same name: enter the passcode and a validity (days, hours and minutes, together a minute to a year; or "Does not expire" switched on) and press "Turn on". The command line then writes the sealed data and sends a data folder's pending queue itself, without `--home`, with a credential, whether the desktop is open or not (see "With a credential" in section 12). Turning it on says "With a credential is on, …" (followed by "Expires: …" or "Does not expire"); turning it off says "With a credential is off". The credential is kept in the machine folder, readable and writable by you only; turning the switch off removes it, its expiry removes it with a line saying so, and a new master key (another primary identity, a whole-machine restore) makes it worthless and turns the switch off, saying "The master key was replaced; “With a credential” is off."; changing the passcode leaves it working. While it is on, the line under the switch says when it expires.
 - While "With a credential" is on, "Through the desktop app" is greyed out and cannot be switched (the line under it reads "Cannot be switched while “With a credential” is on."), and the door is closed.
 - While "With a credential" is on, the desktop takes this data folder's writer lock only for each write to the ledger or the anchor queue and lets it go after; if the command line wrote meanwhile, the ledger, the queue and the settings are read again before the desktop writes. The desktop, unlocked meanwhile, looks at the ledger on disk once a second even when nobody touches it (it wakes once a second for this, asked where the self-audit and the other timers are asked), so entries the command line wrote show at once in the ledger, the pending count and the local data page; with "With a credential" off, or the desktop locked, it does not wake to look. A desktop write that meets the command line writing is not done and says "The command line is writing." and "Try again shortly, or turn off “With a credential”.", and its "Go to settings" comes to this page.
 

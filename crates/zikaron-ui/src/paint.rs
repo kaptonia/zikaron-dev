@@ -131,7 +131,7 @@ pub fn qr(ui: &mut egui::Ui, modules: &[Vec<bool>], side: f32) -> Rect {
 /// centred on it, clipped to it.
 pub fn rolling(ui: &egui::Ui, id: egui::Id, line: Rect, s: &str, font: egui::FontId, colour: Color32) {
     let ctx = ui.ctx();
-    let now = ui.input(|i| i.time);
+    let now = crate::motion::now(ui.ctx());
     let kid = id.with("rolling");
     let (cur, prev, at) = ctx.data(|d| d.get_temp::<(String, String, f64)>(kid)).unwrap_or((s.to_string(), String::new(), f64::NEG_INFINITY));
     let (prev, at) = if cur != s {

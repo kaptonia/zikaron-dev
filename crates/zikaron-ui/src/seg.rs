@@ -106,15 +106,16 @@ fn paint_seg(ui: &mut egui::Ui, id_salt: &str, rect: Rect, cells: &[Cell], width
             let h = n.size().y;
             p.galley(pos2(x0 + gw + 4.0, r.center().y - h / 2.0 + 0.5), n, colour);
         }
-        if !on {
-            let _ = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        if on {
+            // Already chosen: nothing to press.
+            crate::hand::sink(ui.ctx(), resp.id);
         }
     }
     hit
 }
 
 /// How long the thumb takes to slide, how much of the distance it stretches by, and at most how much.
-pub const SLIDE: f32 = 0.32;
+pub const SLIDE: f32 = 0.32 * crate::tokens::PACE;
 const STRETCH: f32 = 0.6;
 const STRETCH_MAX: f32 = 56.0;
 
@@ -179,8 +180,9 @@ pub fn tabs(ui: &mut egui::Ui, id_salt: &str, labels: &[&str], current: usize) -
         let colour = crate::palette::mix(c(C::Ink2), c(C::Ink), hot);
         let font = if on { font_on.clone() } else { Type::Body.font() };
         p.text(pos2(r.left() + 1.0, r.top() + 6.0 + Type::Body.line() / 2.0), egui::Align2::LEFT_CENTER, *l, font, colour);
-        if !on {
-            let _ = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        if on {
+            // Already chosen: nothing to press.
+            crate::hand::sink(ui.ctx(), resp.id);
         }
     }
     let line = Rect::from_min_size(pos2(rect.left() + ul, rect.bottom() - 2.0), vec2(uw, 2.0));

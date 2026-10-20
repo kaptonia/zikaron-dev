@@ -333,7 +333,7 @@ pub fn glow_shape_corners(rect: Rect, corners: egui::CornerRadius, at: egui::Pos
 pub fn glow_at(ui: &egui::Ui, id: egui::Id, rect: Rect, live: bool) -> (f32, egui::Pos2) {
     let at = ui.ctx().pointer_hover_pos();
     let on = live && at.map(|p| rect.contains(p)).unwrap_or(false) && !crate::scroll::moving(ui.ctx()) && crate::layer::on_top(ui, rect);
-    let k = crate::motion::flag(ui.ctx(), id.with("glow"), on, 0.18);
+    let k = crate::motion::flag(ui.ctx(), id.with("glow"), on, 0.18 * crate::tokens::PACE);
     // Fading out, the light stays where the pointer left it.
     let last = id.with("glow-at");
     let pos = match at.filter(|_| on) {
