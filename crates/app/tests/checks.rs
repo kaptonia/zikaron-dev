@@ -263,8 +263,8 @@ fn every_scroll_area_goes_in_through_the_librarys_scroll() {
             seen += 1;
         }
     }
-    // The record kit's picker list, the licence notices.
-    assert_eq!(seen, 2, "the scan reaches the app's two scroll areas");
+    // The record kit's picker list, a new grant's record list, the licence notices.
+    assert_eq!(seen, 3, "the scan reaches the app's three scroll areas");
 }
 
 /// Nothing laid in a row of `width::then`, `then_at` or `then_line` opens a row or a column of its own there: egui

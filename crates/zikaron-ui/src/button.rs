@@ -193,9 +193,13 @@ pub fn key_font() -> egui::FontId {
 /// The size a key takes.
 pub fn size_of(ui: &egui::Ui, k: &Key) -> egui::Vec2 {
     let words = |t: &str| ui.painter().layout_no_wrap(t.to_string(), font(k.role), Color32::BLACK).size().x;
-    // A key that says something else while busy is as wide as the longer of its two sayings (the ring and its
-    // gap included), so it does not change width when it starts.
-    let w = words(k.text).max(k.busy_text.map(|b| words(b) + BUSY_RING_W).unwrap_or(0.0));
+    // A key is as wide as what it says now: its words, or while busy its busy saying after the ring and its gap
+    // (`show_w` eases it from one width to the other as the saying changes).
+    let busy = k.phase.now(crate::motion::now(ui.ctx())).busy();
+    let w = match k.busy_text {
+        Some(b) if busy => words(b) + BUSY_RING_W,
+        _ => words(k.text),
+    };
     let glyphs = [k.lead, k.trail].iter().flatten().count() as f32 * (12.0 + 6.0);
     // A menu key keeps 16 before its words and 12 after its caret.
     let pad = if k.trail.is_some() { tokens::KEY_PAD_X + 12.0 } else { tokens::KEY_PAD_X * 2.0 };
@@ -216,7 +220,18 @@ pub fn show(ui: &mut egui::Ui, k: Key) -> egui::Response {
 /// [`show`] at least `min_w` wide (the keys of one card share the widest one's width).
 pub fn show_w(ui: &mut egui::Ui, k: Key, min_w: f32) -> egui::Response {
     let natural = size_of(ui, &k);
-    let want = motion::size(ui.ctx(), ui.next_auto_id().with("zikaron-key-size"), vec2(natural.x.max(min_w), natural.y));
+    let size_id = ui.next_auto_id().with("zikaron-key-size");
+    let mut want = motion::size(ui.ctx(), size_id, vec2(natural.x.max(min_w), natural.y));
+    // A key with a busy saying eases between its words' width and its saying's as one comes for the other, at the
+    // pace a size takes everywhere (a change of language eases it already).
+    if k.busy_text.is_some() {
+        let id = size_id.with("saying");
+        if crate::flow::morphing(ui.ctx()) {
+            motion::snap(ui.ctx(), id, want.x);
+        } else {
+            want.x = motion::glide(ui.ctx(), id, want.x, tokens::SLOW, motion::Curve::Ease);
+        }
+    }
     let now = crate::motion::now(ui.ctx());
     let phase = k.phase.now(now);
     let live = k.enabled && !phase.busy();

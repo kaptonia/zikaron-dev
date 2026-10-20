@@ -60,6 +60,12 @@ pub fn inner_pick(ui: &mut egui::Ui, id_salt: &str, label: &str, caret: bool, fa
     picked
 }
 
+/// A small key with a key's face inside a joined input that opens a sheet of the caller's (a picker too long for a
+/// floating card), enabled or not.
+pub fn inner_open(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
+    inner_key(ui, label, false, true, enabled)
+}
+
 /// The small key inside a joined input, enabled or not (`fields::inner_key` and `fields::inner_face` take no
 /// state).
 fn inner_key(ui: &mut egui::Ui, label: &str, caret: bool, face: bool, enabled: bool) -> egui::Response {

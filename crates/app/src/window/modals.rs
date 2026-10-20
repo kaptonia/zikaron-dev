@@ -18,6 +18,7 @@ impl Win {
             || u3.confirm.is_some()
             || u3.form.is_some()
             || u3.kit_pick.is_some()
+            || u3.work_pick
             || self.clash_modal
             || self.ux.u4.import_open
             || self.ux.u4.confirm.is_some()
@@ -40,6 +41,7 @@ impl Win {
         self.ux.u3.form = None;
         self.ux.u3.succeed_confirm = false;
         self.ux.u3.kit_pick = None;
+        self.ux.u3.work_pick = false;
         self.clash_modal = false;
         self.ux.u4.import_open = false;
         self.ux.u4.import_err = None;
@@ -71,6 +73,7 @@ impl Win {
             || self.ux.u3.confirm.is_some()
             || self.ux.u3.form.is_some()
             || self.ux.u3.kit_pick.is_some()
+            || self.ux.u3.work_pick
             || self.ux.u4.import_open
             || self.ux.u4.confirm.is_some()
             || self.clash_modal
@@ -300,6 +303,7 @@ impl Win {
             None => {}
         }
         self.kit_pick_sheet(ctx);
+        self.grant_work_pick_sheet(ctx);
         self.clash_sheet(ctx);
         self.add_grant_sheet(ctx, now);
         self.relicense_sheet(ctx, now);

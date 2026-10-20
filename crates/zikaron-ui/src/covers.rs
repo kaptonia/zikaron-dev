@@ -1,9 +1,9 @@
 //! The two whole-window covers as designed: the lock (one column in the middle of the window, on a soft light
-//! that falls from a little above the centre) and the first-run wizard (its own column of steps, 232 wide, on the
-//! rail's ground, and the step's card on the page ground at the right).
+//! that falls from a little above the centre) and the first-run wizard (its own column of steps, as wide as the
+//! window's rail, on the rail's ground, and the step's card on the page ground at the right).
 //!
 //! How they move: a cover comes in fading over 0.3 s while it settles from 1.004 to its size over 0.4 s, and
-//! leaves the same way back; the window under the lock comes back from half its opacity and 0.993 over 0.45 s
+//! leaves the same way back (the wizard's leaves at once instead, its window coming in as a page does: [`gone`]); the window under the lock comes back from half its opacity and 0.993 over 0.45 s
 //! once the lock has gone. In the wizard a step's card slides: the old one fades out 10 toward the side it is
 //! left on (0.16 s), the new one comes in from 12 on the other side on the spring (0.38 s). The step numbers turn
 //! their ring and fill over 0.35 s and a step that becomes done pops from 0.85 (0.5 s); the way out fades in
@@ -63,6 +63,19 @@ pub fn cover<R>(ctx: &egui::Context, id_salt: &str, ground: Ground, add: impl Fn
     });
     crate::layer::keep(ctx, id.with("keep"), layer, FADE, FROM, screen.center(), egui::Vec2::ZERO);
     (r.inner, layer)
+}
+
+/// A cover that has gone (`id_salt` as drawn with [`cover`]) leaves at once, its step cards with it: the window it
+/// uncovers comes in as a page does (no copy of the cover fading over it). Call every frame the cover is not drawn.
+pub fn gone(ctx: &egui::Context, id_salt: &str) {
+    let cover = egui::Id::new(("zikaron-cover-as-designed", id_salt)).with("keep");
+    let panes = ctx.data(|d| d.get_temp::<Vec<egui::Id>>(panes_id())).unwrap_or_default();
+    crate::layer::forget(ctx, |k| k == cover || panes.contains(&k));
+}
+
+/// The step cards' recorded layers (by key), so a cover that goes takes them with it.
+fn panes_id() -> egui::Id {
+    egui::Id::new("zikaron-wizard-pane-keeps")
 }
 
 /// The soft light of [`Ground::Lit`]: rings of an ellipse from the surface at its centre to the page ground.
@@ -129,8 +142,7 @@ pub fn small_key(ui: &mut egui::Ui, text: &str, enabled: bool) -> egui::Response
     }
 }
 
-/// The wizard's column: 232 wide, 18 across inside.
-pub const RAIL_W: f32 = 232.0;
+/// The wizard's column: as wide as the window's rail (`tokens::RAIL_W`), 18 across inside.
 pub const RAIL_PAD_X: f32 = 18.0;
 
 /// The wizard's column ground: the rail's own (the system's material through it where the window has it), a
@@ -303,6 +315,12 @@ pub fn pane<R>(ctx: &egui::Context, over: egui::LayerId, step: u64, dir: f32, re
         add(&mut child)
     });
     crate::layer::keep(ctx, keep, layer, PANE_OUT, 1.0, rect.center(), egui::Vec2::ZERO);
+    ctx.data_mut(|d| {
+        let v = d.get_temp_mut_or_default::<Vec<egui::Id>>(panes_id());
+        if !v.contains(&keep) {
+            v.push(keep);
+        }
+    });
     r.inner
 }
 

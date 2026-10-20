@@ -131,3 +131,42 @@ fn a_folds_rows_give_up_their_height_as_they_fade() {
     let half = heights[((0.3 * zikaron_ui::tokens::PACE) / 2.0 * 60.0) as usize];
     assert!(half < open - (open - closed) * 0.25, "the card shrinks while the rows fade: {open} → {half} → {closed} ({heights:?})");
 }
+
+/// A key is as wide as what it says now: at rest its words, while busy its busy saying (its ring with it); it eases
+/// from one width to the other as one saying comes for the other, and back when the work ends.
+#[test]
+fn a_key_is_as_wide_as_what_it_says_now() {
+    use zikaron_ui::button::{self, Phase, Role};
+    let mut f = Frames::new();
+    let key = |phase| button::Key::new("迁移", Role::Secondary).phase(phase).busy_text("正在迁移数据目录");
+    let mut run = |f: &mut Frames, phase: Phase, dt: f64| {
+        let mut w = 0.0;
+        let _ = f.run(dt, |ui| {
+            ui.horizontal(|ui| w = button::show(ui, key(phase)).rect.width());
+        });
+        w
+    };
+    let rest = run(&mut f, Phase::Idle, 0.1);
+    let _ = run(&mut f, Phase::Idle, 0.5);
+    let rest = rest.max(run(&mut f, Phase::Idle, 0.016));
+    let mut busy = Vec::new();
+    for _ in 0..40 {
+        busy.push(run(&mut f, Phase::Busy { frac: None }, 0.016));
+    }
+    let wide = *busy.last().expect("frames");
+    assert!(wide > rest + 40.0, "busy, the key takes its saying's width: {rest} at rest, {wide} busy");
+    assert!(busy.iter().any(|w| *w > rest + 1.0 && *w < wide - 1.0), "on its way through the widths between: {busy:?}");
+    let mut back = 0.0;
+    for _ in 0..40 {
+        back = run(&mut f, Phase::Idle, 0.016);
+    }
+    assert!((back - rest).abs() < 0.5, "at rest again, its words' width: {back} against {rest}");
+    let mut g = Frames::new();
+    let mut plain = 0.0;
+    for _ in 0..3 {
+        let _ = g.run(0.1, |ui| {
+            ui.horizontal(|ui| plain = button::show(ui, button::Key::new("迁移", Role::Secondary)).rect.width());
+        });
+    }
+    assert!((rest - plain).abs() < 0.5, "at rest no room is kept for the busy saying: {rest} against {plain} without one");
+}

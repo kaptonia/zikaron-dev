@@ -53,7 +53,7 @@ impl Win {
         let mut main_rect = egui::Rect::NOTHING;
         let (_, over) = covers::cover(ctx, "wizard", covers::Ground::Clear, |ui| {
             let screen = ui.max_rect();
-            let side = egui::Rect::from_min_size(screen.min, egui::vec2(covers::RAIL_W, screen.height()));
+            let side = egui::Rect::from_min_size(screen.min, egui::vec2(zikaron_ui::tokens::RAIL_W, screen.height()));
             main_rect = egui::Rect::from_min_max(egui::pos2(side.right(), screen.top()), screen.max);
             covers::rail_ground(ui.painter(), side, 1.0);
             ui.painter().rect_filled(main_rect, 0.0, c(C::Ground));

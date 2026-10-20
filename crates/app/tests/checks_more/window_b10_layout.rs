@@ -372,3 +372,35 @@ fn the_proxy_section_draws_no_now_line_and_still_saves() {
         assert_eq!(app::machine::read().expect("the machine settings read").proxy.as_deref(), Some(proxy), "and the typed proxy is what the machine keeps");
     })
 }
+
+/// A new grant's "choose a record" is a sheet: it lists the records with the search and the two dates over them;
+/// a record not yet on chain says why and a press on it chooses nothing; a press on a record on chain chooses it
+/// and closes the sheet.
+#[test]
+fn a_new_grants_record_is_chosen_in_a_sheet() {
+    english(|| {
+        let ctx = egui::Context::default();
+        let shell = probe_shell(&ctx);
+        let row = |seq: u64, note: &str, lamp: app::ledgerx::Lamp, byte: u8| app::ledgerx::Row {
+            seq,
+            kind: zikaron::tokens::EntryType::History,
+            id: format!("{:02x}", byte).repeat(32),
+            prev: None,
+            author: String::new(),
+            summary: String::new(),
+            lamp,
+            tx: None,
+            bytes: 0,
+            work: Some(format!("{:02x}", byte + 1).repeat(32)),
+            facts: app::ledgerx::Facts { note: Some(note.to_string()), ..Default::default() },
+            anchored_at: None,
+        };
+        let rows = vec![row(1, "On chain", app::ledgerx::Lamp::Anchored, 0x10), row(2, "Not yet", app::ledgerx::Lamp::Queued, 0x20)];
+        let (_, got) = app::window::probe_work_pick(&ctx, shell, rows, "Not yet", "On chain", 1180.0, 760.0);
+        for want in [t(Key::V2PickWorkBtn), t(Key::SearchWorks), t(Key::DateFrom), t(Key::DateTo), "On chain", "Not yet", t(Key::V2PendingGrey)] {
+            assert!(got.drawn.iter().any(|d| d == want), "drawn with the sheet up: {want:?} in {:?}", got.drawn);
+        }
+        assert_eq!(got.after_grey, (String::new(), true), "a record not yet on chain is not chosen; the sheet stays");
+        assert_eq!(got.after_open, ("11".repeat(32), false), "a record on chain is chosen and the sheet closes");
+    })
+}

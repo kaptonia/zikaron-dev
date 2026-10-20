@@ -1111,6 +1111,56 @@ pub fn probe_cli_sheet(ctx: &egui::Context, shell: Shell, width: f32, height: f3
     (win.shell, reading)
 }
 
+/// A new grant's "choose a record" sheet over `rows` (the ledger as read), on the grant form: the words drawn
+/// once it is up, then a press on the record named `grey` and one on the record named `open`, each where its name
+/// is drawn, each followed by a few frames.
+pub fn probe_work_pick(ctx: &egui::Context, mut shell: Shell, rows: Vec<crate::ledgerx::Row>, grey: &str, open: &str, width: f32, height: f32) -> (Shell, WorkPick) {
+    let n = rows.len();
+    shell.rows = Some((rows, n));
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::View(crate::nav::View::Grants, crate::nav::tab::GRANTS_NEW), role));
+    ux.wizard_asked = true;
+    ux.u3.work_pick = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run_ui(input, |ui| win.draw(ui))
+    };
+    let settle = |win: &mut Win, run: &mut dyn FnMut(&mut Win, Vec<egui::Event>) -> egui::FullOutput| {
+        let mut out = run(win, Vec::new());
+        for _ in 0..6 {
+            out = run(win, Vec::new());
+        }
+        texts_of(&out)
+    };
+    let press = |at: egui::Pos2| {
+        let b = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        vec![egui::Event::PointerMoved(at), b(true), b(false)]
+    };
+    let mut reading = WorkPick::default();
+    let drawn = settle(&mut win, &mut run);
+    reading.drawn = drawn.iter().map(|d| d.text.clone()).collect();
+    let at = |texts: &[Drawn], name: &str| texts.iter().rev().find(|d| d.text == name).map(|d| d.rect.center());
+    if let Some(p) = at(&drawn, grey) {
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(p)]);
+        let _ = run(&mut win, press(p));
+    }
+    let drawn = settle(&mut win, &mut run);
+    reading.after_grey = (win.typed.g_work.clone(), win.ux.u3.work_pick);
+    if let Some(p) = at(&drawn, open) {
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(p)]);
+        let _ = run(&mut win, press(p));
+    }
+    let _ = settle(&mut win, &mut run);
+    reading.after_open = (win.typed.g_work.clone(), win.ux.u3.work_pick);
+    (win.shell, reading)
+}
+
 /// The ledger's check card, folded open on the records view (as the audit page opens it): every text drawn once the
 /// fold has opened and the page settled.
 pub fn probe_audit_card(ctx: &egui::Context, shell: Shell, width: f32, height: f32) -> (Shell, Vec<Drawn>) {
@@ -1518,6 +1568,7 @@ pub enum SheetScene {
     DeleteRecord,
     Revoke,
     KitPick,
+    WorkPick,
     AddGrant,
     IdNew,
     IdImportWords,
@@ -1624,6 +1675,7 @@ pub fn scenes(role: crate::roles::Role) -> Vec<Scene> {
             (Place::View(View::Works, 0), SheetScene::DeleteRecord),
             (Place::View(View::Grants, 0), SheetScene::Revoke),
             (Place::View(View::Works, 2), SheetScene::KitPick),
+            (Place::View(View::Grants, crate::nav::tab::GRANTS_NEW), SheetScene::WorkPick),
             (Place::View(View::Grants, 0), SheetScene::GrantFile),
         ]),
         Role::Grantee => sheets.extend([
@@ -2090,6 +2142,10 @@ fn stage(win: &mut Win, scene: Scene) {
                 SheetScene::KitPick => {
                     win.sheets_clear();
                     win.ux.u3.kit_pick = Some(KitPick { ids: rows.iter().map(|r| r.id.clone()).collect() });
+                }
+                SheetScene::WorkPick => {
+                    win.sheets_clear();
+                    win.ux.u3.work_pick = true;
                 }
                 SheetScene::AddGrant => win.u4_import_open(),
                 SheetScene::IdNew => win.id_layer_open(IdModal::New),

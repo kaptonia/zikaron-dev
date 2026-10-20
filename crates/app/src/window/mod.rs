@@ -1549,6 +1549,8 @@ struct U3 {
     kit_admit: Option<(String, Option<crate::kitx::Originals>)>,
     /// The pick list's working state while open (written back only on "done").
     kit_pick: Option<KitPick>,
+    /// A new grant's "choose a record" sheet is up.
+    work_pick: bool,
     /// Adoption: which text the per-row check ran against.
     adopt_checked: Option<String>,
     /// Key rotation or handover: the address already scanned automatically.

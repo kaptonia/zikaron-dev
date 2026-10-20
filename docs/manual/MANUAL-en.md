@@ -298,7 +298,7 @@ Shortcuts do nothing while the passcode gate, the wizard or a card is open.
 
 List pages (Records, Pending, Ledger, Grant, My grants; Pending is the second half of the "All" | "Pending" switch in the Records toolbar) have a search field at the top. On Records, Ledger, Grant and My grants, two more fields sit beside it, "Start date" and "End date": each opens a month calendar; pick a day to fill it in, with "Today" and "Clear" at the foot. With dates set (either one may be left empty), the list keeps only the rows whose anchor block time falls between the two days (both included), and rows not yet on chain are left out; days are counted in the time zone of Settings > Language and time. On a narrow window the two date fields move to a row under the search field.
 
-Wherever you choose one item from a list ("Choose a record" and "Recent addresses" in a new grant, the address books, an annotation's target entry), a floating card opens with a search field; lists whose rows carry a time ("Choose a record", the target entry) have the two date fields too; the "Choose entries" card for picking a record kit's entries has the search field and the two date fields as well. Click a row to open its detail page; use the toolbar's back arrow or ⌘[ (Ctrl+[ on Linux and other systems) to return. As you scroll down a detail page, its title moves up into the toolbar.
+Wherever you choose one item from a list ("Recent addresses" in a new grant, the address books, an annotation's target entry), a floating card opens with a search field; lists whose rows carry a time (the target entry) have the two date fields too. "Choose a record" in a new grant and "Choose entries" for a record kit open a sheet instead, with the search field and the two date fields as well. Click a row to open its detail page; use the toolbar's back arrow or ⌘[ (Ctrl+[ on Linux and other systems) to return. As you scroll down a detail page, its title moves up into the toolbar.
 
 On a narrow window, pages with a side column (Export record kit) move the side column below the form.
 
@@ -773,7 +773,7 @@ Ways in:
 The form's fields:
 
 - **"Grantee"**: paste a `0x…` address. "Recent addresses" on the right opens a floating card with a search field, listing the address book and earlier grantees.
-- **"Which record"**: press "Choose a record" to open a large floating card, one row per record in three columns: entry number, record name, first anchor block time ("Not on chain" when not yet anchored); search it, or filter by first anchor date. Only records on chain can be chosen; the rest are greyed out with the reason:
+- **"Which record"**: press "Choose a record" to open the "Choose a record" sheet: a search field and "Start date" and "End date" (each opens a calendar) at the top, to search by record name or content fingerprint or filter by first anchor date; below, one row per record: entry number, record name, first anchor block time ("Not on chain" when not yet anchored), the chosen one with a check. Click a row to choose it and close the sheet; "Cancel" or Esc closes it unchanged. Only records on chain can be chosen; the rest are greyed out with the reason:
   - "Grant after it is on chain"
   - "Going on chain, please wait"
   - "Waiting for this check"

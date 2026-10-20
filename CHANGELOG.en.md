@@ -25,6 +25,9 @@ This version lays out and draws the whole app anew, with motion that flows and n
 - **Sheets**: the fixed reminder notes on confirmation cards are gone.
 - **Copy keys**: in details only machine values (addresses, fingerprints, hashes, paths and the like) carry a copy key; words and counts do not.
 - **On macOS the window is drawn through Metal**; Windows and Linux keep OpenGL.
+- **"Choose a record" in a new grant** opens a sheet: a search field, start and end dates (with a calendar), and the records below; click one to choose it. Records that cannot be granted yet are greyed out with the reason.
+- **A key is as wide as what it says now**: no room is kept for what it says while busy, and its width eases as the words change.
+- **The setup wizard's column** is as wide as the main window's side bar; leaving the wizard goes straight to the main window, with no ghost of it left behind.
 
 ### Alerts
 

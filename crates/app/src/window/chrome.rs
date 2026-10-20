@@ -105,6 +105,10 @@ impl Win {
         // The full-window layers: the first-run wizard, and the passcode gate above it.
         if self.ux.wizard.is_some() && !gate {
             self.wizard_layer(ctx, now);
+        } else {
+            // However the wizard is left (its way out, its last step), it goes at once and the window comes in as
+            // a page does.
+            zikaron_ui::covers::gone(ctx, "wizard");
         }
         self.gate(ctx, now);
         // Sheets lie above everything, the gate and the wizard included.

@@ -597,6 +597,16 @@ pub struct LangPick {
     pub still_up: bool,
 }
 
+/// What a new grant's "choose a record" sheet did (`probe_work_pick`): the words drawn with it up, then after a
+/// press on a record that cannot be granted yet and after one on a record that can, the record the form holds
+/// (its content fingerprint, empty for none) and whether the sheet was still up.
+#[derive(Clone, Debug, Default)]
+pub struct WorkPick {
+    pub drawn: Vec<String>,
+    pub after_grey: (String, bool),
+    pub after_open: (String, bool),
+}
+
 /// What the "write alone" sheet did when its validity cells were typed into and its switch clicked
 /// (`probe_cli_sheet`).
 #[derive(Clone, Debug, Default)]

@@ -196,7 +196,7 @@ fn the_way_out_fades_in_rising_4() {
 fn a_steps_card_slides_in_and_the_old_one_leaves_the_other_way() {
     let c = ctx();
     let over = egui::LayerId::new(egui::Order::Middle, egui::Id::new("over"));
-    let rect = Rect::from_min_max(pos2(232.0, 0.0), pos2(1180.0, 760.0));
+    let rect = Rect::from_min_max(pos2(zikaron_ui::tokens::RAIL_W, 0.0), pos2(1180.0, 760.0));
     let draw = |step: u64, dir: f32| move |ui: &mut egui::Ui| {
         covers::pane(ui.ctx(), over, step, dir, rect, |ui| {
             ui.label(format!("step {step}"));
@@ -283,4 +283,44 @@ fn the_words_veil_clears_over_03() {
     assert!(seen[2].1 > 0 && seen[2].1 < seen[0].1, "clearing at 0.1 s");
     assert_eq!(seen[7].1, 0, "clear by 0.35 s");
     let _ = vec2(0.0, 0.0);
+}
+
+/// A cover that has gone (`covers::gone`) takes itself and its step card away in the frame it goes: nothing of
+/// either is played back over the window it uncovers. A cover left to its leaving would show both for a while.
+#[test]
+fn a_cover_that_has_gone_leaves_no_copy_over_the_window() {
+    let drawn = |gone: bool| {
+        let ctx = ctx();
+        let mut t = 1.0;
+        for _ in 0..30 {
+            t += 1.0 / 60.0;
+            let _ = frame(&ctx, t, |ui| {
+                let (_, over) = covers::cover(ui.ctx(), "gone-test", covers::Ground::Clear, |ui| {
+                    ui.label("cover words");
+                });
+                covers::pane(ui.ctx(), over, 0, 0.0, Rect::from_min_size(pos2(400.0, 200.0), vec2(300.0, 200.0)), |ui| {
+                    ui.label("card words");
+                });
+                zikaron_ui::layer::fade_out(ui.ctx());
+            });
+        }
+        let mut seen = Vec::new();
+        for _ in 0..6 {
+            t += 1.0 / 60.0;
+            let out = frame(&ctx, t, |ui| {
+                ui.label("page words");
+                if gone {
+                    covers::gone(ui.ctx(), "gone-test");
+                }
+                zikaron_ui::layer::fade_out(ui.ctx());
+            });
+            seen.extend(texts(&out).into_iter().map(|(s, _, _)| s));
+        }
+        seen
+    };
+    let left = drawn(false);
+    assert!(left.iter().any(|s| s == "cover words") && left.iter().any(|s| s == "card words"), "left to its leaving, the cover and its card fade over the page: {left:?}");
+    let gone = drawn(true);
+    assert!(!gone.iter().any(|s| s == "cover words" || s == "card words"), "gone, neither is drawn again: {gone:?}");
+    assert!(gone.iter().any(|s| s == "page words"), "and the page is: {gone:?}");
 }

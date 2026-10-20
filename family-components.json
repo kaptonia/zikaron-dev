@@ -4867,6 +4867,10 @@
     },
     {
      "path": "crates/app/tests/checks_more/window_b10_layout.rs",
+     "name": "a_new_grants_record_is_chosen_in_a_sheet"
+    },
+    {
+     "path": "crates/app/tests/checks_more/window_b10_layout.rs",
      "name": "one_esc_over_the_wizard_closes_only_the_top_layer"
     },
     {
@@ -5084,6 +5088,10 @@
     {
      "path": "crates/zikaron-ui/tests/covers_motion.rs",
      "name": "a_cover_fades_in_and_settles_from_1004"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/covers_motion.rs",
+     "name": "a_cover_that_has_gone_leaves_no_copy_over_the_window"
     },
     {
      "path": "crates/zikaron-ui/tests/covers_motion.rs",
@@ -5484,6 +5492,10 @@
     {
      "path": "crates/zikaron-ui/tests/size_with_content.rs",
      "name": "a_folds_rows_give_up_their_height_as_they_fade"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/size_with_content.rs",
+     "name": "a_key_is_as_wide_as_what_it_says_now"
     },
     {
      "path": "crates/zikaron-ui/tests/size_with_content.rs",

@@ -605,44 +605,16 @@ impl Win {
                     None => {
                         let lines = self.work_lines();
                         let current = lines.iter().find(|w| w.work.eq_ignore_ascii_case(self.typed.g_work.trim())).map(|w| format!("#{} \u{b7} {}", w.seq, w.name));
-                        let labels: Vec<String> = lines.iter().map(|w| w.name.clone()).collect();
-                        let seqs: Vec<String> = lines.iter().map(|w| format!("#{}", w.seq)).collect();
-                        // The third column: the first anchor's block time, or "not on chain".
-                        let times: Vec<String> = lines.iter().map(|w| w.row.anchored_at.map(crate::when::when).unwrap_or_else(|| t(Key::V2StateLanded).to_string())).collect();
-                        let items: Vec<menu::Item> = lines
-                            .iter()
-                            .enumerate()
-                            .map(|(i, w)| {
-                                use crate::ledgerx::Lamp;
-                                let why = match (w.deleted, w.lamp) {
-                                    (Some(_), _) => Some((t(Key::V2Deleted), PillTone::Grey)),
-                                    (None, Lamp::Anchored) => None,
-                                    (None, Lamp::Submitted | Lamp::Included) => Some((t(Key::V2OnChainWait), PillTone::Warn)),
-                                    (None, Lamp::Remembered | Lamp::RememberedStale) => Some((t(Key::V2AwaitThisCheck), PillTone::Warn)),
-                                    (None, _) => Some((t(Key::V2PendingGrey), PillTone::Warn)),
-                                };
-                                menu::Item::Row(menu::Row { lead: &seqs[i], label: &labels[i], struck: w.deleted.is_some(), disabled: why.is_some(), pill: why, trail: &times[i], ..Default::default() })
-                            })
-                            .collect();
-                        let words = date_words();
-                        let spec = pick::Spec {
-                            hint: t(Key::SearchWorks),
-                            empty: t(Key::SearchNone),
-                            w: PICK_WIDE_W,
-                            dates: Some(pick::Dates { words: &words, today: today_of(clock), from_hint: t(Key::DateFrom), to_hint: t(Key::DateTo) }),
-                        };
-                        let keep = |i: usize, q: &str, from: &str, to: &str| {
-                            let w = &lines[i];
-                            matches(q, &[&w.name, &w.work, &seqs[i]]) && crate::when::within(w.row.anchored_at, from, to)
-                        };
                         let label = t(if current.is_some() { Key::U3TermsSwap } else { Key::V2PickWorkBtn });
                         let hint = t(if lines.is_empty() { Key::U3NoWorksYet } else { Key::U3PickWorkHint });
                         let mut shown = current.clone().unwrap_or_default();
-                        let mut picked = None;
-                        let _ = fields::joined(ui, &mut shown, hint, w, file_look, Some(|ui: &mut egui::Ui| picked = formparts::inner_pick(ui, "grant-work", label, false, true, !lines.is_empty(), &spec, &items, &keep)));
-                        if let Some(i) = picked {
-                            self.typed.g_work = lines[i].work.clone();
-                            self.typed.g_history = lines[i].id.clone();
+                        let mut open = false;
+                        let _ = fields::joined(ui, &mut shown, hint, w, file_look, Some(|ui: &mut egui::Ui| open = formparts::inner_open(ui, label, !lines.is_empty()).clicked()));
+                        if open {
+                            // A new opening starts with nothing typed.
+                            self.ux.search.insert("grant-work", String::new());
+                            self.ux.range.insert("grant-work", Default::default());
+                            self.ux.u3.work_pick = true;
                         }
                     }
                 });
@@ -826,6 +798,95 @@ impl Win {
             Key::AnchorNowKey
         } else {
             Key::AddToLedgerKey
+        }
+    }
+}
+
+/// Why a record cannot be granted yet (deleted, or not yet anchored and checked), with its pill's tone; `None` when
+/// it can.
+fn work_why(w: &WorkLine) -> Option<(&'static str, PillTone)> {
+    use crate::ledgerx::Lamp;
+    match (w.deleted, w.lamp) {
+        (Some(_), _) => Some((t(Key::V2Deleted), PillTone::Grey)),
+        (None, Lamp::Anchored) => None,
+        (None, Lamp::Submitted | Lamp::Included) => Some((t(Key::V2OnChainWait), PillTone::Warn)),
+        (None, Lamp::Remembered | Lamp::RememberedStale) => Some((t(Key::V2AwaitThisCheck), PillTone::Warn)),
+        (None, _) => Some((t(Key::V2PendingGrey), PillTone::Warn)),
+    }
+}
+
+/// The record list's height before it scrolls (the entry picker's).
+const WORK_LIST_H: f32 = 300.0;
+
+impl Win {
+    /// "Choose a record" for a new grant (a relicense's record is its upstream grant's): a sheet of the entry
+    /// picker's kind — the search and the two dates, then the records in one group, newest first (number, name,
+    /// first anchor time); a record that cannot be granted yet says why and cannot be chosen; the one chosen has
+    /// a check. A press on a record chooses it and closes the sheet; cancel or Esc closes it as it was.
+    pub(super) fn grant_work_pick_sheet(&mut self, ctx: &egui::Context) {
+        if !self.ux.u3.work_pick {
+            return;
+        }
+        let lines = self.work_lines();
+        let mut typed = (self.ux.search.get("grant-work").cloned().unwrap_or_default(), self.ux.range.get("grant-work").cloned().unwrap_or_default());
+        let today = (self.shell.clock)();
+        let current = self.typed.g_work.trim().to_string();
+        let (mut chosen, mut close) = (None, false);
+        let out = sheet::show(
+            ctx,
+            sheet::Spec::new("grant-work-pick", tk::SHEET_WIDE),
+            self,
+            |ui, _me| {
+                sheet::title(ui, t(Key::V2PickWorkBtn), "");
+                search_row(ui, "grant-work", &mut typed.0, t(Key::SearchWorks), &mut typed.1, today);
+                let seq = |w: &WorkLine| format!("#{}", w.seq);
+                let kept: Vec<&WorkLine> = lines.iter().filter(|w| matches(&typed.0, &[&w.name, &w.work, &seq(w)]) && crate::when::within(w.row.anchored_at, &typed.1 .0, &typed.1 .1)).collect();
+                if kept.is_empty() {
+                    paint::text(ui, t(if lines.is_empty() { Key::U3NoWorksYet } else { Key::SearchNone }), Type::Note, c(C::Ink3));
+                    return;
+                }
+                zikaron_ui::scroll::nested(ui, egui::ScrollArea::vertical().id_salt("grant-work-list").max_height(WORK_LIST_H), |ui| {
+                    card::form(ui, |ui, f| {
+                        for w in kept {
+                            let why = work_why(w);
+                            let at = w.row.anchored_at.map(crate::when::when).unwrap_or_else(|| t(Key::V2StateLanded).to_string());
+                            let (resp, _) = f.choice(ui, why.is_none(), w.work.eq_ignore_ascii_case(&current), |ui| {
+                                paint::text(ui, &at, Type::Small, c(C::Ink3));
+                                if let Some((s, tone)) = why {
+                                    let _ = mark::pill(ui, s, tone);
+                                }
+                                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                    ui.spacing_mut().item_spacing.x = 8.0;
+                                    paint::text(ui, &seq(w), Type::MonoSmall, c(C::Ink3));
+                                    let room = (ui.available_width() - 8.0).max(0.0);
+                                    let r = paint::line(ui, &w.name, Type::Body, if why.is_some() { c(C::Ink3) } else { c(C::Ink) }, room);
+                                    if w.deleted.is_some() {
+                                        ui.painter().hline(r.rect.x_range(), r.rect.center().y, egui::Stroke::new(1.0_f32, c(C::Ink3)));
+                                    }
+                                });
+                            });
+                            if why.is_none() && resp.clicked() {
+                                chosen = Some((w.work.clone(), w.id.clone()));
+                            }
+                        }
+                    });
+                });
+            },
+            |ui, _me| {
+                if key::key(ui, t(Key::CfBack), Role::Secondary, true).clicked() {
+                    close = true;
+                }
+            },
+        );
+        self.ux.search.insert("grant-work", typed.0);
+        self.ux.range.insert("grant-work", typed.1);
+        if let Some((work, id)) = chosen {
+            self.typed.g_work = work;
+            self.typed.g_history = id;
+            close = true;
+        }
+        if out.esc || close {
+            self.ux.u3.work_pick = false;
         }
     }
 }

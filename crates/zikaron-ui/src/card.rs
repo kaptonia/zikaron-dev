@@ -618,9 +618,28 @@ impl Form {
     /// (its band lights under the pointer, a chevron ends it). Returns the row's response and `trail`'s answer.
     #[allow(clippy::too_many_arguments)]
     pub fn line<R>(&mut self, ui: &mut egui::Ui, lead: Option<Lead>, title: &str, sub: &str, sub_mono: bool, nav: bool, ink: egui::Color32, trail: impl FnOnce(&mut egui::Ui) -> R) -> (egui::Response, R) {
+        self.line_as(ui, lead, title, sub, sub_mono, nav, nav, ink, trail)
+    }
+
+    /// A row to choose from a list: lit and taking a press while it can be chosen (no chevron: it goes nowhere),
+    /// grey and still when it cannot; the check after what `trail` draws when it is the one chosen. Returns the
+    /// row's response.
+    pub fn choice<R>(&mut self, ui: &mut egui::Ui, open: bool, chosen: bool, trail: impl FnOnce(&mut egui::Ui) -> R) -> (egui::Response, R) {
+        let ink = if open { c(C::Ink) } else { c(C::Ink3) };
+        self.line_as(ui, None, "", "", false, open, false, ink, |ui| {
+            if chosen {
+                let (r, _) = ui.allocate_exact_size(vec2(COPY_SIZE, COPY_SIZE), egui::Sense::hover());
+                icons::glyph_at(ui.painter(), Glyph::Check, r.center(), COPY_SIZE, c(C::Accent));
+            }
+            trail(ui)
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn line_as<R>(&mut self, ui: &mut egui::Ui, lead: Option<Lead>, title: &str, sub: &str, sub_mono: bool, open: bool, nav: bool, ink: egui::Color32, trail: impl FnOnce(&mut egui::Ui) -> R) -> (egui::Response, R) {
         let h = self.height(sub);
-        let (rect, resp) = self.place(ui, h, if nav { egui::Sense::click() } else { egui::Sense::hover() });
-        let hot = self.lit(ui, resp.id, rect, &resp, nav);
+        let (rect, resp) = self.place(ui, h, if open { egui::Sense::click() } else { egui::Sense::hover() });
+        let hot = self.lit(ui, resp.id, rect, &resp, open);
         let x0 = rect.left() + self.pad_x();
         let right = rect.right() - self.pad_x();
         let p = ui.painter().clone();
@@ -649,7 +668,9 @@ impl Form {
         let title_room = ((if used.width() > 1.0 { used.left() - 16.0 } else { rx }) - x).max(0.0);
         let tag = self.next_tag.take();
         Self::words(ui, rect, x, title, sub, sub_mono, title_room, ink, tag.as_ref().map(|(s, q)| (s.as_str(), *q)));
-        let resp = if nav { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp };
+        // A row to choose takes the press anywhere on it, its words included (drawn after it, they would take it).
+        let resp = if open && !nav { ui.interact(rect, resp.id.with("choose"), egui::Sense::click()) } else { resp };
+        let resp = if open { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp };
         (resp, r)
     }
 

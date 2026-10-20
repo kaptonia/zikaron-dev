@@ -82,6 +82,12 @@ pub fn keep(ctx: &Context, key: Id, layer: LayerId, dur: f32, to_scale: f32, cen
     });
 }
 
+/// Forget the recorded layers `gone` names (by their `key`): they leave at once, with no copy played back over
+/// what is under them (a cover that hands the whole window to the page it uncovers).
+pub fn forget(ctx: &Context, gone: impl Fn(Id) -> bool) {
+    ctx.data_mut(|d| d.get_temp_mut_or_default::<Vec<(Id, Snap)>>(table_id()).retain(|(k, _)| !gone(*k)));
+}
+
 /// Turn the leaving of a recorded layer (`key`) toward `moved`: the offset it reaches at the end of its leaving
 /// (a wizard step's card leaves toward the side it is left on, known only when the next one comes).
 pub fn steer(ctx: &Context, key: Id, moved: Vec2) {
