@@ -1542,7 +1542,6 @@ impl Win {
             |ui, _me| {
                 // Moving and adopting commit the data (the pen's key); the others open or import.
                 let role = if matches!(d, DirSheet::Migrate | DirSheet::Adopt) { Role::Commit } else { Role::Primary };
-                // Each sheet's key, named as the page always named it.
                 let k = match d {
                     DirSheet::Home => key::Key::new(t(Key::DoOpenHome), role),
                     DirSheet::GrantDir => key::Key::new(t(Key::V2ImportGrantDirGo), role),

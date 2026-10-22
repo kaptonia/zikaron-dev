@@ -231,8 +231,8 @@ pub(super) fn opening(root: &str, pointer: bool, ask: &OpeningAsk) -> Result<Ope
     // Steps that can fail come before the shell is touched, so unreadable settings or an unwritable pointer
     // leave it unchanged. Loading the new settings before writing the pointer would, if the pointer write
     // failed, show the old home with the new home's settings, and the next settings change would be written
-    // into the old home. The on-disk copies are read in one place (settings, endpoints, anchor queue,
-    // first-run checklist); a read failure is reported at once, never treated as an empty copy.
+    // into the old home. The on-disk copies are read in one place (`shell::Hydrated::read`): settings that do not
+    // read refuse the opening; any other file that does not read is shown as a trouble.
     let read = crate::shell::Hydrated::read(&home)?;
     // A home named by an environment variable does not write the pointer (see `home::named_by_env`).
     if pointer && !crate::home::named_by_env(home.root()) {

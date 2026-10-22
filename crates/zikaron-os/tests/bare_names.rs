@@ -69,8 +69,8 @@ fn landed_at(shape: &str) -> &'static str {
     }
 }
 
-/// Each form lands its bytes and says it did: before this, a bare file name landed and was said not to have
-/// (the sync was asked of the empty path).
+/// Each form lands its bytes, says it did and leaves no temporary file. Victim: whoever writes to a bare file name
+/// and is told the write failed though it landed (a sync asked of the empty path).
 #[test]
 fn each_form_lands_and_says_so() {
     let before = std::env::current_dir().expect("this process's directory");

@@ -1,4 +1,4 @@
-//! U5 · Switching seat runs off the window's thread (`Kind::Seat`): the press moves the seat control at once and
+//! Switching seat runs off the window's thread (`Kind::Seat`): the press moves the seat control at once and
 //! leaves the shell where it stands until the switch lands; presses while it runs turn the wish round and the last
 //! one stands; a switch that fails says so and leaves the shell, the register and the control on the seat it was.
 //! Victim: whoever switches between the two seats often, the window stopping a frame or two at each press.
@@ -83,7 +83,7 @@ fn import_words(shell: &mut app::shell::Shell, words: &str, label: &str) -> Stri
     app::register::read().ok().flatten().and_then(|r| r.rows.iter().map(|x| x.id.clone()).find(|id| !before.contains(id))).unwrap_or_else(|| panic!("{label}: no row added"))
 }
 
-/// U5 (taken in, the settings' identity switch) · Switching identity runs off the window's thread too: the press
+/// Switching identity (the settings' identity switch) runs off the window's thread too: the press
 /// opens no home and leaves the shell, the register and the identity where they stand until the switch lands;
 /// identities asked for while it runs are wished and the last one stands; a switch that fails says so and leaves
 /// the register on the identity and seat it named before, and the shell where it was.

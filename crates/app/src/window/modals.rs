@@ -363,8 +363,8 @@ impl Win {
 
     /// New record, one step: the content in a group (its file and size, or "not chosen", or a batch of files
     /// with "clear"; its fingerprint; what it costs; the ledger's place under details), its name, optionally
-    /// for whom and a linked repository (two folds with their summaries), what cannot be undone, and the key that
-    /// writes it at the foot ("choose file" at the bottom left, or a file dropped on the sheet).
+    /// for whom and a linked repository (two folds with their summaries), and the key that writes it at the foot
+    /// ("choose file" at the bottom left, or a file dropped on the sheet).
     fn new_anchor_sheet(&mut self, ctx: &egui::Context, now: f64) {
         if self.ux.u3.new_anchor.is_none() {
             return;
@@ -574,9 +574,9 @@ impl Win {
         }
     }
 
-    /// Put on chain: the first n entries, the gas estimate and the gas cap (estimating until they land), then
-    /// what cannot be undone. Pressing runs "sign, broadcast" in the key; the sheet closes once the broadcast
-    /// lands. A failed estimate turns the sheet to "cannot estimate gas" with a retry.
+    /// Put on chain: the first n entries, the gas estimate and the gas cap (estimating until they land). Pressing
+    /// runs "sign, broadcast" in the key; the sheet closes once the broadcast lands. A failed estimate turns the
+    /// sheet to "cannot estimate gas" with a retry.
     fn send_sheet(&mut self, ctx: &egui::Context, count: usize, failed: Option<(String, String, String)>, now: f64) {
         // Pressed and landed: close (the broadcast clears the estimate; a failure is shown on the key).
         if let Some(stamp) = self.ux.u3.sending {
@@ -626,7 +626,7 @@ impl Win {
             self,
             |ui, _me| match &failed {
                 None => {
-                    // The batch, its estimate and its cap, then what cannot be undone.
+                    // The batch, its estimate and its cap.
                     sheet::title(ui, t(Key::U3SendTitle), "");
                     let cap_say = fill1(Key::SetGasSay, &cap);
                     let gas_say = gas.map(|g| g.to_string()).unwrap_or_default();
@@ -722,7 +722,7 @@ impl Win {
             self,
             |ui, _me| {
                 // The figures (the details last: the gas and the batch's transactions, the first sent and each
-                // resend, one a line), then what the resend does.
+                // resend, one a line).
                 sheet::title(ui, t(if unheld { Key::U3ResendKey } else { Key::U3BumpTitle }), "");
                 let at_gas = |per_gas: u64| fill1(Key::SetGasSay, &eth_cap(u128::from(per_gas) * u128::from(stuck.sent.gas_limit)));
                 card::form(ui, |ui, f| {
@@ -861,7 +861,7 @@ impl Win {
     }
 
     /// Revoke a grant: the record, its original validity and the grantee, the optional ruling file fingerprint
-    /// as a field of its own, and that it cannot be undone.
+    /// as a field of its own.
     fn revoke_sheet(&mut self, ctx: &egui::Context, grant: &str, now: f64) {
         let g = self.shell.grants.as_ref().and_then(|x| x.iter().find(|r| r.id == grant).cloned());
         let record = g.as_ref().map(|x| self.work_label(&x.work)).unwrap_or_default();

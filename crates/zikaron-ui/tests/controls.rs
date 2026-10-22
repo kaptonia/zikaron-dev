@@ -230,8 +230,8 @@ fn the_spacing_and_sizes_are_the_designed_ones() {
     assert_eq!(k::RAIL_W, 216.0, "the rail");
 }
 
-/// Motion: fast 120, middle 200, slow 300 ms as designed, each at the kit's pace (0.7 of those, the owner's
-/// ruling); loops of 1.2 s, which the pace does not touch.
+/// Motion: fast 120, middle 200, slow 300 ms as designed, each at the kit's pace (0.7 of those); loops of 1.2 s,
+/// which the pace does not touch.
 #[test]
 fn the_timings_are_the_designed_ones() {
     use zikaron_ui::tokens as k;

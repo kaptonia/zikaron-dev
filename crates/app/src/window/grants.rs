@@ -37,8 +37,7 @@ fn month_short(m: u32) -> &'static str {
     t(MONTHS[(m.clamp(1, 12) - 1) as usize])
 }
 
-/// A validity window in words: "YYYY-MM-DD to YYYY-MM-DD" (in Chinese the word for "to" between), as the pages
-/// have always written it.
+/// A validity window in words: "YYYY-MM-DD to YYYY-MM-DD" (in Chinese the word for "to" between).
 pub(super) fn span_say(w: Option<(u64, u64)>) -> String {
     super::faces::window_long(w)
 }
@@ -318,7 +317,7 @@ impl Win {
     }
 
     /// Open a sheet that takes a folder over a grant's page: the folder last chosen for it, else this home's
-    /// kits folder as before (the documents folder with no home open; the upstream folder starts at the one saved
+    /// kits folder (the documents folder with no home open; the upstream folder starts at the one saved
     /// for that grant, or none).
     pub(super) fn out_open(&mut self, s: OutSheet) {
         let kits = self.shell.home.as_ref().map(|h| h.dir(crate::home::Slot::Kits).display().to_string()).unwrap_or_else(|| self.shell.documents.clone());
@@ -362,7 +361,7 @@ impl Win {
             // The grant file is written from the entry's bytes, read by its page.
             OutSheet::GrantFile(id) => self.opened.as_ref().is_some_and(|d| d.id == *id) && Self::landing_ok(&at),
             OutSheet::Badge(_) => Self::landing_ok(&at),
-            // An empty folder removes the saved one, as before.
+            // An empty folder removes the saved one.
             OutSheet::Upstream(_) => true,
         };
         let phase = kind.map(|k| self.phase_of(k)).unwrap_or(Phase::Idle);
@@ -393,7 +392,6 @@ impl Win {
                 }
             },
             |ui, _me| {
-                // Each sheet's key, named as the page always named it.
                 let k = match &s {
                     OutSheet::GrantFile(_) => key::Key::new(t(Key::V2ExportGrantFile), Role::Primary),
                     OutSheet::Badge(_) => key::Key::new(t(Key::V2MakeBadge), Role::Primary),

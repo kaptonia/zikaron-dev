@@ -199,7 +199,7 @@ impl Radius {
 }
 
 /// The pace of every animation: each duration in the kit (and any the window gives) is its base time times this, so
-/// all of them quicken or slow together from here (the owner's ruling: 0.7 of the times first set). Loop periods
+/// all of them quicken or slow together from here (0.7: every designed time is played at seven tenths). Loop periods
 /// (`CYCLE` and the spinners), how long a toast stays and how long a key shows its result are not durations of a
 /// change and keep their times.
 pub const PACE: f32 = 0.7;

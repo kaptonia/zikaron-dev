@@ -58,7 +58,7 @@ fn new_content_is_first_seen_at_its_own_size() {
     let settled = f.run(0.5, |ui| entered(ui, 2, 100.0));
     assert!(tall > short + 150.0, "the new page's card is its own height at once, not the old one's: {tall} then {short}");
     assert!((short - settled).abs() < 0.5, "and stays there: {short} then {settled}");
-    // The same content changing size eases, as it always has.
+    // The same content changing size eases.
     let grown = f.run(0.0, |ui| entered(ui, 2, 200.0));
     let _ = f.run(0.0, |ui| entered(ui, 2, 200.0));
     assert!(grown < settled + 100.0 - 0.5, "the same page's card eases to its new height: {settled} toward {grown}");

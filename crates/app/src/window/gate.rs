@@ -405,8 +405,8 @@ mod tests {
         }
     }
 
-    /// With the key file chosen, the password typed key by key stays in the password field (its first key no
-    /// longer hands focus over); Enter, or Tab, then moves focus to the passcode row.
+    /// With the key file chosen, the password typed key by key stays in the password field (no key of it hands
+    /// focus over); Enter, or Tab, then moves focus to the passcode row.
     #[test]
     fn the_key_file_password_typed_keeps_the_focus_until_enter_or_tab() {
         for k in [egui::Key::Enter, egui::Key::Tab] {

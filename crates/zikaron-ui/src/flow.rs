@@ -66,7 +66,7 @@ pub fn watch_moving<R>(ctx: &Context, f: impl FnOnce() -> R) -> (R, bool) {
 }
 
 /// A block whose height follows its content over [`tokens::SLOW`] (see the file header). `add` draws the block
-/// in `ui` itself, as it always has (so whatever it holds keeps its identity), and answers its laid-out
+/// in `ui` itself (so whatever it holds keeps its identity), and answers its laid-out
 /// rectangle; the block then takes the height shown: what lies past it is clipped, and what comes after it in
 /// `ui` is placed from the height shown (the cursor moved back up, or on down). A block whose content is itself
 /// changing height this pass (an inner block easing, a fold) takes its content's height as it is, so the two move

@@ -1,5 +1,5 @@
 //! **The date field** (the "from · to" pair of a search row): one field in the single-line field's frame
-//! (38 high, corner 8, 12 inside left and right) that opens a calendar on a floating card.
+//! (38 high, corner 10, 12 inside left and right) that opens a calendar on a floating card.
 //!
 //! The card is drawn the way the menus are ([`crate::menu`]): a floating surface (menu corner, menu shadow),
 //! 5 inside, growing from its anchor corner from 0.97 and rising 4 over 120 ms, played backwards when it

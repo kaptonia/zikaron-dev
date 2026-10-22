@@ -1,8 +1,9 @@
-//! Keys: one shape (34 high, 14 text, 16 across, a capsule), five roles, and the four phases of a long action.
+//! Keys: one shape (34 high, 14 text, 16 across, a capsule), six roles, and the four phases of a long action.
 //!
 //! Color tells the role: blue primary (at most one per screen, `page::Page`), white secondary, a pale cinnabar
 //! wash with cinnabar words for keys that lead to a confirmation card (`page::Guide`), solid cinnabar for the key
-//! that commits on a confirmation card (`page::Pen`), and a plain key without a frame. There are no sizes: a key
+//! that commits on a confirmation card (`page::Pen`), a plain key without a frame, and the bad ink on its pale wash
+//! for the last step of a deletion (`page::Erase`). There are no sizes: a key
 //! is as wide as its words.
 //!
 //! A white key sits a hair above its card: a half-point edge and a one-point shadow; under the pointer it rises
@@ -45,7 +46,7 @@ pub struct Face {
     pub fill: Color32,
     pub hover: Color32,
     pub press: Color32,
-    /// The half-point edge (white and guide keys; solid keys take a dark rim of their own).
+    /// The half-point edge (white, guide and deletion keys; solid keys take a dark rim of their own).
     pub line: Color32,
     pub text: Color32,
     pub hover_text: Color32,

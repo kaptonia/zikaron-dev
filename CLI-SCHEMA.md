@@ -20,7 +20,10 @@ not repeated here.
 3. **There is only one way to write a file.** The `--out` path writes a temporary sibling in full,
    fsyncs it and renames it into place; **if a file with that name already exists the write is
    refused and not one byte is overwritten**, and when the write cannot complete nothing is left at
-   that path. A file is written only after the verdict says it may be.
+   that path. A file is written only after the verdict says it may be. `kit-verify --originals-to` writes the
+   originals into a folder that is there by the one way the desktop takes them (section 6): laid out in a staging
+   folder inside it, checked, then placed without replacing anything; a name already there refuses them all and
+   nothing is written.
 4. **Misuse writes zero bytes to stdout.** "Are there any bytes?" is a one-bit signal for the
    caller: bytes mean an answer, no bytes mean misuse, and the two can be told apart without parsing.
 
@@ -239,7 +242,7 @@ addition, `scan` passes through the core's no-label answer when the basis is mal
 | | 1 | shell | with `--ledger`, the refusals of reading a home (section 12) |
 | | 4 | shell | `E_ENDPOINTS_DISAGREE` + `detail`, `sources`; or `E_SCAN` + `detail`, `token` (`E_NO_BASIS`: the home's settings name no chain or no registry); or, with `--ledger`, `E_UNREACHABLE` + `detail` when no endpoint of the home's chain answers its head |
 | `audit` | 0 / 3 / 1 | base | the core's fifteen-item, sixteen-member report, or no label |
-| | 1 | shell | what `--ledger` names does not read: `E_LEDGER` + `detail`, `names?`, `count?` (a ledger folder the storage layer refuses, or a mirror bundle whose manifest is not `desk-mirror` version 1, `detail` its `kind/version`); `E_KIT` + `state`, `detail?` (a record package the kit law judges invalid, or one in one file that does not read as one, `state` the layout's code); a home's ledger, the refusals of reading a home (section 12); without `--root`, `E_TIP_ABSENT` (no root in what was read) or `E_TIP_FORKED` (more than one root); `E_FRAGMENT` (the fragment cannot be assembled into an audit input); with `--out`, `E_LEDGER` + `detail` (`E_OCCUPIED` / `E_IO`), `path` when the input cannot land |
+| | 1 | shell | what `--ledger` names does not read: `E_LEDGER` + `detail`, `names?`, `count?` (a ledger folder the storage layer refuses, or a mirror bundle whose manifest is not `desk-mirror` version 1, `detail` its `kind/version`); `E_KIT` + `state`, `detail?` (a record package the kit law judges invalid, or one in one file that does not read as one, `state` the layout's code); a record package sealed to one recipient, `E_ADDRESSED` + `token` `ADDRESSED_ELSEWHERE`, `detail` (empty); a home's ledger, the refusals of reading a home (section 12); without `--root`, `E_TIP_ABSENT` (no root in what was read) or `E_TIP_FORKED` (more than one root); `E_FRAGMENT` (the fragment cannot be assembled into an audit input); with `--out`, `E_LEDGER` + `detail` (`E_OCCUPIED` / `E_IO`), `path` when the input cannot land |
 | `check-grant` | 0 / 3 / 1 | base | the kit layer's six-check verdict (`verdict`, `checks`, `failed`, `basis`) |
 | | 1 | shell | `E_GRANT_FILE` + `token`, `detail?`, `entryId?` (a grant file that does not open); with `--ledger` or `--input`, the shell refusals of `audit` before `--out` |
 | `chain-check` | 0 / 3 / 1 | base | the kit layer's chain check (`verdict`, `hops`, `links`, `token`, `failing`) |
@@ -566,7 +569,7 @@ cases apart: **"left to the law" is a refusal by the law, "misuse" is a refusal 
 | `--hash` | hex32, repeatable | at least one of this and `--calldata`; both absent is misuse; with `--calldata` given, not used |
 | `--calldata` | hex bytes | as above; when given, it is the transaction's data and takes precedence over `--hash` |
 | `--wait-secs` | integer, seconds to wait for inclusion | ninety seconds |
-| `--proxy` | `system`, `none`, or one proxy address `scheme://[user[:password]@]host:port` with the scheme `http` (CONNECT), `https` (TLS to the proxy, its certificate verified, then CONNECT), `socks5` (or `socks5h`) or `socks4` (or `socks4a`: a user id, no password); credentials percent-encoded, each at most 255 bytes, given to the proxy that asks for them (HTTP Basic, SOCKS5 user name and password, the SOCKS4 user id) and never echoed; host names are resolved by the proxy. Loopback nodes are always reached straight; with a proxy address, so are private (`10/8`, `172.16/12`, `192.168/16`), link-local (`169.254/16`, `fe80::/10`) and `.local` nodes. A password written here is visible to other processes of this machine while the command runs | `system`: the terminal's proxy variables when any of `https_proxy`, `http_proxy`, `all_proxy` (lower or upper case) is set, with `no_proxy`, as programs in a terminal take them, on every system; else the system's proxy settings: the configuration script at the address the system names (PAC: fetched directly, over `https` from anywhere or over `http` from this machine only (a literal loopback address or `localhost`; an `http` address elsewhere, or a redirect to one, is not fetched), at most 1 MiB within 5 s; run in a sandbox with an 8 MiB memory limit, a 512 KiB stack limit and a 2 s limit per run, its name lookups 1 s each within it), then the explicit proxies (macOS the network configuration; Windows the user's settings as the system answers them, the machine's under the per-machine policy; Linux KDE's or GSettings' stored settings, else `https_proxy`, `http_proxy`, `all_proxy`, `no_proxy`); automatic discovery (WPAD) is not read, a system with only that switched on counting as nothing set; a script that cannot be used leaves the explicit proxies, and its trouble has a name (`PAC_UNFETCHED`, `PAC_SCHEME`, `PAC_REMOTE_HTTP`, `PAC_TOO_LARGE`, `PAC_FAILED`, `PAC_TIMEOUT`, `PAC_MEMORY`, `PAC_NO_FUNCTION`, `PAC_ANSWER`); the ways a script names are tried in order until one opens (`SOCKS`: SOCKS5, then SOCKS4). Any other word or address is misuse, never echoed; with `scan --fixture`, misuse (a recording reaches no node); `kit-export` takes it only with `--to`. A home's road (`scan --ledger`, `kit-export --to --ledger`, `anchor --ledger`) without it takes this machine's proxy setting instead, as the desktop takes it: following the system there means the system's settings alone, never the terminal's proxy variables |
+| `--proxy` | `system`, `none`, or one proxy address `scheme://[user[:password]@]host:port` with the scheme `http` (CONNECT), `https` (TLS to the proxy, its certificate verified, then CONNECT), `socks5` (or `socks5h`) or `socks4` (or `socks4a`: a user id, no password); credentials percent-encoded, each at most 255 bytes, given to the proxy that asks for them (HTTP Basic, SOCKS5 user name and password, the SOCKS4 user id) and never echoed; host names are resolved by the proxy. Loopback nodes are always reached straight; with a proxy address, so are private (`10/8`, `172.16/12`, `192.168/16`), link-local (`169.254/16`, `fe80::/10`) and `.local` nodes. A password written here is visible to other processes of this machine while the command runs | `system`: the terminal's proxy variables when any of `https_proxy`, `http_proxy`, `all_proxy` (lower or upper case) is set, with `no_proxy`, as programs in a terminal take them, on every system; else the system's proxy settings: the configuration script at the address the system names (PAC: fetched directly, over `https` from anywhere or over `http` from this machine only (a literal loopback address or `localhost`; an `http` address elsewhere, or a redirect to one, is not fetched), at most 1 MiB within 5 s; run in a sandbox with an 8 MiB memory limit, a 512 KiB stack limit and a 2 s limit per run, its name lookups 1 s each within it), then the explicit proxies (macOS the network configuration; Windows the user's settings as the system answers them, the machine's under the per-machine policy; Linux KDE's or GSettings' stored settings, else `https_proxy`, `http_proxy`, `all_proxy`, `no_proxy`); automatic discovery (WPAD) is not read, a system with only that switched on counting as nothing set; a script that cannot be used leaves the explicit proxies, and its trouble has a name (`PAC_UNFETCHED`, `PAC_SCHEME`, `PAC_REMOTE_HTTP`, `PAC_TOO_LARGE`, `PAC_FAILED`, `PAC_TIMEOUT`, `PAC_MEMORY`, `PAC_NO_FUNCTION`, `PAC_ANSWER`); the ways a script names are tried in order until one opens (`SOCKS`: SOCKS5, then SOCKS4). Any other word or address is misuse, never echoed; with `scan --fixture`, misuse (a recording reaches no node); `kit-export` takes it only with `--to`. A home's road (`scan --ledger` reading the home's own nodes, with neither `--endpoint` nor `--fixture`; `kit-export --to --ledger`; `anchor --ledger`) without it takes this machine's proxy setting instead, as the desktop takes it: following the system there means the system's settings alone, never the terminal's proxy variables |
 | `--fixture` | path to a recording file, repeatable (one recording counts as one source) | either this or `--endpoint`; both or neither is misuse |
 | `--basis` | path to a law §9.4 basis file | needed when taking the `--endpoint` path unless `--ledger` names a home (neither is misuse, named `--basis --ledger`); with `--fixture`, misuse (the recording's basis is used) |
 | `--adoptions` | path to an adoptions file (`{"adoptions":[{"chainId":<int>,"tx":<hex32>},…]}`) | adoption evidence is not consulted; with `--fixture`, misuse (the recording's adoptions are used) |
@@ -634,8 +637,9 @@ does (section 11), for `--home`, the credential, the machine settings `anchor --
 and handed-off ledgers and `anchor`'s record of what it sent: on macOS and Linux under `HOME`, on Windows under the
 user's profile. Under `--proxy system` (the default) it follows the terminal's proxy variables (`https_proxy`,
 `http_proxy`, `all_proxy`, `no_proxy`, lower or upper case; section 8, `--proxy`); a home's road without `--proxy`
-(`scan --ledger`, `kit-export --to --ledger`, `anchor --ledger`) goes by this machine's proxy setting instead, as the
-desktop does, and reads none of them. The locale variables choose the
+(`scan --ledger` reading the home's own nodes, `kit-export --to --ledger`, `anchor --ledger`) goes by this machine's
+proxy setting instead, as the desktop does, and reads none of them; `scan --ledger` given `--endpoint` follows
+`--proxy system` as any `scan` does. The locale variables choose the
 language of the lines for people (section 3).
 
 | Variable | Effect | Default |
@@ -757,7 +761,10 @@ the desktop not asked), and the desktop's refusals of a sealed package are `E_DE
 `E_ADDRESSED` (section 4) as `token`.
 `kit-verify` is the desktop's verification of the package at `--kit` on its own networks (a package sealed to one
 of its identities is opened with it first), answered as section 6 answers it, the originals taken out into
-`--originals-to` when given.
+`--originals-to` when given. Its refusals of taking the originals out or of opening a sealed package are
+`E_DESKTOP_REFUSED`, `token` the desktop's code (`EXTRACT_PATH`, `EXTRACT_NOTHING`, `EXTRACT_CLASH`,
+`EXTRACT_NOT_A_FOLDER`, `EXTRACT_EXISTS`, `EXTRACT_LINK`, `EXTRACT_CHANGED`, `EXTRACT_LANDING`, `EXTRACT_KIT`; or the
+codes of `E_ADDRESSED`, section 4) and `detail` its evidence; a package the kit law refuses is `E_KIT` as in section 6.
 
 ## 12 · With a credential: the credential, the switches, the adopted ledgers
 
@@ -963,7 +970,10 @@ ledger.
 `{"answer":<that value>,"exit":<its exit code>}`. Two kinds are marked `isError`: the process exiting 2 (misuse:
 stdout is empty, so the text is its two stderr lines), and a parameter `mcp` refuses itself before anything runs (a
 path not whole, a parameter not the tool's, a value of the wrong kind, a write without `home` (but `kit-verify`), a
-parameter the desktop's way does not take), said in the same two lines (`E_ARGS --home` and the sentence; a parameter not the tool's by its place and length), with `exit` 2. Exits
+parameter the desktop's way does not take), said in the same two lines (`E_ARGS` and the parameter's flag, `--home` for a write without one, then the sentence; a
+parameter not the tool's by its place and length), with `exit` 2. A third is no answer at all: the process ended without
+an exit code of section 2 (a crash, a signal) or could not be started; its text is stderr (or `E_ARGS` and the sentence
+that the program could not be started), and it carries no `structuredContent`. Exits
 0, 1, 3 and 4 are answers, never errors (law §9.4). A tool name not in the table is answered `-32602`.
 
 **Cancelling.** A read being done is stopped and not answered; a write being done is not stopped (a send cut halfway

@@ -163,8 +163,7 @@ impl Win {
         });
     }
 
-    /// Open "save snapshot": the folder last chosen for it, else the home's kits folder (where snapshots have
-    /// always gone), else the documents folder.
+    /// Open "save snapshot": the folder last chosen for it, else the home's kits folder, else the documents folder.
     pub(super) fn snapshot_open(&mut self) {
         if self.typed.dg_snapshot.trim().is_empty() {
             self.typed.dg_snapshot = match self.shell.home.as_ref() {

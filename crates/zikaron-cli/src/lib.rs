@@ -1,4 +1,4 @@
-//! The `zikaron` command line: twenty-six verbs; with `--home`, ten of them are done by the running desktop
+//! The `zikaron` command line: twenty-six verbs; with `--home`, eleven of them are done by the running desktop
 //! through its local IPC endpoint ([`desk`]); `mcp` speaks the Model Context Protocol and runs the others in
 //! processes of their own ([`mcp`]).
 //!

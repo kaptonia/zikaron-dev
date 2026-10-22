@@ -401,7 +401,7 @@ pub enum Show<'a> {
     Pill(&'a str, crate::palette::Tone),
 }
 
-/// What a row holds on its right (the rows the pages laid before the row kinds; kept for them).
+/// What a row holds at its right end.
 pub enum Value<'a> {
     None,
     Text(&'a str),
@@ -1112,8 +1112,8 @@ impl Form {
         }
     }
 
-    /// An overview head without its icon tile, for the pages not yet laid with [`Form::summary`]: the name, a line
-    /// under it after a mark, at most one key. Returns that key's response.
+    /// An overview head without its icon tile: the name, a line under it after a mark, at most one key. Returns that
+    /// key's response.
     pub fn head(&mut self, ui: &mut egui::Ui, title: &str, sub: &str, mark: Option<Mark>, k: Option<crate::button::Key>) -> Option<egui::Response> {
         let line = mark.map(|m| (m, sub));
         let mut resp = None;
@@ -1129,8 +1129,8 @@ impl Form {
         resp
     }
 
-    /// A field row whose control takes several lines, for the pages not yet laid with label-above fields: the
-    /// name level with the control's first line, the row as tall as the control. Returns `add`'s answer.
+    /// A field row whose control takes several lines: the name level with the control's first line, the row as tall
+    /// as the control. Returns `add`'s answer.
     pub fn field_tall<R>(&mut self, ui: &mut egui::Ui, label: &str, optional: Option<&str>, add: impl FnOnce(&mut egui::Ui, f32) -> R) -> R {
         let label_g = paint::galley(ui, label, Type::Body, c(C::Ink));
         let opt_w = optional.map(|o| tokens::S1 + paint::galley(ui, o, Type::Small, c(C::Ink3)).size().x).unwrap_or(0.0);
@@ -1168,8 +1168,7 @@ impl Form {
         resp
     }
 
-    /// A field row (label at the left in the card's label column, the control after it): kept for the pages laid
-    /// before the label-above fields ([`crate::fields`]).
+    /// A field row: the label at the left in the card's label column, the control after it.
     pub fn field<R>(&mut self, ui: &mut egui::Ui, label: &str, optional: Option<&str>, check: Option<(&str, bool)>, add: impl FnOnce(&mut egui::Ui, f32) -> R) -> R {
         let label_g = paint::galley(ui, label, Type::Body, c(C::Ink));
         let opt_w = optional.map(|o| tokens::S1 + paint::galley(ui, o, Type::Small, c(C::Ink3)).size().x).unwrap_or(0.0);
@@ -1251,7 +1250,7 @@ impl Form {
         self.free(ui, |ui| paint::text(ui, s, Type::Small, c(C::Ink2)));
     }
 
-    /// A settings-home row: kept for the alerts' large rows (72 high, title and small note, chevron).
+    /// A large navigation row (72 high, title and small note, chevron).
     pub fn nav_big(&mut self, ui: &mut egui::Ui, title: &str, note: &str) -> egui::Response {
         self.big(ui, None, title, note, Some(""))
     }

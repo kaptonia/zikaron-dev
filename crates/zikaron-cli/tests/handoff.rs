@@ -202,7 +202,7 @@ fn scan_takes_its_basis_from_a_home_or_a_file_never_both() {
 
 /// `scan --ledger <a home's ledger>` with neither `--endpoint` nor `--fixture` takes the home's own nodes, opening the
 /// home with the credential as a send does: without the credential it is refused by the credential's reason, never
-/// misuse. A plain folder with neither is misuse as before, and `--fixture` beside `--ledger` still is.
+/// misuse. A plain folder with neither is misuse, and so is `--fixture` beside `--ledger`.
 #[test]
 fn a_scan_of_a_home_with_neither_takes_its_nodes_through_the_credential() {
     let w = scratch("scan-home");

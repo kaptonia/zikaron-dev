@@ -203,10 +203,9 @@ impl Hydrated {
         // between would be taken as seen and never read.
         let seen_entries = entry_files(home);
         let seen_queue = queue_mark(home);
-        // The two local bookkeeping files do not block opening when malformed, but the problem is shown.
-        // Reading them as empty silently would lose queued entries; refusing to open would block the
-        // broken-chain recovery path, which needs the home open. So the fault goes to the screen and an empty
-        // value is used.
+        // A malformed anchor queue does not block opening, but the problem is shown. Reading it as empty silently
+        // would lose queued entries; refusing to open would block the broken-chain recovery path, which needs the
+        // home open. So the fault goes to the screen and an empty queue is used.
         let queue = match crate::queue::Queue::read(home) {
             Ok(q) => q,
             Err(f) => {
@@ -1507,8 +1506,6 @@ impl Shell {
 
     /// The only place the shell's copies of disk state are loaded; opening a home comes here: read off the
     /// window's thread or on it ([`Hydrated::read`]), then installed ([`Shell::install`]).
-    ///
-    /// Endpoints and the anchor queue live on disk with a copy in the shell for the frame. A malformed file is reported at once instead of being read as empty.
     pub fn hydrate(&mut self, home: &crate::home::Home) -> Result<(), Fault> {
         let read = Hydrated::read(home)?;
         self.install(read);

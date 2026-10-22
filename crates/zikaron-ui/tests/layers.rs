@@ -989,7 +989,7 @@ fn a_passcode_row_under_a_sheet_takes_no_keys() {
     assert_eq!(typed(true), 0, "under the sheet the row takes nothing");
 }
 
-/// U4 · A field or row in a sheet named as the sheet is titled draws no name: the title already names it (the
+/// A field or row in a sheet named as the sheet is titled draws no name: the title already names it (the
 /// "Published address" sheet's one field). Victim: whoever reads the sheet, one word read twice and a line of
 /// nothing. A field named otherwise keeps its name, and outside a sheet the same name is drawn: the judgement
 /// is the library's one place (`sheet::echoes_title`), asked by fields and rows alike.

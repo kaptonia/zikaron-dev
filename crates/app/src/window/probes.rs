@@ -1506,8 +1506,7 @@ pub enum Scene {
     Sheet(Place, SheetScene),
     Gate(GateScene),
     IdMenu,
-    /// A page or a sheet in a state of its data that the plain readings do not reach (the places a small blue
-    /// link became a plain key).
+    /// A page or a sheet in a state of its data that the plain readings do not reach.
     Data(Place, DataScene),
 }
 
