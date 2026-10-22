@@ -81,9 +81,10 @@ const ROWS: [Row; 11] = [
     Row { flags: &[], make: |_| Action::SendBatch { count: 0 } },
     // `--as`: the form's word as given (`folder`, `file`; none is one file), judged by the action layer. `--to` and
     // `--to-key`: the recipient a one-file package is sealed to (an address, its key found on this desktop's networks;
-    // or a key), judged by the action layer too, as the export sheet's two fields are.
+    // or a key), judged by the action layer too, as the export sheet's two fields are. The chosen records' originals
+    // go in as the export page takes them unless `--originals none` (the word judged by the action layer too).
     Row {
-        flags: &["entry", "note", "out", "as", "to", "to-key"],
+        flags: &["entry", "note", "out", "as", "to", "to-key", "originals"],
         make: |q| Action::ExportKit {
             from: String::new(),
             to: String::new(),
@@ -94,6 +95,7 @@ const ROWS: [Row; 11] = [
             form: one(q, "as"),
             recipient: one(q, "to"),
             recipient_key: one(q, "to-key"),
+            originals: one(q, "originals"),
         },
     },
     // Verifying a record package on this desktop's networks, as the verify page does (a package addressed to one of
@@ -490,9 +492,17 @@ impl Shell {
             Doing::Kit { answer, serial } => {
                 let Some(o) = mine(serial) else { return Some(Doing::Kit { answer, serial }) };
                 let reply = match &o.result {
-                    Ok(Done::Kit { path, kit_id, entries, files, dropped, .. }) => {
-                        Reply::Kit { kit_id: kit_id.clone(), path: path.clone(), entries: *entries as u64, files: *files as u64, dropped: dropped.clone() }
-                    }
+                    Ok(Done::Kit { path, kit_id, entries, files, dropped, originals, left_out, unreadable, .. }) => Reply::Kit {
+                        kit_id: kit_id.clone(),
+                        path: path.clone(),
+                        entries: *entries as u64,
+                        files: *files as u64,
+                        dropped: dropped.clone(),
+                        originals: originals.clone(),
+                        // What did not go in, as the command line's own export names it: no longer the bytes
+                        // recorded, or not there to read.
+                        left_out: left_out.iter().cloned().chain(unreadable.iter().map(|(p, _)| p.clone())).collect(),
+                    },
                     Ok(_) => unexpected(Kind::Kit),
                     Err(f) => refused(f),
                 };

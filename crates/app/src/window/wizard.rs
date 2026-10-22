@@ -337,7 +337,7 @@ impl Win {
                     self.vault_or(VaultSite::Wizard, r, now);
                 }
                 if busy {
-                    sheet::busy_note(ui, t(Key::VaultBusy), false);
+                    sheet::busy_note(ui, t(Key::VaultBusy), true);
                 }
             }
             Step::Key => match fresh {

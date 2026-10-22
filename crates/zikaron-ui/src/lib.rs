@@ -36,6 +36,7 @@ pub mod inform;
 pub mod icons;
 pub mod input;
 pub mod kv;
+pub mod lasts;
 pub mod layer;
 pub mod mark;
 pub mod material;

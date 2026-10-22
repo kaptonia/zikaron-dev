@@ -4650,6 +4650,7 @@
     "crates/zikaron-ui/src/inform.rs",
     "crates/zikaron-ui/src/input.rs",
     "crates/zikaron-ui/src/kv.rs",
+    "crates/zikaron-ui/src/lasts.rs",
     "crates/zikaron-ui/src/layer.rs",
     "crates/zikaron-ui/src/lib.rs",
     "crates/zikaron-ui/src/mark.rs",
@@ -4895,6 +4896,10 @@
     },
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
+     "name": "the_busy_words_under_the_passcode_cells_are_centred_under_them"
+    },
+    {
+     "path": "crates/app/tests/checks_more/window_habits.rs",
      "name": "the_language_switches_on_the_wizard_and_the_gate_keeps_it"
     },
     {
@@ -4952,6 +4957,14 @@
     {
      "path": "crates/zikaron-ui/src/kv.rs",
      "name": "the_key_column_fits_its_widest_key_between_its_bounds"
+    },
+    {
+     "path": "crates/zikaron-ui/src/lasts.rs",
+     "name": "a_number_keeps_its_digits_without_leading_zeros"
+    },
+    {
+     "path": "crates/zikaron-ui/src/lasts.rs",
+     "name": "the_parts_add_up_each_to_its_own_most"
     },
     {
      "path": "crates/zikaron-ui/src/material.rs",
@@ -5439,6 +5452,10 @@
     },
     {
      "path": "crates/zikaron-ui/tests/reveal.rs",
+     "name": "a_fold_opened_over_a_bottom_bar_ends_above_the_bar"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/reveal.rs",
      "name": "a_row_that_comes_while_the_window_scrolls_on_its_own_still_opens_in"
     },
     {
@@ -5590,6 +5607,10 @@
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
      "name": "pages_with_drop_zones_say_so_and_the_window_stands_aside"
+    },
+    {
+     "path": "crates/app/tests/checks_more/window_habits.rs",
+     "name": "the_busy_words_under_the_passcode_cells_are_centred_under_them"
     },
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",

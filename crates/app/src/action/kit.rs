@@ -25,6 +25,7 @@ pub(super) fn export_kit(
     form: &str,
     recipient: &str,
     recipient_key: &str,
+    originals: &str,
 ) -> Result<Spawned, crate::fault::Fault> {
     // The form's word: `folder`, `file`, or none for one file; any other word is refused by name.
     let form = match form.trim() {
@@ -34,6 +35,12 @@ pub(super) fn export_kit(
     // Whom the package is sealed to, judged before any background work: at most one of the two, each in its form
     // (`addressedx::to_of`); only the one-file form is sealed, judged where the package is written (`kitx::export_to`).
     let sealed_to = crate::addressedx::to_of(recipient, recipient_key)?;
+    // The originals' word: none, the chosen records' originals go in; `none`, they do not; any other is refused.
+    let with_originals = match originals.trim() {
+        "" => true,
+        "none" => false,
+        w => return Err(crate::fault::Fault::known(crate::fault::Known::KitOriginalsWord, w.to_string())),
+    };
     // An address's key is looked for on the main network and every read-only network.
     let main = crate::addressedx::Main {
         chain: shell.settings.chain_id,
@@ -82,6 +89,21 @@ pub(super) fn export_kit(
         // line (`kit-out`) does not use this path and refuses strictly by name.
         let originals = crate::kitx::Originals::of(&crate::kitx::choose(&home, &pick)?);
         let (mut kept, mut left_out, mut unreadable) = (Vec::new(), Vec::new(), Vec::new());
+        // Asked for the chosen records' originals: those the export page lists for this choice come first (one no
+        // longer in place is left out as unreadable); every one is judged by its digest below as the page's are.
+        let mut attachments = attachments;
+        if with_originals {
+            let mut listed = Vec::new();
+            for o in crate::kitx::originals(&home, &pick)? {
+                if !o.present {
+                    unreadable.push((o.path.clone(), crate::fault::Fault::known(crate::fault::Known::FileMissing, o.path)));
+                } else if !listed.contains(&o.path) && !attachments.contains(&o.path) {
+                    listed.push(o.path);
+                }
+            }
+            listed.append(&mut attachments);
+            attachments = listed;
+        }
         crate::task::stage_at(Kind::Kit, 1);
         let total = attachments.len() as u64;
         for (i, p) in attachments.into_iter().enumerate() {
@@ -114,6 +136,7 @@ pub(super) fn export_kit(
             files: made.files,
             pulled: made.pulled,
             dropped: made.dropped,
+            originals: made.originals,
             left_out,
             unreadable,
             facts: made.facts,

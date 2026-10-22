@@ -112,6 +112,41 @@ fn the_passcode_cells_sit_in_the_middle_of_the_gates_group() {
     app::lang::set(app::lang::Lang::Zh);
 }
 
+/// The busy words under the passcode cells (the spinner, a gap, the words) stand centred under the cells, at the
+/// gate and on the wizard's passcode step alike, as the cells themselves are centred: whoever unlocks or sets a
+/// passcode sees them under the row they typed into, not pushed to the left edge.
+#[test]
+fn the_busy_words_under_the_passcode_cells_are_centred_under_them() {
+    if super::alone_in(module_path!(), "the_busy_words_under_the_passcode_cells_are_centred_under_them") {
+        return;
+    }
+    let ctx = egui::Context::default();
+    super::vault_open();
+    app::keybox::lock();
+    // The spinner's width and the gap before the words (`sheet::busy_note`).
+    let lead = 4.25 * 2.0 + 6.0;
+    for lang in app::lang::Lang::ALL {
+        app::lang::set(lang);
+        for wizard in [false, true] {
+            // The vault's task held running until the frames are read.
+            let mut shell = app::shell::Shell::boot(zikaron_ui::skin::dress(&ctx));
+            let (hold, wait) = std::sync::mpsc::channel::<()>();
+            let _ = shell.tasks.spawn(app::task::Kind::Vault, move || {
+                let _ = wait.recv();
+                Err(app::fault::Fault::known(app::fault::Known::FileMissing, ""))
+            });
+            let (_, cells, busy) = app::window::probe_busy_under_cells(&ctx, shell, wizard, W, H);
+            drop(hold);
+            let busy = busy.unwrap_or_else(|| panic!("{lang:?}, wizard {wizard}: the busy words are drawn"));
+            assert!(cells.is_positive(), "{lang:?}, wizard {wizard}: the passcode cells are drawn");
+            let middle = (busy.left() - lead + busy.right()) / 2.0;
+            assert!((middle - cells.center().x).abs() < 1.0, "{lang:?}, wizard {wizard}: the busy line's middle {middle} is the cells' middle {}", cells.center().x);
+            assert!(busy.top() > cells.bottom(), "{lang:?}, wizard {wizard}: the busy words are under the cells");
+        }
+    }
+    app::lang::set(app::lang::Lang::Zh);
+}
+
 #[test]
 fn a_chain_read_the_status_line_reports_grows_no_card() {
     if super::alone_in(module_path!(), "a_chain_read_the_status_line_reports_grows_no_card") {

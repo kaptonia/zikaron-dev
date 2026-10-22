@@ -1,6 +1,6 @@
 //! What opens under a press near the window's foot is brought into view as it opens: a fold in a card, a fold of its
 //! own and a drop-down's card each end 32 above the bottom of what they scroll in once open, the head never taken
-//! past the top.
+//! past the top; on a page whose keys stand in a bar at the view's foot, they end 32 above the bar.
 
 use egui::{Pos2, Rect, Vec2};
 use zikaron_ui::{card, fold, menu};
@@ -93,6 +93,44 @@ fn a_fold_of_its_own_is_brought_into_view_as_it_opens() {
     });
     assert!(head.top() >= view.top(), "{head:?} in {view:?}");
     assert!((view.bottom() - whole.bottom() - 32.0).abs() < 2.0, "{whole:?} in {view:?}");
+}
+
+/// On a page whose keys stand in a bar held at the view's foot, what opens ends 32 above the bar, not behind it:
+/// the bar is not view.
+#[test]
+fn a_fold_opened_over_a_bottom_bar_ends_above_the_bar() {
+    use zikaron_ui::formparts;
+    let bar = 14.0 + zikaron_ui::tokens::KEY_H + 16.0;
+    let mut f = Frames::new();
+    let mut got = (Rect::NOTHING, Rect::NOTHING, Rect::NOTHING);
+    let draw = |ui: &mut egui::Ui, got: &mut (Rect, Rect, Rect)| {
+        ui.add_space(480.0);
+        let mut head = Rect::NOTHING;
+        card::form(ui, |ui, f| {
+            let top = ui.cursor().min.y;
+            let _ = f.fold_from(ui, "more", "独占、转授权与范围", "", false, |ui, f| {
+                for i in 0..6 {
+                    f.note(ui, &format!("第 {i} 行"));
+                }
+            });
+            head = Rect::from_min_size(egui::pos2(ui.min_rect().left(), top), egui::vec2(400.0, 56.0));
+        });
+        let end = ui.min_rect().bottom();
+        ui.add_space(400.0);
+        *got = (head, Rect::from_min_max(head.min, egui::pos2(head.right(), end)), ui.clip_rect());
+        let _ = formparts::page_bar(ui, |ui| ui.button("确认"));
+    };
+    for _ in 0..3 {
+        let _ = f.run(Vec::new(), |ui| draw(ui, &mut got));
+    }
+    let at = got.0.center();
+    let _ = f.run(press(at), |ui| draw(ui, &mut got));
+    for _ in 0..40 {
+        let _ = f.run(Vec::new(), |ui| draw(ui, &mut got));
+    }
+    let (head, whole, view) = got;
+    assert!(head.top() >= view.top(), "the head stays in view: {head:?} in {view:?}");
+    assert!((view.bottom() - bar - whole.bottom() - 32.0).abs() < 2.0, "its rows end 32 above the bar ({bar} high): {whole:?} in {view:?}");
 }
 
 #[test]

@@ -497,10 +497,10 @@ pub enum Done {
     /// index row records them, not the home open when it lands). Attachments from the interface that did not
     /// go in (paths as given): `left_out` were no longer originals of the chosen records when the kit was
     /// written; `unreadable` could not be read then (missing, no permission, symlink, device). Each is
-    /// reported separately.
+    /// reported separately. `originals`: the package paths of the originals that went in.
     /// `facts`: what the index row records of the package, read from the plain package by the export (a sealed one's
     /// one-time key among them, never its recipient).
-    Kit { root: std::path::PathBuf, publish: Option<String>, path: String, kit_id: String, entries: usize, files: usize, pulled: Vec<String>, dropped: Vec<String>, left_out: Vec<String>, unreadable: Vec<(String, crate::fault::Fault)>, facts: crate::kitsindex::RowFacts },
+    Kit { root: std::path::PathBuf, publish: Option<String>, path: String, kit_id: String, entries: usize, files: usize, pulled: Vec<String>, dropped: Vec<String>, originals: Vec<String>, left_out: Vec<String>, unreadable: Vec<(String, crate::fault::Fault)>, facts: crate::kitsindex::RowFacts },
     /// A grant table.
     Grants { r#gen: u64, rows: Vec<crate::grantx::Row> },
     /// Checked adoption rows, with the text they were checked against (the results count only for that text).

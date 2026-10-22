@@ -1429,6 +1429,7 @@ fn every_legal_action_names_a_verb_from_the_contract_six_table() {
             form: "folder".into(),
             recipient: String::new(),
             recipient_key: String::new(),
+            originals: "none".into(),
         },
         Action::ReadDepth { work: String::new() },
         Action::DraftGrant {

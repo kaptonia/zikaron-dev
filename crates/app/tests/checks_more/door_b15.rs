@@ -400,7 +400,7 @@ fn a_record_package_through_the_door_is_the_desktops_export() {
     }
     let (b, mut shell) = Bench::new("kit");
     let out = b.root.join("kit-out");
-    let pressed = match apply(&mut shell, Action::ExportKit { from: String::new(), to: String::new(), ids: String::new(), attach: String::new(), note: "n".into(), out: out.display().to_string(), form: "folder".into(), recipient: String::new(), recipient_key: String::new() }) {
+    let pressed = match apply(&mut shell, Action::ExportKit { from: String::new(), to: String::new(), ids: String::new(), attach: String::new(), note: "n".into(), out: out.display().to_string(), form: "folder".into(), recipient: String::new(), recipient_key: String::new(), originals: "none".into() }) {
         Applied::Trouble(f) => f.which().map(|k| k.as_str().to_string()).unwrap_or_default(),
         other => panic!("{other:?}"),
     };

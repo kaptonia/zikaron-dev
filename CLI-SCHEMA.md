@@ -255,7 +255,7 @@ addition, `scan` passes through the core's no-label answer when the basis is mal
 | | 1 | shell | `E_DOC` + `token`, `index` (`index` may be null); `E_ENTRY` + `token` when signing fails; when the pairing does not match, `E_DOC` + `docId`, `doc`, `state`; when the file cannot be written, `E_LEDGER` + `detail`, `path` |
 | `badge` | 0 | shell | encode: `payload`, `state=BADGE_OK`; decode: `count`, `entries`, `state=BADGE_OK` |
 | | 1 | shell | `E_BADGE` + `token`, `index` |
-| `kit-export` | 0 | shell | `dropped` (platform junk that was dropped, each named), `entries`, `files`, `kitId`, `path`, `proofs`, `state=KIT_OK`; from a home the desktop keeps also `originals` (the package paths of the originals taken) and `leftOut` (the places of the chosen records' originals not taken: gone, or no longer the bytes recorded) |
+| `kit-export` | 0 | shell | `dropped` (platform junk that was dropped, each named), `entries`, `files`, `kitId`, `path`, `proofs`, `state=KIT_OK`; from a home the desktop keeps (`--ledger`, or `--home` through the desktop) also `originals` (the package paths of the originals taken; empty with `--originals none`) and `leftOut` (the places of the chosen records' originals not taken: gone, no longer the bytes recorded, or not there to read) |
 | | 1 | shell | `E_KIT` + `state` (the kit law verdict), `detail` (its subject, or null when it has none); `E_LEDGER` + `detail`, `names?`, `count?` (the ledger folder does not open or read); `E_LEDGER` + `path` (the subject of a kit output failure: the `--out` path already exists, a disk operation failed, or a `--file` / `--proof` kit path is malformed or given twice); `E_ENTRY_ABSENT` + `names` (the named entries that were not found); with `--to`, `E_ADDRESSED` + `token` `ADDRESS_NOT_ANCHORED`, `detail`; or, from a home, the refusals of reading a home (section 12) |
 | | 4 | shell | with `--to`, `E_ADDRESSED` + `token` `ADDRESS_CHAIN_UNREAD`, `detail` (no key found and some network not read through; nothing written) |
 | `kit-verify` | 0 | shell | `entries` (how many the package carries), `kitId`, `records` (one per record: `entryId`, `content`, `original` one of `match` / `mismatch` / `missing`, `anchored` one of `anchored` / `notAnchored` / `unread`, `firstAt?` the first anchoring's block time when anchored); with `--originals-to`, `taken` (the names the originals were taken out under) and `path` (the folder) |
@@ -528,7 +528,7 @@ the law refuses it. The body really lacks that member, and the core's thirteen-s
 shell insists only on what it needs to do its own work. The "When absent" column below keeps the two
 cases apart: **"left to the law" is a refusal by the law, "misuse" is a refusal by the shell.**
 
-**Sixty-one flags, matching the closed table of flag names in the code (`ALL_FLAGS` plus
+**Sixty-two flags, matching the closed table of flag names in the code (`ALL_FLAGS` plus
 `MORE_FLAGS` in `verbs.rs`) entry by entry**; if the table and the code differ by one row,
 `the_cli_schema_lists_every_flag_the_code_knows` in `crates/zikaron-cli/tests/cli.rs` fails.
 
@@ -591,6 +591,7 @@ cases apart: **"left to the law" is a refusal by the law, "misuse" is a refusal 
 | `--decode` | path to a badge payload file | as above |
 | `--as` | `file` or `folder`: the form `kit-export` writes the package in | one file; any other word is misuse |
 | `--kit` | path to a record package, a folder or one file (`kit-verify`) | misuse |
+| `--originals` | `none` (`kit-export` from a home the desktop keeps, by `--ledger` or `--home`): the chosen records' originals are left out of the package | they go in, taken as the desktop's export page takes them (`originals`, `leftOut`); any other word is misuse; with a plain ledger folder, misuse whatever its word (its originals are each given with `--file`) |
 | `--originals-to` | path to a folder that is there (`kit-verify`): the package's originals that match their records are taken out into it, all or nothing (`taken`, `path`; refused, `E_EXTRACT`, nothing written) | nothing is taken out |
 | `--to-key` | a public key, `0x` and 66 (compressed) or 130 (uncompressed) hex digits, case ignored, a point of the curve (`kit-export`, on every road): the record package is sealed to it | the package is not sealed; off the curve, or with `--to` or `--as folder`, misuse |
 | `--handoff` | path to a handoff file (`take-over`) | misuse |
@@ -622,7 +623,7 @@ Each verb's closed list, as its row in `ACCEPTS` in `verbs.rs` names it. The fiv
 | `fpm-sign` | `key` `work` `grant` `note` `rows` `out` |
 | `ack-sign` | `key` `note` `fpm` `fpm-doc` `variant` `out` |
 | `badge` | `encode` `decode` |
-| `kit-export` | `ledger` `root` `note` `out` `entry` `file` `proof` `as` `home` `to` `to-key` `endpoint` `proxy` |
+| `kit-export` | `ledger` `root` `note` `out` `entry` `file` `proof` `as` `home` `to` `to-key` `endpoint` `proxy` `originals` |
 | `kit-verify` | `kit` `fragment` `unavailable` `originals-to` `home` `ledger` `key` |
 | `hand-over` | `ledger` `out` |
 | `take-over` | `ledger` `handoff` |
@@ -748,13 +749,14 @@ has no credential (section 13).
 | `annotate` | `subject` `note` |
 | `retract` | `subject` `note` |
 | `anchor` | none |
-| `kit-export` | `entry` `note` `out` `as` `to` `to-key` |
+| `kit-export` | `entry` `note` `out` `as` `to` `to-key` `originals` |
 | `kit-verify` | `kit` `originals-to` |
 
 `attest` is always answered `E_ON_DESKTOP` by the desktop. `succeed` takes `--home` and always answers `E_ON_DESKTOP` (exit 1) without asking the desktop: nothing is written; its flags are closed by its own row (section 8, flags by verb), and their values are not read. `history` records the file by the record convention, as the desktop's own
 record does; `kit-export` takes the
-entries named (all of them without `--entry`), in the form `--as` names (one file without it), and attachments and
-proof bundles are chosen on the desktop; with `--to` (an address, its key found on the desktop's network and its
+entries named (all of them without `--entry`), in the form `--as` names (one file without it), with the chosen records'
+originals taken as the desktop's export page takes them unless `--originals none` (the answer's `originals` and
+`leftOut`, section 6), other attachments and proof bundles being chosen on the desktop; with `--to` (an address, its key found on the desktop's network and its
 read-only networks) or `--to-key` (a key), the one file is sealed to that key, and the answer is as without them; both
 given, or either with `--as folder`, an address not in its form or a key off the curve, is misuse judged here (exit 2,
 the desktop not asked), and the desktop's refusals of a sealed package are `E_DESKTOP_REFUSED` with the codes of
@@ -860,7 +862,7 @@ and are refused by the same reasons: `E_CREDENTIAL_MISSING`, `E_CREDENTIAL_EXPIR
 `E_CREDENTIAL_SHAPE`, and `E_HOME_OTHER_MACHINE` when the home's writer mark names another machine. A read takes
 no writer lock (it changes nothing; each file the desktop writes meanwhile lands whole), so the desktop writing at
 that moment is no refusal. What else a read takes from the home it takes the same way: `kit-export` the originals
-of the chosen records from this machine's index of signed files, the terms documents kept for the chosen grants and
+of the chosen records from this machine's index of signed files (none with `--originals none`), the terms documents kept for the chosen grants and
 the home's anchoring point from its settings,
 `scan --ledger` the chain, the registry and the start block from its settings, and with no `--endpoint` the
 home's nodes for that chain, the proxy from this machine's settings (its following the system read as the desktop reads
@@ -943,7 +945,7 @@ sealed one is then the verb's misuse).
 | `adopt` | `home` `anchors` `attestor` `attestation` | yes |
 | `annotate` | `home` `subject` `note` | yes |
 | `retract` | `home` `subject` `note` | yes |
-| `kit-export` | `home` `entry` `note` `out` `as` `to` `to-key` | yes (a record package at `out`, sealed to one recipient when given `to` or `to-key`) |
+| `kit-export` | `home` `entry` `note` `out` `as` `to` `to-key` `originals` | yes (a record package at `out`, with the chosen records' originals unless `originals` is `none`, sealed to one recipient when given `to` or `to-key`) |
 | `anchor` | `home` | yes; it sends this home's queue as section 12's "putting on chain from the command line" says, spending this identity's gas when sending is automatic (`destructiveHint`, `openWorldHint`) |
 | `show` | `ledger` `entry` `path` | no |
 | `audit` | `ledger` `root` `input` `fragment` `unavailable` | no |

@@ -74,6 +74,7 @@ fn read_args(a: &Args) -> Vec<(String, String)> {
     // are misuse), before the desktop is asked; the values go as given.
     if a.verb() == "kit-export" {
         let _ = verbs::seal_to(a);
+        let _ = verbs::originals_wanted(a);
     }
     let own = verbs::accepts(a.verb(), true).unwrap_or_default();
     let mut out = Vec::new();
@@ -138,7 +139,10 @@ fn answer_of(r: Reply, verb: &str) -> Answer {
         Reply::Voided { tx } => verbs::tx_void(&tx),
         Reply::OnChain { names, tx, block } => verbs::on_chain(&names, &tx, block),
         // Under `--home` a package takes no proof bundles (they are chosen on the desktop).
-        Reply::Kit { kit_id, path, entries, files, dropped } => verbs::kit_written(&dropped, entries, files, &kit_id, &path, 0),
+        Reply::Kit { kit_id, path, entries, files, dropped, originals, left_out } => verbs::kit_written(&dropped, entries, files, &kit_id, &path, 0).with(vec![
+            (Key::Originals, zikaron::json::Value::Arr(originals.iter().map(|x| s(x)).collect())),
+            (Key::LeftOut, zikaron::json::Value::Arr(left_out.iter().map(|x| s(x)).collect())),
+        ]),
         // The desktop's record facts, answered by the one builder of `kit-verify`'s answer.
         Reply::Verified { kit_id, entries, records, taken } => {
             let a = verbs::records_answer(&kit_id, entries, &records);

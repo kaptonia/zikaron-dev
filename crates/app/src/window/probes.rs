@@ -1048,6 +1048,37 @@ pub fn probe_gate_column(ctx: &egui::Context, shell: Shell, trouble: Option<&str
     (win.shell, reading)
 }
 
+/// The passcode gate (`wizard` false) or the wizard's passcode step (`wizard` true) drawn from `shell` (the caller
+/// has the vault's task running): the passcode cells' row and the busy words drawn under it.
+pub fn probe_busy_under_cells(ctx: &egui::Context, shell: Shell, wizard: bool, width: f32, height: f32) -> (Shell, egui::Rect, Option<egui::Rect>) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Home, role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    if wizard {
+        win.wizard_open(crate::nav::Step::Pin);
+    }
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut out = None;
+    for k in 0..12 {
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(0.1 * (k + 1) as f64), ..Default::default() };
+        out = Some(ctx.run_ui(input, |ui| win.draw(ui)));
+    }
+    let out = out.unwrap_or_default();
+    let cells = out
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Rect(r) if (r.rect.width() - 36.0).abs() < 0.5 && (r.rect.height() - 44.0).abs() < 0.5 => Some(r.rect),
+            _ => None,
+        })
+        .fold(egui::Rect::NOTHING, |a, b| a.union(b));
+    let busy = texts_of(&out).iter().find(|d| d.text == t(Key::VaultBusy)).map(|d| d.rect);
+    (win.shell, cells, busy)
+}
+
 /// The "with a credential" sheet opened over the command line's page and driven by the window's own input: the days cell
 /// clicked and "400" typed, then cleared and "2" typed; the "does not expire" switch's title clicked, and "9"
 /// typed into the days cell while it is on. Read after each: the cell, and the line under the switch.

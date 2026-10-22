@@ -204,20 +204,20 @@ pub fn block_salt(id_salt: &str, i: usize) -> String {
 
 /// A span of days (a validity window): two date blocks as tall as a field, each the month small over the day,
 /// and between them the words that say how long it is. The months, days and words roll in place when they change
-/// (a preset picked). With `live` each block is a control, lit under the pointer, that the caller hangs a
-/// calendar from ([`hang`] with [`block_salt`]); without, the blocks only show. Returns the two blocks'
-/// responses.
-pub fn span(ui: &mut egui::Ui, id_salt: &str, from: Block, between: &str, to: Block, live: bool) -> [egui::Response; 2] {
+/// (a preset picked). A block `live` (`live[0]` the start, `live[1]` the end) is a control, lit under the pointer,
+/// that the caller hangs a calendar from ([`hang`] with [`block_salt`]); the others only show. Returns the two
+/// blocks' responses.
+pub fn span(ui: &mut egui::Ui, id_salt: &str, from: Block, between: &str, to: Block, live: [bool; 2]) -> [egui::Response; 2] {
     let id = ui.id().with(("zikaron-span", id_salt));
     let (fw, tw) = (block_w(ui, from), block_w(ui, to));
     let w = span_width(ui, from, between, to);
     let (rect, _) = ui.allocate_exact_size(vec2(w, tokens::INPUT_H), egui::Sense::hover());
-    let sense = if live { egui::Sense::click() } else { egui::Sense::hover() };
     let mut out: Vec<egui::Response> = Vec::with_capacity(2);
     for (i, (b, bw, left)) in [(from, fw, rect.left()), (to, tw, rect.right() - tw)].into_iter().enumerate() {
         let r = Rect::from_min_size(pos2(left, rect.top()), vec2(bw, tokens::INPUT_H));
         let bid = id.with(i);
-        let resp = ui.interact(r, bid, sense);
+        let live = live[i];
+        let resp = ui.interact(r, bid, if live { egui::Sense::click() } else { egui::Sense::hover() });
         let open = live && crate::menu::is_open(ui.ctx(), ui.id().with(("zikaron-date", block_salt(id_salt, i).as_str())));
         block_ground(ui, r, bid, live, open, live && crate::flow::pointer_on(ui, r), resp.is_pointer_button_down_on());
         let line = |s: &str, t: Type, y: f32, ink: egui::Color32, salt: &str| {

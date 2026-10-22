@@ -201,7 +201,7 @@ fn the_tools_are_the_verb_tables_and_no_withheld_one_appears() {
         ("retract", &["home", "subject", "note"], false),
         ("anchor", &["home"], false),
         // A package sealed to one recipient: an address or a key.
-        ("kit-export", &["home", "entry", "note", "out", "as", "to", "to-key"], false),
+        ("kit-export", &["home", "entry", "note", "out", "as", "to", "to-key", "originals"], false),
         ("show", &["ledger", "entry", "path"], true),
         ("audit", &["ledger", "root", "input", "fragment", "unavailable"], true),
         ("scan", &["home"], true),
@@ -483,7 +483,7 @@ fn messages_are_refused_by_what_and_where() {
 fn parameters_are_laid_out_as_the_table_says() {
     let b = Bench::new("params");
     let home = b.home.display().to_string();
-    let (closer, rx) = desktop(&b.door(), |_| Some(Reply::Kit { kit_id: "k".into(), path: "/o".into(), entries: 2, files: 0, dropped: vec![] }.to_bytes()));
+    let (closer, rx) = desktop(&b.door(), |_| Some(Reply::Kit { kit_id: "k".into(), path: "/o".into(), entries: 2, files: 0, dropped: vec![], originals: vec![], left_out: vec![] }.to_bytes()));
     let mut s = b.session(EN);
     let r = s.call(1, "chain-check", r#"{"hop":["/a.grant=rel/input.json"]}"#);
     assert_eq!(text_of(result(&r)).lines().next(), Some("E_ARGS --hop"));

@@ -62,7 +62,7 @@ const ACCEPTS: [(&str, &[&str], &[&str]); 26] = [
     ("fpm-sign", &[], &["key", "work", "grant", "note", "rows", "out"]),
     ("ack-sign", &[], &["key", "note", "fpm", "fpm-doc", "variant", "out"]),
     ("badge", &[], &["encode", "decode"]),
-    ("kit-export", &[], &["ledger", "root", "note", "out", "entry", "file", "proof", "as", "home", "to", "to-key", "endpoint", "proxy"]),
+    ("kit-export", &[], &["ledger", "root", "note", "out", "entry", "file", "proof", "as", "home", "to", "to-key", "endpoint", "proxy", "originals"]),
     ("kit-verify", &[], &["kit", "fragment", "unavailable", "originals-to", "home", "ledger", "key"]),
     ("hand-over", &[], &["ledger", "out"]),
     ("take-over", &[], &["ledger", "handoff"]),
@@ -105,7 +105,7 @@ pub const HOME: [(&str, &[&str]); 11] = [
     ("annotate", &["subject", "note"]),
     ("retract", &["subject", "note"]),
     ("anchor", &[]),
-    ("kit-export", &["entry", "note", "out", "as", "to", "to-key"]),
+    ("kit-export", &["entry", "note", "out", "as", "to", "to-key", "originals"]),
     ("kit-verify", &["kit", "originals-to"]),
 ];
 
@@ -134,10 +134,10 @@ const ALL_FLAGS: [&str; 34] = [
     "subject", "endpoint", "form", "registry", "hash", "calldata", "wait-secs",
 ];
 
-const MORE_FLAGS: [&str; 27] = [
+const MORE_FLAGS: [&str; 28] = [
     "fixture", "basis", "adoptions", "input", "fragment", "unavailable", "now", "hop", "entry",
     "path", "out", "file", "proof", "variant", "fpm", "fpm-doc", "rows", "encode", "decode", "proxy",
-    "key-file", "home", "as", "kit", "handoff", "originals-to", "to-key",
+    "key-file", "home", "as", "kit", "handoff", "originals-to", "to-key", "originals",
 ];
 
 /// The way out for the verbs that reach nodes: `--proxy system` (or no flag) follows the terminal's proxy
@@ -1409,6 +1409,16 @@ fn form_of(a: &Args) -> kitout::Form {
     }
 }
 
+/// `--originals`: a home's chosen records' originals go in unless it is `none`, its one word; any other word is
+/// misuse. Judged here for both ways a home is named (`--ledger`, and `--home` before the desktop is asked).
+pub(crate) fn originals_wanted(a: &Args) -> bool {
+    match a.one("originals").as_deref() {
+        None => true,
+        Some("none") => false,
+        Some(_) => out::misuse(Reason::Args, out::Subject::flag("originals"), out::Said::OriginalsWord),
+    }
+}
+
 fn kit_export(a: &Args) -> Answer {
     let at = a.need("ledger");
     let form = form_of(a);
@@ -1416,6 +1426,11 @@ fn kit_export(a: &Args) -> Answer {
     // Whom the one file is sealed to, and where an address's key is looked for: arguments, judged before anything
     // is read.
     let at_home = crate::sealed::is_home(&at);
+    // A plain ledger folder has no index of signed files: its originals are each given with `--file`.
+    if !at_home && a.one("originals").is_some() {
+        out::misuse(Reason::Args, out::Subject::flag("originals"), out::Said::OriginalsHomeOnly);
+    }
+    let with_originals = originals_wanted(a);
     let to = seal_to(a);
     let seek = seek_of(a, to, at_home);
     // A home the desktop keeps sealed is read with the credential, as every read of it is (`sealed::read`).
@@ -1505,7 +1520,7 @@ fn kit_export(a: &Args) -> Answer {
     };
     // From a home: the chosen records' originals as the desktop takes them, and the note's anchoring line.
     let taken = match &home {
-        Some(r) => match from_home(r, &root, &mut bundle) {
+        Some(r) => match from_home(r, &root, &mut bundle, with_originals) {
             Ok(x) => Some(x),
             Err(answer) => return answer,
         },
@@ -1719,8 +1734,9 @@ pub(crate) fn addressed_refused(why: zikaron_seal::addressed::Why, evidence: &st
 /// (`zikaron_glue::kitnames`, renamed ones listed in its name table); the terms documents of its chosen grants
 /// (`zikaron_seal::terms`); and the home's anchoring point as the note's last line (`zikaron_glue::anchoredon`,
 /// from the home's settings). Returns the package paths of the originals taken and the paths of those left out
-/// (gone, no longer the recorded bytes, or with a name that cannot be made kit-legal).
-fn from_home(r: &crate::sealed::Reading, root: &str, b: &mut kitout::Bundle) -> Result<(Vec<String>, Vec<String>), Answer> {
+/// (gone, no longer the recorded bytes, or with a name that cannot be made kit-legal); both empty with
+/// `with_originals` false (`--originals none`), when no original is looked for.
+fn from_home(r: &crate::sealed::Reading, root: &str, b: &mut kitout::Bundle, with_originals: bool) -> Result<(Vec<String>, Vec<String>), Answer> {
     let rows = r.records().map_err(|t| crate::sealed::refused(&t))?;
     let chosen: Vec<String> = b
         .entries
@@ -1731,6 +1747,8 @@ fn from_home(r: &crate::sealed::Reading, root: &str, b: &mut kitout::Bundle) -> 
         .collect();
     let mut names: Vec<(String, String)> = Vec::new();
     let (mut taken, mut left_out, mut contents): (Vec<String>, Vec<String>, Vec<String>) = (Vec::new(), Vec::new(), Vec::new());
+    // Left out (`--originals none`): no chosen record is looked up, so none is taken or left out.
+    let chosen = if with_originals { chosen } else { Vec::new() };
     for row in zikaron_seal::records::originals_for(&rows, root, &chosen) {
         let content = row.content.to_ascii_lowercase();
         if contents.contains(&content) {

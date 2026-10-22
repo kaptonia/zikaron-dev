@@ -244,7 +244,10 @@ pub enum Action {
     /// Write a kit (background): pick, attach, hand to the kit output crate to lay out and self-verify; lands
     /// only on KIT_OK. `recipient` (an address) or `recipient_key` (a public key), at most one: the one-file package
     /// is sealed to that key (`addressedx`), the address's key found on chain first; both empty, it is not sealed.
-    ExportKit { from: String, to: String, ids: String, attach: String, note: String, out: String, form: String, recipient: String, recipient_key: String },
+    /// `originals`: its word, judged by the action layer: none, the chosen records' originals are attached too, those
+    /// the export page lists for the choice (`kitx::originals`), as the command line asks through this desktop;
+    /// `none`, only `attach` (the page itself lists them there); any other word is refused by name.
+    ExportKit { from: String, to: String, ids: String, attach: String, note: String, out: String, form: String, recipient: String, recipient_key: String, originals: String },
     /// Digest attachments first: each path dropped on the export page is digested in the background in
     /// content form.
     VetAttachments { paths: Vec<String> },
@@ -2064,8 +2067,8 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             }
             Err(f) => shell.trouble(f),
         },
-        Action::ExportKit { from, to, ids, attach, note, out, form, recipient, recipient_key } => {
-            match export_kit(shell, &from, &to, &ids, &attach, &note, &out, &form, &recipient, &recipient_key) {
+        Action::ExportKit { from, to, ids, attach, note, out, form, recipient, recipient_key, originals } => {
+            match export_kit(shell, &from, &to, &ids, &attach, &note, &out, &form, &recipient, &recipient_key, &originals) {
                 Ok(s) => match s {
                     Spawned::Started => Applied::Started(Kind::Kit),
                     Spawned::InFlight => Applied::Refused(Kind::Kit),

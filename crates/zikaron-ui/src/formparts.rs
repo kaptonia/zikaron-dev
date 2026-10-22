@@ -11,6 +11,27 @@ use egui::{pos2, vec2, Rect};
 const BAR_ABOVE: f32 = 14.0;
 const BAR_BELOW: f32 = 16.0;
 
+/// Where a page's bottom bar last stood: the view it was held at the foot of, its height, and the pass it was drawn
+/// in ([`bar_over`]).
+#[derive(Clone, Copy, Debug)]
+struct Floor {
+    view: Rect,
+    h: f32,
+    pass: u64,
+}
+
+const FLOOR: &str = "zikaron-page-bar-floor";
+
+/// How much of the foot of `view` a page's bottom bar covers: its height when one was drawn at the foot of this view
+/// this pass or the one before, else zero. What opens into view ([`crate::fold::reveal`]) ends above it.
+pub fn bar_over(ctx: &egui::Context, view: Rect) -> f32 {
+    let now = ctx.cumulative_pass_nr();
+    match ctx.data(|d| d.get_temp::<Floor>(egui::Id::new(FLOOR))) {
+        Some(f) if f.pass + 1 >= now && (f.view.bottom() - view.bottom()).abs() < 0.5 && f.view.intersects(view) => f.h,
+        _ => 0.0,
+    }
+}
+
 /// A page's bottom bar: its keys at the right edge of the page's column (laid right to left, 10 apart), held at
 /// the bottom of the page's view whether the page is short or scrolls, on a band of the page ground that fades in
 /// over its first 14. Drawn last on the page: the page keeps room at its end so its last block clears the bar,
@@ -22,6 +43,8 @@ pub fn page_bar<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R
     // Room at the page's end: the bar stands over the page's own bottom margin and this.
     ui.allocate_space(vec2(col.width(), (h - tokens::PAGE_PAD).max(0.0)));
     let band = Rect::from_min_max(pos2(view.left(), view.bottom() - h), view.max);
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(FLOOR), Floor { view, h, pass }));
     let bar = ui.interact(band, ui.id().with("zikaron-page-bar"), egui::Sense::click());
     crate::hand::sink(ui.ctx(), bar.id);
     let ground = c(C::Ground);

@@ -227,7 +227,7 @@ fn every_verb_takes_exactly_the_flags_the_contract_lists() {
             asked += 1;
         }
     }
-    assert_eq!(asked, 26 * 63);
+    assert_eq!(asked, 26 * 64);
     let _ = std::fs::remove_dir_all(&w);
 }
 
@@ -269,7 +269,7 @@ fn with_home_a_verb_takes_exactly_its_home_row() {
             }
         }
     }
-    assert_eq!(asked, 26 * 60);
+    assert_eq!(asked, 26 * 61);
     let _ = std::fs::remove_dir_all(&w);
 }
 

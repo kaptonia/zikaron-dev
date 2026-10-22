@@ -268,6 +268,8 @@ pub enum Known {
     KitFileBad,
     /// A record package asked for in a form that is not one of the two (`file`, `folder`; the word in the evidence).
     KitFormWord,
+    /// A record package's originals asked for with a word that is not `none` (the word in the evidence).
+    KitOriginalsWord,
     /// Taking originals out: the package does not pass the kit law, or a single file does not read as one, when it is read
     /// again to take them out (the verdict or the layout's code in the evidence).
     ExtractKit,
@@ -486,7 +488,7 @@ impl Known {
         }
     }
 
-    pub const ALL: [Known; 196] = [
+    pub const ALL: [Known; 197] = [
         Known::FontMissing,
         Known::FileMissing,
         Known::Denied,
@@ -618,6 +620,7 @@ impl Known {
         Known::GrantFileBad,
         Known::KitFileBad,
         Known::KitFormWord,
+        Known::KitOriginalsWord,
         Known::ExtractKit,
         Known::ExtractPath,
         Known::ExtractNothing,
@@ -818,6 +821,7 @@ impl Known {
             Known::GrantFileBad => "GRANT_FILE",
             Known::KitFileBad => "KIT_FILE",
             Known::KitFormWord => "KIT_FORM",
+            Known::KitOriginalsWord => "KIT_ORIGINALS",
             Known::ExtractKit => "EXTRACT_KIT",
             Known::ExtractPath => "EXTRACT_PATH",
             Known::ExtractNothing => "EXTRACT_NOTHING",
@@ -1027,6 +1031,7 @@ impl Known {
             Known::GrantFileBad => L::FaultWhatGrantFileBad,
             Known::KitFileBad => L::FaultWhatKitFileBad,
             Known::KitFormWord => L::FaultWhatKitFormWord,
+            Known::KitOriginalsWord => L::FaultWhatKitOriginalsWord,
             Known::ExtractKit => L::FaultWhatExtractKit,
             Known::ExtractPath => L::FaultWhatExtractPath,
             Known::ExtractNothing => L::FaultWhatExtractNothing,
@@ -1230,6 +1235,7 @@ impl Known {
             Known::GrantFileBad => Some(L::FaultNextGrantFileBad),
             Known::KitFileBad => Some(L::FaultNextKitFileBad),
             Known::KitFormWord => Some(L::FaultNextKitFormWord),
+            Known::KitOriginalsWord => Some(L::FaultNextKitOriginalsWord),
             Known::ExtractKit | Known::ExtractPath | Known::ExtractNothing | Known::ExtractClash | Known::ExtractNotFolder | Known::ExtractExists | Known::ExtractLink | Known::ExtractChanged | Known::ExtractLanding => None,
             Known::AddressedNotRecipient | Known::AddressedBroken | Known::AddressedHead | Known::AddressedElsewhere | Known::AddressedKeyShape | Known::AddressedBoth | Known::AddressedFolder | Known::AddressNotAnchored | Known::AddressChainUnread => None,
             Known::RemoteKit => Some(L::FaultNextRemoteKit),
@@ -1417,6 +1423,7 @@ pub fn translate(k: Known) -> &'static str {
         Known::GrantFileBad => "授权文件拆不开",
         Known::KitFileBad => "单文件记录包拆不开",
         Known::KitFormWord => "记录包的形只认 file 或 folder",
+        Known::KitOriginalsWord => "记录包的原件只认 none",
         Known::ExtractKit => "取出时记录包没过包验或拆不开",
         Known::ExtractPath => "记录包里有不合包内路径形制的路径",
         Known::ExtractNothing => "包里没有与记录对得上的原件",

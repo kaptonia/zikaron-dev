@@ -255,7 +255,7 @@ fn gate_message(ui: &mut egui::Ui, busy: bool, trouble: Option<&str>, gap: f32) 
     child.multiply_opacity(open);
     let r = child.vertical(|ui| {
         if busy {
-            sheet::busy_note(ui, t(Key::VaultBusy), false);
+            sheet::busy_note(ui, t(Key::VaultBusy), true);
         } else if let Some(s) = trouble {
             states::note_box(ui, s);
         }

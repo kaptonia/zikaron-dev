@@ -95,6 +95,10 @@ pub enum Key {
     DoReadDepth,
     GrantFrom,
     GrantTo,
+    GrantStartAt,
+    GrantLasts,
+    GrantHour,
+    GrantMinute,
     GrantExclusive,
     BadgeLive,
     BadgeExpired,
@@ -1232,6 +1236,7 @@ pub enum Key {
     FaultWhatGrantFileBad,
     FaultWhatKitFileBad,
     FaultWhatKitFormWord,
+    FaultWhatKitOriginalsWord,
     FaultWhatRemoteKit,
     FaultWhatRemoteStatus,
     FaultWhatRemoteRedirect,
@@ -1250,6 +1255,7 @@ pub enum Key {
     FaultNextGrantFileBad,
     FaultNextKitFileBad,
     FaultNextKitFormWord,
+    FaultNextKitOriginalsWord,
     FaultNextRemoteKit,
     FaultNextRemoteStatus,
     FaultNextRemoteRedirect,
@@ -2103,7 +2109,7 @@ pub enum Key {
 
 impl Key {
     /// All keys, in [`TABLE`] order.
-    pub const ALL: [Key; 2037] = [
+    pub const ALL: [Key; 2043] = [
         Key::PageRevoke,
         Key::PageAdopt,
         Key::PageSucceed,
@@ -2137,6 +2143,10 @@ impl Key {
         Key::DoReadDepth,
         Key::GrantFrom,
         Key::GrantTo,
+        Key::GrantStartAt,
+        Key::GrantLasts,
+        Key::GrantHour,
+        Key::GrantMinute,
         Key::GrantExclusive,
         Key::BadgeLive,
         Key::BadgeExpired,
@@ -3274,6 +3284,7 @@ impl Key {
         Key::FaultWhatGrantFileBad,
         Key::FaultWhatKitFileBad,
         Key::FaultWhatKitFormWord,
+        Key::FaultWhatKitOriginalsWord,
         Key::FaultWhatRemoteKit,
         Key::FaultWhatRemoteStatus,
         Key::FaultWhatRemoteRedirect,
@@ -3292,6 +3303,7 @@ impl Key {
         Key::FaultNextGrantFileBad,
         Key::FaultNextKitFileBad,
         Key::FaultNextKitFormWord,
+        Key::FaultNextKitOriginalsWord,
         Key::FaultNextRemoteKit,
         Key::FaultNextRemoteStatus,
         Key::FaultNextRemoteRedirect,
@@ -4145,7 +4157,7 @@ impl Key {
 }
 
 /// Every UI string: `(key, Chinese, English)`. One row per key, both languages in each row.
-pub const TABLE: [(Key, &str, &str); 2037] = [
+pub const TABLE: [(Key, &str, &str); 2043] = [
     (Key::PageRevoke, "撤销授权", "Revoke grant"),
     (Key::PageAdopt, "导入上链存证", "Import anchor proofs"),
     (Key::PageSucceed, "移交账本", "Hand over ledger"),
@@ -4179,6 +4191,10 @@ pub const TABLE: [(Key, &str, &str); 2037] = [
     (Key::DoReadDepth, "计算", "Calculate"),
     (Key::GrantFrom, "起始(秒)", "Start (seconds)"),
     (Key::GrantTo, "截止(秒)", "End (seconds)"),
+    (Key::GrantStartAt, "起始时刻", "Start time"),
+    (Key::GrantLasts, "时长", "Length"),
+    (Key::GrantHour, "时", "h"),
+    (Key::GrantMinute, "分", "min"),
     (Key::GrantExclusive, "独占授权", "Exclusive grant"),
     (Key::BadgeLive, "有效", "Active"),
     (Key::BadgeExpired, "已到期", "Expired"),
@@ -5332,6 +5348,7 @@ pub const TABLE: [(Key, &str, &str); 2037] = [
     (Key::FaultWhatGrantFileBad, "这份授权文件无法读取。", "This grant file cannot be read."),
     (Key::FaultWhatKitFileBad, "这份记录包文件无法读取。", "This record package file cannot be read."),
     (Key::FaultWhatKitFormWord, "记录包的形只认 file 或 folder。", "A record package's form is file or folder."),
+    (Key::FaultWhatKitOriginalsWord, "记录包的原件只认 none(不带);不给即带上。", "A record package's originals take none (left out); not given, they go in."),
     (Key::FaultWhatRemoteKit, "取回的记录包没有通过核验。", "The fetched record kit failed verification."),
     (Key::FaultWhatRemoteStatus, "发布地址上取不到这一份文件。", "A file could not be fetched from the published address."),
     (Key::FaultWhatRemoteRedirect, "发布地址把请求转到了别的来源,没有跟过去。", "The published address redirected to another origin. It was not followed."),
@@ -5350,6 +5367,7 @@ pub const TABLE: [(Key, &str, &str); 2037] = [
     (Key::FaultNextGrantFileBad, "请对方重新导出授权文件。", "Ask the sender to export the grant file again."),
     (Key::FaultNextKitFileBad, "请对方重新导出记录包。", "Ask the sender to export the record package again."),
     (Key::FaultNextKitFormWord, "给 file(一个文件)或 folder(一个文件夹)。", "Give file (one file) or folder (a folder)."),
+    (Key::FaultNextKitOriginalsWord, "给 none,或不给。", "Give none, or nothing."),
     (Key::FaultNextRemoteKit, "发布地址上的文件与清单对不上,请记录者重新上传。", "The files at the address do not match the manifest. Ask the recorder to upload again."),
     (Key::FaultNextRemoteStatus, "核对地址,或把记录包完整上传。", "Check the address, or upload the whole record kit."),
     (Key::FaultNextRemoteRedirect, "改填最终的 https 地址。", "Enter the final https address instead."),

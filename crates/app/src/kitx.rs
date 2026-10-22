@@ -388,6 +388,8 @@ pub struct Made {
     pub pulled: Vec<String>,
     /// Platform junk dropped before export, each named.
     pub dropped: Vec<String>,
+    /// The package paths of the originals attached (each file of an attached folder).
+    pub originals: Vec<String>,
     /// What the kits index records of this package, read from the plain package before it was sealed (when it was):
     /// the original digests, the author's note, where it says it is anchored (`kitsindex::RowFacts`).
     pub facts: crate::kitsindex::RowFacts,
@@ -447,12 +449,15 @@ pub fn export_to(
     let note = crate::kitsindex::note_with(note, anchored_on(home)?.as_ref());
     let mut b = Bundle { entries: chosen.items.clone(), note, ..Default::default() };
     let mut names: Vec<(String, String)> = Vec::new();
+    let mut attached: Vec<String> = Vec::new();
     for one in attachments {
         let t = one.trim();
         if t.is_empty() {
             continue;
         }
+        let before = b.files.len();
         attach(Path::new(t), &originals, &mut b, &mut names)?;
+        attached.extend(b.files[before..].iter().map(|(p, _)| p.clone()));
     }
     // Renamed items get a name table (a file in the manifest, not record content).
     if !names.is_empty() {
@@ -487,6 +492,7 @@ pub fn export_to(
             files: landed.files,
             pulled: chosen.pulled,
             dropped: landed.dropped,
+            originals: attached,
             facts,
         });
     };
@@ -505,6 +511,7 @@ pub fn export_to(
         files: landed.files,
         pulled,
         dropped: landed.dropped,
+        originals: attached,
         facts,
     })
 }

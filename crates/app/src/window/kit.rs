@@ -366,6 +366,7 @@ impl Win {
                 form: if folder { zikaron_glue::pack::Form::Folder } else { zikaron_glue::pack::Form::File }.word().to_string(),
                 recipient: if sealed { self.typed.kit_to.trim().to_string() } else { String::new() },
                 recipient_key: if sealed { self.typed.kit_to_key.trim().to_string() } else { String::new() },
+                originals: "none".to_string(),
             };
             // The sheet stays up, its key running, until the export lands (an encrypted one's key shows its check a
             // moment first).

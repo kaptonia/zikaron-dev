@@ -97,9 +97,12 @@ pub use crate::layer::REVEAL_FOOT;
 
 /// Bring `want` into view in the area `ui` scrolls in, at once (the caller runs it each frame of its own
 /// growth): no scroll when it is in view; else the least scroll that shows it, never taking its top past the
-/// top of the view.
+/// top of the view. A page's bottom bar held over the foot of the view ([`crate::formparts::bar_over`]) is not
+/// view: what opens ends above it.
 pub fn reveal(ui: &egui::Ui, want: Rect) {
-    let view = ui.clip_rect();
+    let clip = ui.clip_rect();
+    let over = crate::formparts::bar_over(ui.ctx(), clip);
+    let view = Rect::from_min_max(clip.min, egui::pos2(clip.right(), clip.bottom() - over));
     if want.bottom() > view.bottom() + 0.5 && want.top() > view.top() {
         // Scrolled to a place, not by an amount: asked on every frame of the opening (and twice in a frame laid out
         // again), it lands where it would have once. egui aligns to its view less its clip margin and keeps the
@@ -107,7 +110,7 @@ pub fn reveal(ui: &egui::Ui, want: Rect) {
         let style = ui.ctx().global_style();
         let (margin, gap) = (style.visuals.clip_rect_margin, style.spacing.item_spacing.y);
         let (want, align) = if want.height() <= view.height() {
-            (Rect::from_min_max(want.min, egui::pos2(want.right(), want.bottom() + margin - gap)), egui::Align::BOTTOM)
+            (Rect::from_min_max(want.min, egui::pos2(want.right(), want.bottom() + margin - gap + over)), egui::Align::BOTTOM)
         } else {
             (Rect::from_min_max(egui::pos2(want.left(), want.top() - margin + gap), want.max), egui::Align::TOP)
         };

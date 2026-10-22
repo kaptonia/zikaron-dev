@@ -400,6 +400,8 @@ pub enum Said {
     HomeOtherMachine,
     Adopted,
     AsWord,
+    OriginalsWord,
+    OriginalsHomeOnly,
     NotAHome,
     HandedOff,
     HandoffFile,
@@ -439,7 +441,7 @@ pub enum Said {
 }
 
 impl Said {
-    pub const ALL: [Said; 89] = [
+    pub const ALL: [Said; 91] = [
         Said::Usage,
         Said::NotAVerb,
         Said::NotAFlag,
@@ -497,6 +499,8 @@ impl Said {
         Said::HomeOtherMachine,
         Said::Adopted,
         Said::AsWord,
+        Said::OriginalsWord,
+        Said::OriginalsHomeOnly,
         Said::NotAHome,
         Said::HandedOff,
         Said::HandoffFile,
@@ -591,6 +595,8 @@ impl Said {
             Said::HomeOtherMachine => ("这份数据由另一台机器写入,未写", "Another machine writes this data; nothing was written"),
             Said::Adopted => ("这本账已被 ZIKARON Desk 采用,原目录不再写", "ZIKARON Desk has adopted this ledger; its folder is no longer written"),
             Said::AsWord => ("--as 只认 file 或 folder", "--as takes file or folder"),
+            Said::OriginalsWord => ("--originals 只认 none", "--originals takes none"),
+            Said::OriginalsHomeOnly => ("--originals 只对桌面所管之家生效;普通账本文件夹的原件以 --file 逐个给", "--originals applies only to a home the desktop keeps; give a plain ledger folder's originals one by one with --file"),
             Said::NotAHome => ("这不是桌面所管之家的账本,没有底账设置;给 --basis", "this is not the ledger of a home the desktop keeps and has no basis settings; give --basis"),
             Said::HandedOff => ("这本账已交接到另一处;收下交回的交接件之前不在这里写", "This ledger was handed off to another place; it is not written here until its handoff comes back"),
             Said::HandoffFile => ("这份文件读不出交接件,未写", "This file does not read as a handoff; nothing was written"),

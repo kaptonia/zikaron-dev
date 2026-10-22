@@ -52,6 +52,8 @@ mod member {
     pub const ENTRIES: &str = "entries";
     pub const FILES: &str = "files";
     pub const DROPPED: &str = "dropped";
+    pub const ORIGINALS: &str = "originals";
+    pub const LEFT_OUT: &str = "leftOut";
     pub const COUNT: &str = "count";
     pub const CODE: &str = "code";
     pub const TAIL: &str = "tail";
@@ -133,8 +135,9 @@ pub enum Reply {
     /// Nothing was sent: the chain already holds anchors of these hashes from this key (`names`), the earliest in
     /// transaction `tx` at block `block`.
     OnChain { names: Vec<String>, tx: String, block: u64 },
-    /// A record package was written.
-    Kit { kit_id: String, path: String, entries: u64, files: u64, dropped: Vec<String> },
+    /// A record package was written: the package paths of the originals that went in, and the places of the chosen
+    /// records' originals that did not (no longer the bytes recorded, or not there to read).
+    Kit { kit_id: String, path: String, entries: u64, files: u64, dropped: Vec<String>, originals: Vec<String>, left_out: Vec<String> },
     /// A record package was verified and the kit law passed it: its id, how many entries it carries, each record's
     /// facts (`crate::recordcheck`, the one judge), and the originals taken out when that was asked.
     Verified { kit_id: String, entries: u64, records: Vec<Record>, taken: Option<Taken> },
@@ -228,13 +231,15 @@ impl Reply {
                 put(member::TX, s(tx));
                 put(member::BLOCK, Value::Int(*block));
             }
-            Reply::Kit { kit_id, path, entries, files, dropped } => {
+            Reply::Kit { kit_id, path, entries, files, dropped, originals, left_out } => {
                 put(member::REPLY, s(kind::KIT));
                 put(member::KIT_ID, s(kit_id));
                 put(member::PATH, s(path));
                 put(member::ENTRIES, Value::Int(*entries));
                 put(member::FILES, Value::Int(*files));
                 put(member::DROPPED, Value::Arr(dropped.iter().map(|x| s(x)).collect()));
+                put(member::ORIGINALS, Value::Arr(originals.iter().map(|x| s(x)).collect()));
+                put(member::LEFT_OUT, Value::Arr(left_out.iter().map(|x| s(x)).collect()));
             }
             Reply::Verified { kit_id, entries, records, taken } => {
                 put(member::REPLY, s(kind::VERIFIED));
@@ -309,6 +314,8 @@ impl Reply {
                 entries: n(member::ENTRIES)?,
                 files: n(member::FILES)?,
                 dropped: v.member(member::DROPPED)?.as_arr()?.iter().map(|x| x.as_str().map(str::to_string)).collect::<Option<Vec<_>>>()?,
+                originals: v.member(member::ORIGINALS)?.as_arr()?.iter().map(|x| x.as_str().map(str::to_string)).collect::<Option<Vec<_>>>()?,
+                left_out: v.member(member::LEFT_OUT)?.as_arr()?.iter().map(|x| x.as_str().map(str::to_string)).collect::<Option<Vec<_>>>()?,
             },
             kind::VERIFIED => {
                 let strs = |v: &Value| v.as_arr().and_then(|a| a.iter().map(|x| x.as_str().map(str::to_string)).collect::<Option<Vec<_>>>());
@@ -421,7 +428,7 @@ mod tests {
             Reply::Unheard { tx: "t".into(), detail: "no node".into() },
             Reply::Voided { tx: "t".into() },
             Reply::OnChain { names: vec!["h1".into(), "h2".into()], tx: "t".into(), block: 7 },
-            Reply::Kit { kit_id: "k".into(), path: "/o".into(), entries: 2, files: 0, dropped: vec![".DS_Store".into()] },
+            Reply::Kit { kit_id: "k".into(), path: "/o".into(), entries: 2, files: 1, dropped: vec![".DS_Store".into()], originals: vec!["a.txt".into()], left_out: vec!["/gone/b.txt".into()] },
             Reply::Verified {
                 kit_id: "k".into(),
                 entries: 3,

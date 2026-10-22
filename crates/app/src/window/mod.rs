@@ -90,6 +90,11 @@ struct Typed {
     g_history: String,
     g_from: String,
     g_to: String,
+    /// A custom validity: the start's day ("YYYY-MM-DD"), its hour and minute, and how long it lasts (days, hours,
+    /// minutes). The window's two cells above are made from them.
+    g_start_day: String,
+    g_start_at: [String; 2],
+    g_lasts: [String; 3],
     g_scope: String,
     g_upstream: String,
     g_exclusive: bool,

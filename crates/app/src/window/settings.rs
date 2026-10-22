@@ -242,10 +242,7 @@ impl Win {
                         let never = me.ux.cli_never;
                         let units: Vec<&str> = CLI_SPAN.iter().map(|(unit, _, _)| t(*unit)).collect();
                         let bad: Vec<bool> = (0..CLI_SPAN.len()).map(|i| matches!(span, Span::Over(o) if o[i])).collect();
-                        span_box(ui, "cli-span", &mut me.ux.cli_span, &units, "0", &bad, !never);
-                        for cell in me.ux.cli_span.iter_mut() {
-                            *cell = cli_cell(cell);
-                        }
+                        zikaron_ui::lasts::boxed(ui, "cli-span", &mut me.ux.cli_span, &units, "0", &bad, !never);
                         ui.spacing_mut().item_spacing.y = 0.0;
                         passing_line(ui, egui::Id::new("cli-span-said"), &said.0, said.1);
                     });
@@ -1943,81 +1940,9 @@ fn net_cells(ui: &mut egui::Ui, d: &mut Draft) {
 /// The validity's three cells on the "write alone" sheet, in order: the unit's word, the most the cell takes,
 /// and the unit in seconds. Together they run from a minute to a year (`machine::LASTS_MIN`, `LASTS_MAX`).
 const CLI_SPAN: [(Key, u64, u64); 3] = [(Key::CliLastsDays, 365, 86_400), (Key::CliLastsHours, 23, 3_600), (Key::CliLastsMinutes, 59, 60)];
-/// The number in each third of the validity's box (three digits at most), and the room between it and its unit.
-pub(super) const CLI_SPAN_NUM_W: f32 = 40.0;
-pub(super) const CLI_SPAN_GAP: f32 = 6.0;
-
-/// The validity's box: one field-toned bar as wide as the room, cut into equal parts by hairlines, one part per
-/// unit (`values[i]` typed before `units[i]`); in each part the number (monospace, `hint` while empty) and its
-/// unit (small, second ink) sit together in the middle, and a click anywhere in the part types into its number.
-/// `bad[i]` turns that number and the bar's edge red; turned off, the whole bar is faint and takes nothing.
-fn span_box(ui: &mut egui::Ui, id_salt: &str, values: &mut [String], units: &[&str], hint: &str, bad: &[bool], enabled: bool) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), tk::INPUT_H), egui::Sense::hover());
-    let id = egui::Id::new(("span-box", id_salt));
-    let slot = ui.painter().add(egui::Shape::Noop);
-    let mut child = ui.new_child(egui::UiBuilder::new().id_salt(("span-box", id_salt)).max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    if !enabled {
-        child.disable();
-        child.multiply_opacity(tk::OFF);
-    }
-    let n = units.len().max(1);
-    let part_w = rect.width() / n as f32;
-    let font = Type::Mono.font();
-    let mut focused = false;
-    for (i, unit) in units.iter().enumerate() {
-        let Some(value) = values.get_mut(i) else { break };
-        let part = egui::Rect::from_min_size(egui::pos2(rect.left() + part_w * i as f32, rect.top()), egui::vec2(part_w, rect.height()));
-        if i > 0 {
-            child.painter().vline(part.left(), part.y_range(), egui::Stroke::new(1.0_f32, c(C::Line)));
-        }
-        let g = paint::galley(&child, unit, Type::Small, c(C::Ink2));
-        let x = part.center().x - (CLI_SPAN_NUM_W + CLI_SPAN_GAP + g.size().x) / 2.0;
-        let num = egui::Rect::from_min_size(egui::pos2(x, part.top() + 4.0), egui::vec2(CLI_SPAN_NUM_W, part.height() - 8.0));
-        let cell_id = id.with(i);
-        if child.interact(part, id.with(("part", i)), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::Text).clicked() {
-            child.memory_mut(|m| m.request_focus(cell_id));
-        }
-        let wrong = bad.get(i).copied().unwrap_or(false);
-        let mut cu = child.new_child(egui::UiBuilder::new().max_rect(num).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        let edit = egui::TextEdit::singleline(value)
-            .id(cell_id)
-            .font(font.clone())
-            .text_color(if wrong { c(C::Bad) } else { c(C::Ink) })
-            .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(2, 2)))
-            .desired_width(CLI_SPAN_NUM_W - 4.0)
-            .horizontal_align(egui::Align::Max)
-            .vertical_align(egui::Align::Center);
-        focused |= cu.add(edit).has_focus();
-        if value.is_empty() {
-            child.painter().text(egui::pos2(num.right() - 2.0, num.center().y), egui::Align2::RIGHT_CENTER, hint, font.clone(), c(C::Ink3));
-        }
-        child.painter().galley(egui::pos2(num.right() + CLI_SPAN_GAP, part.center().y - g.size().y / 2.0), g, c(C::Ink2));
-    }
-    let edge = if bad.iter().any(|b| *b) {
-        input::Edge::Bad
-    } else if focused {
-        input::Edge::Focus
-    } else if enabled && ui.rect_contains_pointer(rect) {
-        input::Edge::Hover
-    } else {
-        input::Edge::Rest
-    };
-    let frame = input::frame_shape(ui.ctx(), rect, id, edge);
-    ui.painter().set(slot, if enabled { frame } else { faint(frame) });
-}
-
-/// A frame shape at the faint strength of a control that is off.
-fn faint(s: egui::Shape) -> egui::Shape {
-    match s {
-        egui::Shape::Vec(v) => egui::Shape::Vec(v.into_iter().map(faint).collect()),
-        egui::Shape::Rect(mut r) => {
-            r.fill = r.fill.gamma_multiply(tk::OFF);
-            r.stroke.color = r.stroke.color.gamma_multiply(tk::OFF);
-            egui::Shape::Rect(r)
-        }
-        other => other,
-    }
-}
+/// The number in each third of the validity's box, and the room between it and its unit (`zikaron_ui::lasts`).
+pub(super) const CLI_SPAN_NUM_W: f32 = zikaron_ui::lasts::NUM_W;
+pub(super) const CLI_SPAN_GAP: f32 = zikaron_ui::lasts::GAP;
 
 /// The validity as typed on the "write alone" sheet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2038,31 +1963,17 @@ enum Span {
 /// then not read).
 fn cli_span(cells: &[String; 3], never: bool) -> Span {
     use crate::machine::{Lasts, LASTS_MAX};
+    use zikaron_ui::lasts::Read;
     if never {
         return Span::Lasts(Lasts::Never);
     }
-    if cells.iter().all(|x| x.is_empty()) {
-        return Span::Empty;
-    }
-    let n: [Option<u64>; 3] = std::array::from_fn(|i| if cells[i].is_empty() { Some(0) } else { cells[i].parse().ok() });
-    let over: [bool; 3] = std::array::from_fn(|i| n[i].is_none_or(|v| v > CLI_SPAN[i].1));
-    if over.contains(&true) {
-        return Span::Over(over);
-    }
-    match (0..3).map(|i| n[i].unwrap_or(0) * CLI_SPAN[i].2).sum::<u64>() {
-        0 => Span::Zero,
-        s if s > LASTS_MAX => Span::PastYear,
-        s => Span::Lasts(Lasts::Secs(s)),
-    }
-}
-
-/// One cell as typed, kept to digits without leading zeros.
-fn cli_cell(typed: &str) -> String {
-    let digits: String = typed.chars().filter(|ch| ch.is_ascii_digit()).collect();
-    match digits.trim_start_matches('0') {
-        "" if digits.is_empty() => String::new(),
-        "" => "0".to_string(),
-        rest => rest.to_string(),
+    let parts = CLI_SPAN.map(|(_, most, unit)| (most, unit));
+    match zikaron_ui::lasts::read(cells, &parts) {
+        Read::Empty => Span::Empty,
+        Read::Over(over) => Span::Over(std::array::from_fn(|i| over.get(i).copied().unwrap_or(false))),
+        Read::Total(0) => Span::Zero,
+        Read::Total(s) if s > LASTS_MAX => Span::PastYear,
+        Read::Total(s) => Span::Lasts(Lasts::Secs(s)),
     }
 }
 
@@ -2156,10 +2067,10 @@ mod cli_lasts_tests {
     /// A cell keeps digits only, without leading zeros; a typed zero stays one zero.
     #[test]
     fn a_cell_keeps_its_digits() {
-        assert_eq!(cli_cell("0012"), "12");
-        assert_eq!(cli_cell("1a2"), "12");
-        assert_eq!(cli_cell("000"), "0");
-        assert_eq!(cli_cell("x"), "");
+        assert_eq!(zikaron_ui::lasts::digits("0012"), "12");
+        assert_eq!(zikaron_ui::lasts::digits("1a2"), "12");
+        assert_eq!(zikaron_ui::lasts::digits("000"), "0");
+        assert_eq!(zikaron_ui::lasts::digits("x"), "");
     }
 
     /// The line under the switch: the expiry from now for a validity, each cell past its most by name, zero and

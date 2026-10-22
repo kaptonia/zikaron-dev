@@ -780,7 +780,7 @@ fn the_cli_schema_lists_every_flag_the_code_knows() {
     real.dedup();
     assert_eq!(real.len(), m, "码里的旗名闭表有重名");
     assert_eq!(listed, real, "§八 与旗名闭表对不上");
-    assert_eq!(listed.len(), 61, "the flag count changed; update the flag count stated in CLI-SCHEMA.md");
+    assert_eq!(listed.len(), 62, "the flag count changed; update the flag count stated in CLI-SCHEMA.md");
 }
 
 // init: one ledger, one root.

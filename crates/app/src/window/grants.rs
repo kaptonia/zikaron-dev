@@ -76,14 +76,55 @@ fn days_from_civil((y, m, d): datepick::Day) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
-/// The Unix second on `day` (in the zone moments are shown in) at the time of day `like` has there: a day picked
-/// on a date block keeps the hour of the moment it replaces.
-fn on_day(day: datepick::Day, like: u64) -> u64 {
-    let shown = crate::when::when(like);
+/// A Unix second read in the zone moments are shown in, as seconds since 1970-01-01 there.
+fn local_of(at: u64) -> i64 {
+    let shown = crate::when::when(at);
     let num = |a: usize, b: usize| shown.get(a..b).and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
-    let here = days_from_civil(ymd(like)) * 86_400 + num(11, 13) * 3600 + num(14, 16) * 60 + num(17, 19);
-    let offset = here - like as i64;
-    (days_from_civil(day) * 86_400 + here.rem_euclid(86_400) - offset).max(0) as u64
+    days_from_civil(ymd(at)) * 86_400 + num(11, 13) * 3600 + num(14, 16) * 60 + num(17, 19)
+}
+
+/// The Unix second at `of_day` seconds into `day` in the zone moments are shown in (the zone's offset read where the
+/// moment lands, so a day across a clock change keeps its hour).
+fn at_local(day: datepick::Day, of_day: u64) -> u64 {
+    let here = days_from_civil(day) * 86_400 + of_day as i64;
+    let offset = |at: i64| local_of(at.max(0) as u64) - at.max(0);
+    let first = here - offset(here);
+    (here - offset(first)).max(0) as u64
+}
+
+/// A custom validity's start (hour, minute) and length (days, hours, minutes): each part's unit word, its most and
+/// what one of it is worth in seconds. A grant may last up to 999 days, as many as the days' part holds.
+const GRANT_START: [(Key, u64, u64); 2] = [(Key::GrantHour, 23, 3_600), (Key::GrantMinute, 59, 60)];
+const GRANT_LASTS: [(Key, u64, u64); 3] = [(Key::CliLastsDays, 999, 86_400), (Key::CliLastsHours, 23, 3_600), (Key::CliLastsMinutes, 59, 60)];
+
+/// The parts of a box read against their table: `(most, unit)` each.
+fn parts_of<const N: usize>(table: &[(Key, u64, u64); N]) -> [(u64, u64); N] {
+    table.map(|(_, most, unit)| (most, unit))
+}
+
+/// The custom window: the start (its day, else `today`; its hour and minute, an empty part zero) to the start plus
+/// the length, when the length is more than zero and every part is within its most.
+fn custom_window(day: &str, at: &[String; 2], lasts: &[String; 3], today: datepick::Day) -> Option<(u64, u64)> {
+    use zikaron_ui::lasts::Read;
+    let of_day = match zikaron_ui::lasts::read(at, &parts_of(&GRANT_START)) {
+        Read::Empty => 0,
+        Read::Total(n) => n,
+        Read::Over(_) => return None,
+    };
+    let start = at_local(datepick::parse(day).unwrap_or(today), of_day);
+    match zikaron_ui::lasts::read(lasts, &parts_of(&GRANT_LASTS)) {
+        Read::Total(n) if n > 0 => Some((start, start + n)),
+        _ => None,
+    }
+}
+
+/// The custom fields that give a window back: its start's day, hour and minute, and its length in days, hours and
+/// minutes (the days kept to their most; seconds dropped).
+fn custom_of((a, b): (u64, u64)) -> (String, [String; 2], [String; 3]) {
+    let of_day = local_of(a).rem_euclid(86_400) as u64;
+    let n = b.saturating_sub(a);
+    let days = (n / 86_400).min(GRANT_LASTS[0].1);
+    (datepick::fmt(ymd(a)), [(of_day / 3_600).to_string(), (of_day % 3_600 / 60).to_string()], [days.to_string(), (n % 86_400 / 3_600).to_string(), (n % 3_600 / 60).to_string()])
 }
 
 /// The words of a date block: the month (with its year when the window crosses one) and the day.
@@ -458,6 +499,9 @@ impl Win {
         self.typed.g_upstream.clear();
         self.typed.g_scope.clear();
         self.typed.g_exclusive = false;
+        self.typed.g_start_day.clear();
+        self.typed.g_start_at = Default::default();
+        self.typed.g_lasts = Default::default();
         self.ux.u3.terms = None;
         self.ux.u3.grant_days = 30;
         self.ux.u3.grant_days_set = true;
@@ -506,6 +550,17 @@ impl Win {
                     self.typed.g_from.clear();
                     self.typed.g_to.clear();
                 }
+            }
+        } else {
+            // Custom: the window is made from the start and the length (nothing typed, no window); the cells the
+            // signing reads are written from them.
+            let (f, to) = match custom_window(&self.typed.g_start_day, &self.typed.g_start_at, &self.typed.g_lasts, today_of((self.shell.clock)())) {
+                Some((a, b)) => (a.to_string(), b.to_string()),
+                None => (String::new(), String::new()),
+            };
+            if self.typed.g_from != f || self.typed.g_to != to {
+                self.typed.g_from = f;
+                self.typed.g_to = to;
             }
         }
         // Checksum (mixed-case) addresses copied from wallets are refused by the ledger law: say so under the
@@ -647,7 +702,7 @@ impl Win {
                     }
                 });
                 // Validity: the presets or custom at the left and the window as two date blocks at the
-                // right (under the presets when the line has no room); custom blocks open the calendar.
+                // right (under the presets when the line has no room); custom: the start block opens the calendar.
                 // The overlap check is the line under them.
                 let words = date_words();
                 let today = today_of(clock);
@@ -660,10 +715,16 @@ impl Win {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 14.0;
                         if let Some(i) = seg::seg(ui, "grant-days", &cells, cur) {
+                            // Turned to custom from a preset: the custom fields take the window the preset had.
+                            if presets[i].0 == 0 && self.ux.u3.grant_days > 0 {
+                                if let Some(w) = window {
+                                    (self.typed.g_start_day, self.typed.g_start_at, self.typed.g_lasts) = custom_of(w);
+                                }
+                            }
                             self.ux.u3.grant_days = presets[i].0;
                         }
                         if ui.available_width() >= need + 14.0 {
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.span_blocks(ui, &from_words, &between, &to_words, no_span, custom, today, &words, clock));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.span_blocks(ui, &from_words, &between, &to_words, no_span, custom, today, &words));
                         } else {
                             below = true;
                         }
@@ -672,16 +733,37 @@ impl Win {
                         // Under the presets the date blocks keep to the card's right line; a sentence in
                         // their place reads from the left, as the line under it does.
                         let layout = if no_span.is_some() { egui::Layout::left_to_right(egui::Align::Center) } else { egui::Layout::right_to_left(egui::Align::Center) };
-                        ui.allocate_ui_with_layout(egui::vec2(w, 0.0), layout, |ui| self.span_blocks(ui, &from_words, &between, &to_words, no_span, custom, today, &words, clock));
+                        ui.allocate_ui_with_layout(egui::vec2(w, 0.0), layout, |ui| self.span_blocks(ui, &from_words, &between, &to_words, no_span, custom, today, &words));
                     }
                     said_line(ui, clash.0, &clash.1);
                 });
                 if custom {
-                    let mono = fields::Look { mono: true, ..Default::default() };
+                    // The start's time of day (its day is the start block's calendar) and the length; a part past its
+                    // most is red and said under its box.
+                    let over = |cells: &[String], table: &[(Key, u64, u64)]| -> (Vec<bool>, String) {
+                        let parts: Vec<(u64, u64)> = table.iter().map(|(_, most, unit)| (*most, *unit)).collect();
+                        let bad = match zikaron_ui::lasts::read(cells, &parts) {
+                            zikaron_ui::lasts::Read::Over(o) => o,
+                            _ => vec![false; table.len()],
+                        };
+                        let said: Vec<String> = table.iter().zip(&bad).filter(|(_, b)| **b).map(|((unit, most, _), _)| crate::lang::filln(Key::CliLastsAtMost, &[t(*unit), &most.to_string()])).collect();
+                        (bad, said.join(t(Key::ListJoin)))
+                    };
+                    let (start_bad, start_said) = over(&self.typed.g_start_at, &GRANT_START);
+                    let (lasts_bad, lasts_said) = over(&self.typed.g_lasts, &GRANT_LASTS);
+                    let start_units: Vec<&str> = GRANT_START.iter().map(|(unit, _, _)| t(*unit)).collect();
+                    let lasts_units: Vec<&str> = GRANT_LASTS.iter().map(|(unit, _, _)| t(*unit)).collect();
+                    let typed = &mut self.typed;
                     st.pair(
                         ui,
-                        |ui, st| st.field(ui, t(Key::GrantFrom), None, None, |ui, w| fields::line(ui, &mut self.typed.g_from, "", w, mono)),
-                        |ui, st| st.field(ui, t(Key::GrantTo), None, None, |ui, w| fields::line(ui, &mut self.typed.g_to, "", w, mono)),
+                        |ui, st| {
+                            let check = (!start_said.is_empty()).then_some((start_said.as_str(), true));
+                            st.field(ui, t(Key::GrantStartAt), None, check, |ui, _| zikaron_ui::lasts::boxed(ui, "grant-start", &mut typed.g_start_at, &start_units, "0", &start_bad, true))
+                        },
+                        |ui, st| {
+                            let check = (!lasts_said.is_empty()).then_some((lasts_said.as_str(), true));
+                            st.field(ui, t(Key::GrantLasts), None, check, |ui, _| zikaron_ui::lasts::boxed(ui, "grant-lasts", &mut typed.g_lasts, &lasts_units, "0", &lasts_bad, true))
+                        },
                     );
                 }
             });
@@ -745,34 +827,24 @@ impl Win {
         }
     }
 
-    /// The window as two date blocks with its length between them; with custom validity each block opens the
-    /// calendar, and the day picked keeps the hour of the cell it replaces. Without a window, the sentence that
-    /// says why, quiet.
+    /// The window as two date blocks with its length between them; with custom validity the start block opens the
+    /// calendar that picks the start's day (the end only shows). Without a window, the sentence that says why,
+    /// quiet.
     #[allow(clippy::too_many_arguments)]
-    fn span_blocks(&mut self, ui: &mut egui::Ui, from: &(String, String), between: &str, to: &(String, String), no_span: Option<&str>, custom: bool, today: datepick::Day, words: &datepick::Words, clock: u64) {
+    fn span_blocks(&mut self, ui: &mut egui::Ui, from: &(String, String), between: &str, to: &(String, String), no_span: Option<&str>, custom: bool, today: datepick::Day, words: &datepick::Words) {
         if let Some(s) = no_span {
             let room = ui.available_width();
             paint::line(ui, s, Type::Body, c(C::Ink3), room);
             return;
         }
-        let [a, b] = datepick::span(ui, "grant-span", datepick::Block { month: &from.0, day: &from.1 }, between, datepick::Block { month: &to.0, day: &to.1 }, custom);
+        let [a, _] = datepick::span(ui, "grant-span", datepick::Block { month: &from.0, day: &from.1 }, between, datepick::Block { month: &to.0, day: &to.1 }, [custom, false]);
         if !custom {
             return;
         }
-        for (i, resp) in [a, b].iter().enumerate() {
-            let cell = if i == 0 { self.typed.g_from.clone() } else { self.typed.g_to.clone() };
-            let like = cell.trim().parse::<u64>().ok().or(self.chain_now()).unwrap_or(clock);
-            let mut day = cell.trim().parse::<u64>().ok().map(crate::when::day).unwrap_or_default();
-            if datepick::hang(ui, &datepick::block_salt("grant-span", i), resp, &mut day, today, words) {
-                if let Some(d) = datepick::parse(&day) {
-                    let secs = on_day(d, like).to_string();
-                    if i == 0 {
-                        self.typed.g_from = secs;
-                    } else {
-                        self.typed.g_to = secs;
-                    }
-                }
-            }
+        // The start block's calendar picks the start's day; the end is the start plus the length.
+        let mut day = if self.typed.g_start_day.is_empty() { datepick::fmt(today) } else { self.typed.g_start_day.clone() };
+        if datepick::hang(ui, &datepick::block_salt("grant-span", 0), &a, &mut day, today, words) {
+            self.typed.g_start_day = day;
         }
     }
 
