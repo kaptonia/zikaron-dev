@@ -4876,11 +4876,19 @@
     },
     {
      "path": "crates/app/tests/checks_more/window_b10_layout.rs",
+     "name": "the_first_rows_lit_block_is_as_tall_as_the_next_rows"
+    },
+    {
+     "path": "crates/app/tests/checks_more/window_b10_layout.rs",
      "name": "the_wizard_asks_the_one_esc_owner_and_one_esc_goes_to_the_last_opened"
     },
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
      "name": "a_chain_read_the_status_line_reports_grows_no_card"
+    },
+    {
+     "path": "crates/app/tests/checks_more/window_habits.rs",
+     "name": "a_new_grant_starts_from_the_chain_time_read_as_it_opens"
     },
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
@@ -5595,6 +5603,10 @@
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",
      "name": "a_chain_read_the_status_line_reports_grows_no_card"
+    },
+    {
+     "path": "crates/app/tests/checks_more/window_habits.rs",
+     "name": "a_new_grant_starts_from_the_chain_time_read_as_it_opens"
     },
     {
      "path": "crates/app/tests/checks_more/window_habits.rs",

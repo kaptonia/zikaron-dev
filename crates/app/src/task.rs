@@ -120,6 +120,8 @@ pub enum Kind {
     Archive,
     /// Ask the chain once: balance and chain time. Network calls never happen in the frame.
     Chain,
+    /// Ask the chain for its time alone (the latest block's), for a new grant's start: no key, no balance.
+    ChainTime,
     /// Reconcile once: assemble the audit input and have the core write the report.
     Reconcile,
     /// The self-audit clock: scan the chain, assemble the input, the core writes the report.
@@ -224,6 +226,7 @@ impl Kind {
             // Network kinds (a node answers when it answers; each lands whole or not at all, and what it leaves
             // on disk is designed to be picked up again), and read-only kinds.
             Kind::Chain
+            | Kind::ChainTime
             | Kind::Audit
             | Kind::Anchor
             | Kind::Fetch
@@ -289,11 +292,12 @@ impl Kind {
             | Kind::Take
             | Kind::Extract
             | Kind::Path
-            | Kind::CliPath => false,
+            | Kind::CliPath
+            | Kind::ChainTime => false,
         }
     }
 
-    pub const ALL: [Kind; 37] = [
+    pub const ALL: [Kind; 38] = [
         Kind::SelfCheck,
         Kind::Archive,
         Kind::Chain,
@@ -331,6 +335,7 @@ impl Kind {
         Kind::CliPath,
         Kind::Seat,
         Kind::Extract,
+        Kind::ChainTime,
     ];
 
     /// Whether this kind's readings follow the ledger's source. Exhaustive, so a new kind must decide. Those
@@ -356,7 +361,7 @@ impl Kind {
             | Kind::Take
             | Kind::Record
             | Kind::Migrate => true,
-            Kind::SelfCheck | Kind::Anchor | Kind::Kit | Kind::Book | Kind::Diligence | Kind::Verify | Kind::Delivery | Kind::Badge | Kind::Check | Kind::Keystore | Kind::Vault | Kind::Publish | Kind::Fetch | Kind::Vet | Kind::Backup | Kind::ReadNet | Kind::Path | Kind::CliPath | Kind::Seat | Kind::Extract => false,
+            Kind::SelfCheck | Kind::Anchor | Kind::Kit | Kind::Book | Kind::Diligence | Kind::Verify | Kind::Delivery | Kind::Badge | Kind::Check | Kind::Keystore | Kind::Vault | Kind::Publish | Kind::Fetch | Kind::Vet | Kind::Backup | Kind::ReadNet | Kind::Path | Kind::CliPath | Kind::Seat | Kind::Extract | Kind::ChainTime => false,
         }
     }
 
@@ -399,6 +404,7 @@ impl Kind {
             Kind::CliPath => "clipath",
             Kind::Seat => "seat",
             Kind::Extract => "extract",
+            Kind::ChainTime => "chainTime",
         }
     }
 }
@@ -452,6 +458,8 @@ pub enum Done {
         /// could not be counted (a file that does not open, a locked vault, machine settings that do not read).
         machine_items: Result<u64, crate::fault::Fault>,
     },
+    /// The chain's time, the latest block's (`Kind::ChainTime`).
+    ChainTime(u64),
     /// Chain readings. `None` means "not read", which the screen keeps apart from "read as zero".
     Chain {
         gas_wei: Option<u128>,

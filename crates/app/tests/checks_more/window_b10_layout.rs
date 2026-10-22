@@ -405,3 +405,34 @@ fn a_new_grants_record_is_chosen_in_a_sheet() {
         assert_eq!(got.after_open, ("11".repeat(32), false), "a record on chain is chosen and the sheet closes");
     })
 }
+
+/// In a list of a sheet (here a new grant's "choose a record"), the first row's lit block is as tall as the next
+/// row's and keeps the same distance from its row: the list's top is no line above it, and its block neither
+/// reaches up to the list's edge nor stops short of it. Whoever moves down the list sees one block, the same at
+/// every row.
+#[test]
+fn the_first_rows_lit_block_is_as_tall_as_the_next_rows() {
+    english(|| {
+        let ctx = egui::Context::default();
+        let shell = probe_shell(&ctx);
+        let row = |seq: u64, note: &str, byte: u8| app::ledgerx::Row {
+            seq,
+            kind: zikaron::tokens::EntryType::History,
+            id: format!("{:02x}", byte).repeat(32),
+            prev: None,
+            author: String::new(),
+            summary: String::new(),
+            lamp: app::ledgerx::Lamp::Anchored,
+            tx: None,
+            bytes: 0,
+            work: Some(format!("{:02x}", byte + 1).repeat(32)),
+            facts: app::ledgerx::Facts { note: Some(note.to_string()), ..Default::default() },
+            anchored_at: None,
+        };
+        let rows = vec![row(1, "One", 0x10), row(2, "Two", 0x20), row(3, "Three", 0x30)];
+        let (_, got) = app::window::probe_pick_lits(&ctx, shell, rows, &["Three", "Two", "One"], 1180.0, 760.0);
+        let (first, second) = (got[0].expect("the first row lights"), got[1].expect("the second row lights"));
+        assert!((first.block.height() - second.block.height()).abs() < 0.5, "the first row's block is as tall as the next row's: {first:?} against {second:?}");
+        assert!((first.block.top() - first.slot.top() - (second.block.top() - second.slot.top())).abs() < 0.5, "and as far from its row's top: {first:?} against {second:?}");
+    })
+}

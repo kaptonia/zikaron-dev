@@ -1079,6 +1079,39 @@ pub fn probe_busy_under_cells(ctx: &egui::Context, shell: Shell, wizard: bool, w
     (win.shell, cells, busy)
 }
 
+/// The new-grant page opened fresh over the grants list and drawn until the chain-time read it asks for has
+/// landed (or `frames` frames have gone, 20 ms apart): the start written for its validity (`g_from`, seconds) and
+/// every text drawn on the last frame.
+pub fn probe_grant_start(ctx: &egui::Context, shell: Shell, frames: usize, width: f32, height: f32) -> (Shell, String, Vec<String>) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::View(crate::nav::View::Grants, 0), role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    win.grant_form_fresh();
+    win.push(Route::NewGrant, 0.0);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut out = egui::FullOutput::default();
+    let mut asked = false;
+    for k in 0..frames {
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(0.1 * (k + 1) as f64), ..Default::default() };
+        out = ctx.run_ui(input, |ui| win.draw(ui));
+        let flying = win.shell.tasks.in_flight(crate::task::Kind::ChainTime);
+        asked |= flying || win.shell.tasks.attempted(crate::task::Kind::ChainTime);
+        if asked && !flying && k > 2 {
+            // Landed: one more frame draws what it brought.
+            let input = egui::RawInput { screen_rect: Some(screen), time: Some(0.1 * (k + 2) as f64), ..Default::default() };
+            out = ctx.run_ui(input, |ui| win.draw(ui));
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let texts = texts_of(&out).into_iter().map(|d| d.text).collect();
+    let from = win.typed.g_from.clone();
+    (win.shell, from, texts)
+}
+
 /// The "with a credential" sheet opened over the command line's page and driven by the window's own input: the days cell
 /// clicked and "400" typed, then cleared and "2" typed; the "does not expire" switch's title clicked, and "9"
 /// typed into the days cell while it is on. Read after each: the cell, and the line under the switch.
@@ -1190,6 +1223,44 @@ pub fn probe_work_pick(ctx: &egui::Context, mut shell: Shell, rows: Vec<crate::l
     let _ = settle(&mut win, &mut run);
     reading.after_open = (win.typed.g_work.clone(), win.ux.u3.work_pick);
     (win.shell, reading)
+}
+
+/// A new grant's "choose a record" sheet over `rows`: the pointer rested on each record named in `names` in turn,
+/// where its name is drawn, and the lit block drawn under it then (none when nothing lit there).
+pub fn probe_pick_lits(ctx: &egui::Context, mut shell: Shell, rows: Vec<crate::ledgerx::Row>, names: &[&str], width: f32, height: f32) -> (Shell, Vec<Option<zikaron_ui::probe::Lit>>) {
+    let n = rows.len();
+    shell.rows = Some((rows, n));
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::View(crate::nav::View::Grants, crate::nav::tab::GRANTS_NEW), role));
+    ux.wizard_asked = true;
+    ux.u3.work_pick = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run_ui(input, |ui| win.draw(ui))
+    };
+    let mut out = run(&mut win, Vec::new());
+    for _ in 0..8 {
+        out = run(&mut win, Vec::new());
+    }
+    let drawn = texts_of(&out);
+    let mut got = Vec::new();
+    for name in names {
+        let Some(at) = drawn.iter().rev().find(|d| d.text == *name).map(|d| d.rect.center()) else {
+            got.push(None);
+            continue;
+        };
+        for _ in 0..3 {
+            let _ = run(&mut win, vec![egui::Event::PointerMoved(at)]);
+        }
+        got.push(zikaron_ui::probe::lits(ctx).into_iter().find(|l| l.block.contains(at)));
+    }
+    (win.shell, got)
 }
 
 /// The ledger's check card, folded open on the records view (as the audit page opens it): every text drawn once the

@@ -239,3 +239,67 @@ fn the_ui_kit_files_name_no_page_of_this_product() {
         }
     }
 }
+
+/// A node on a local port answering every question with a block at chain time `at` (number 16).
+fn block_node(at: u64) -> String {
+    use std::io::{Read, Write};
+    let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let url = format!("http://{}", l.local_addr().expect("addr"));
+    std::thread::spawn(move || {
+        for s in l.incoming().flatten() {
+            std::thread::spawn(move || {
+                let mut s = s;
+                let mut raw = Vec::new();
+                let mut buf = [0u8; 4096];
+                let req = loop {
+                    match s.read(&mut buf) {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => raw.extend_from_slice(&buf[..n]),
+                    }
+                    let text = String::from_utf8_lossy(&raw).to_string();
+                    if let Some(i) = text.find("\r\n\r\n") {
+                        let len: usize = text[..i].lines().find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").and_then(|n| n.trim().parse().ok())).unwrap_or(0);
+                        if raw.len() >= i + 4 + len {
+                            break text[i + 4..].to_string();
+                        }
+                    }
+                };
+                let id = req.split("\"id\":").nth(1).and_then(|r| r.split([',', '}']).next()).unwrap_or("1").trim().to_string();
+                let body = format!("{{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{{\"number\":\"0x10\",\"timestamp\":\"0x{at:x}\"}}}}");
+                let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes());
+            });
+        }
+    });
+    url
+}
+
+/// A new grant starts from the chain's present: the form reads the latest block's time as it opens, so a chain
+/// time heard days before does not shorten the window signed; when that read fails, the start stays at the time
+/// heard last and the form says so beside the dates. Whoever signs a grant gets the window they chose.
+#[test]
+fn a_new_grant_starts_from_the_chain_time_read_as_it_opens() {
+    if super::alone_in(module_path!(), "a_new_grant_starts_from_the_chain_time_read_as_it_opens") {
+        return;
+    }
+    zikaron_anchor::patience::set_waits(Some(std::time::Duration::ZERO));
+    let ctx = egui::Context::default();
+    app::lang::set(app::lang::Lang::Zh);
+    // Heard five days ago; the chain is now at `fresh`.
+    let (heard, fresh) = (1_790_000_000_u64, 1_790_000_000_u64 + 5 * 86_400);
+    let staged = |url: &str| {
+        let mut s = shell(&ctx);
+        s.settings.chain_id = Some(31337);
+        s.endpoints = vec![app::chainx::Endpoint::at(31337, url)];
+        s.note_chain_time(heard);
+        s
+    };
+    let stale = app::lang::filln(app::lang::Key::GrantChainTimeStale, &[&app::when::day(heard)]);
+    // The read lands: the start is the chain's present, and nothing is said about a stale time.
+    let (_, from, texts) = app::window::probe_grant_start(&ctx, staged(&block_node(fresh)), 150, W, H);
+    assert_eq!(from, fresh.to_string(), "the start is the latest block's time");
+    assert!(!texts.iter().any(|t| *t == stale), "no stale note when the read landed: {texts:?}");
+    // No node answers: the start stays at the time heard last, said beside the dates.
+    let (_, from, texts) = app::window::probe_grant_start(&ctx, staged("http://127.0.0.1:1"), 150, W, H);
+    assert_eq!(from, heard.to_string(), "the start falls back to the time heard last");
+    assert!(texts.iter().any(|t| *t == stale), "the fallback is said: {stale:?} among {texts:?}");
+}

@@ -505,6 +505,12 @@ impl Win {
         self.ux.u3.terms = None;
         self.ux.u3.grant_days = 30;
         self.ux.u3.grant_days_set = true;
+        self.ux.u3.chain_time_asked = false;
+    }
+
+    /// The day a new grant starts from when none is picked: the chain's, else this machine's.
+    fn grant_today(&self) -> datepick::Day {
+        today_of(self.chain_now().unwrap_or((self.shell.clock)()))
     }
 
     /// The new-grant page.
@@ -522,6 +528,12 @@ impl Win {
         if !self.ux.u3.grant_days_set {
             self.ux.u3.grant_days = 30;
             self.ux.u3.grant_days_set = true;
+        }
+        // The chain's time read afresh once as the form opens: a start, preset or picked, goes by the latest block
+        // rather than the last time this machine happened to hear from the chain.
+        if !self.ux.u3.chain_time_asked {
+            self.ux.u3.chain_time_asked = true;
+            self.auto(Action::ReadChainTime, now);
         }
         // The double-sale check runs in the background as the user types, and only reruns when the record, the
         // validity, the register or the exclusive list changes.
@@ -554,7 +566,7 @@ impl Win {
         } else {
             // Custom: the window is made from the start and the length (nothing typed, no window); the cells the
             // signing reads are written from them.
-            let (f, to) = match custom_window(&self.typed.g_start_day, &self.typed.g_start_at, &self.typed.g_lasts, today_of((self.shell.clock)())) {
+            let (f, to) = match custom_window(&self.typed.g_start_day, &self.typed.g_start_at, &self.typed.g_lasts, self.grant_today()) {
                 Some((a, b)) => (a.to_string(), b.to_string()),
                 None => (String::new(), String::new()),
             };
@@ -588,7 +600,6 @@ impl Win {
             _ => None,
         };
         let custom = self.ux.u3.grant_days == 0;
-        let clock = (self.shell.clock)();
         // The two date blocks' words, or the sentence said in their place when there is no window.
         let cross = window.is_some_and(|(a, b)| ymd(a).0 != ymd(b).0);
         let cell_words = |s: &str| s.trim().parse::<u64>().ok().map(|x| block_words(x, cross)).unwrap_or_else(|| (String::new(), "\u{2013}".to_string()));
@@ -705,7 +716,7 @@ impl Win {
                 // right (under the presets when the line has no room); custom: the start block opens the calendar.
                 // The overlap check is the line under them.
                 let words = date_words();
-                let today = today_of(clock);
+                let today = self.grant_today();
                 st.field(ui, t(Key::U3Window), None, None, |ui, w| {
                     let presets = [(7u32, t(Key::U3Days7)), (30, t(Key::U3Days30)), (90, t(Key::U3Days90)), (0, t(Key::U3Custom))];
                     let cells: Vec<seg::Cell> = presets.iter().map(|(_, l)| seg::Cell::from(*l)).collect();
@@ -734,6 +745,10 @@ impl Win {
                         // their place reads from the left, as the line under it does.
                         let layout = if no_span.is_some() { egui::Layout::left_to_right(egui::Align::Center) } else { egui::Layout::right_to_left(egui::Align::Center) };
                         ui.allocate_ui_with_layout(egui::vec2(w, 0.0), layout, |ui| self.span_blocks(ui, &from_words, &between, &to_words, no_span, custom, today, &words));
+                    }
+                    // The chain's time could not be read afresh: the start goes by the last one heard, said so.
+                    if let (Some(at), true, false) = (chain_now, self.shell.failed.contains_key(&crate::task::Kind::ChainTime), self.shell.tasks.in_flight(crate::task::Kind::ChainTime)) {
+                        said_line(ui, Mark::Warn, &fill1(Key::GrantChainTimeStale, &crate::when::day(at)));
                     }
                     said_line(ui, clash.0, &clash.1);
                 });

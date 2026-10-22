@@ -1402,6 +1402,7 @@ fn every_legal_action_names_a_verb_from_the_contract_six_table() {
         Action::FetchLedger { from: String::new(), password: app::secret::Secret::default() },
         Action::Reconcile,
         Action::ReadChain,
+        Action::ReadChainTime,
         Action::SetEndpoints { specs: String::new() },
         Action::Genesis { statement: String::new() },
         Action::Adopt { dir: String::new() },

@@ -317,6 +317,7 @@ pub(super) fn stage_words(k: crate::task::Kind) -> &'static [Key] {
         Kind::Archive => &[Key::DoMeasure],
         Kind::Publish => &[Key::StageFetchFiles],
         Kind::Chain => &[Key::StageReadChain],
+        Kind::ChainTime => &[Key::StageReadChain],
         Kind::Depth => &[Key::StageReadChain],
         Kind::Gate => &[Key::StageReadChain],
         Kind::ReadNet => &[Key::StageConnect],

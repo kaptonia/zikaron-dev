@@ -32,7 +32,7 @@ This version lays out and draws the whole app anew, with motion that flows and n
 - **Switching language**: words that change cross-fade where they stand.
 - **Date picker**: pick a year and a month, then the day.
 - **Folds and drop-downs**: with too little room below, the window slides to show them whole; on a page with keys held at its foot, what opens stops above the keys instead of behind them.
-- **Highlights**: hover and selection blocks keep an even gap on all four sides, their corners matching the card's.
+- **Highlights**: hover and selection blocks keep an even gap on all four sides, their corners matching the card's; in a sheet's list (such as "Choose a record") the first and last rows light as tall as the rows between.
 - **Type**: Latin letters, figures and signs in medium and semibold weights use Inter (SIL OFL 1.1, embedded with the app).
 - **Words**: explanatory small print is kept to what is needed; the app has no small blue links any more, plain keys or whole clickable rows stand in their place; a time is just the time (e.g. `2026-10-17 00:42:11`).
 - **A new record** is made in one step; its name defaults to the file's full name, extension and all.
@@ -67,6 +67,7 @@ This version lays out and draws the whole app anew, with motion that flows and n
 
 ### Fixes
 
+- **A new grant starts from the chain's present**: opening a new grant reads the latest block's time from the current network once, and both the presets and a custom start day count from it; if the latest cannot be read, the chain time heard last is used and the date blocks say so. Before, the start was the chain time this machine had last heard, possibly days earlier, so the window signed was shorter than the one chosen.
 - **A data folder replaced by a file says so**: switching role or identity to a data folder another program replaced with a plain file is refused with "A file stands where a folder should be", suggesting to move the file away or choose another place; before, this was an unknown fault (on Windows, a missing file). The same on macOS, Linux and Windows.
 - **A wrong key in the key store is not used**: a slot holding a key whose address is not the slot's own is refused by the desktop (the other slots still read), as the command line refuses it; before, it was used.
 - A file written by its bare name into the current folder lands as reported (before, the write could be reported failed while the file had in fact been replaced).

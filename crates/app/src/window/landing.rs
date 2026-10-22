@@ -117,6 +117,8 @@ impl Win {
                 ),
                 // The new key's history is shown on its sheet, not a toast.
                 Ok(Done::Sighting { .. }) => continue,
+                // The chain's time shows in place on the grant form.
+                Ok(Done::ChainTime(_)) => continue,
                 // A read-only network's reading shows on its own row, not a toast.
                 Ok(Done::NetRead { .. }) => continue,
                 // The main network's chain settings checked on save: saved, or not saved because of the fingerprint

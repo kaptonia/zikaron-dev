@@ -177,6 +177,9 @@ pub enum Action {
     RecheckAll,
     /// Read the chain once (background): balance and two read-only calls.
     ReadChain,
+    /// Read the chain's time once (background): the latest block's, for a new grant's start. Needs no key and
+    /// reads no balance.
+    ReadChainTime,
     /// Set chain endpoints (`<chain>=<url>`, several allowed).
     SetEndpoints { specs: String },
     // ── First run and adoption ──
@@ -635,6 +638,7 @@ impl Action {
             | Action::Reconcile
             | Action::RecheckAll
             | Action::ReadChain
+            | Action::ReadChainTime
             | Action::SetEndpoints { .. }
             | Action::SaveReadNetwork { .. }
             | Action::RemoveReadNetwork { .. }
@@ -744,6 +748,7 @@ impl Action {
             | Action::Reconcile
             | Action::RecheckAll
             | Action::ReadChain
+            | Action::ReadChainTime
             | Action::SetEndpoints { .. }
             | Action::ChooseNetwork { .. }
             | Action::SaveReadNetwork { .. }
@@ -847,6 +852,7 @@ impl Action {
             Action::Reconcile => None,
             Action::RecheckAll => None,
             Action::ReadChain => None,
+            Action::ReadChainTime => None,
             Action::SetEndpoints { .. } => None,
             Action::SaveReadNetwork { .. } => None,
             Action::RemoveReadNetwork { .. } => None,
@@ -1872,6 +1878,15 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             {
                 Spawned::Started => Applied::Started(Kind::Chain),
                 Spawned::InFlight => Applied::Refused(Kind::Chain),
+            }
+        }
+        Action::ReadChainTime => {
+            let eps = shell.endpoints.clone();
+            // No chain set reads as no node for it (`node::head_time`'s own refusal), kept for the grant form.
+            let chain = shell.settings.chain_id.unwrap_or(0);
+            match shell.tasks.spawn(Kind::ChainTime, move || crate::chainx::head_time(&eps, chain).map(|(at, _, _)| Done::ChainTime(at))) {
+                Spawned::Started => Applied::Started(Kind::ChainTime),
+                Spawned::InFlight => Applied::Refused(Kind::ChainTime),
             }
         }
         Action::SetEndpoints { specs } => match set_endpoints(shell, &specs) {

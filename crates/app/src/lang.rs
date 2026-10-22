@@ -96,6 +96,7 @@ pub enum Key {
     GrantFrom,
     GrantTo,
     GrantStartAt,
+    GrantChainTimeStale,
     GrantLasts,
     GrantHour,
     GrantMinute,
@@ -112,6 +113,7 @@ pub enum Key {
     TaskSelfCheck,
     TaskArchive,
     TaskChain,
+    TaskChainTime,
     TaskReconcile,
     TaskAudit,
     TaskLedger,
@@ -2109,7 +2111,7 @@ pub enum Key {
 
 impl Key {
     /// All keys, in [`TABLE`] order.
-    pub const ALL: [Key; 2043] = [
+    pub const ALL: [Key; 2045] = [
         Key::PageRevoke,
         Key::PageAdopt,
         Key::PageSucceed,
@@ -2144,6 +2146,7 @@ impl Key {
         Key::GrantFrom,
         Key::GrantTo,
         Key::GrantStartAt,
+        Key::GrantChainTimeStale,
         Key::GrantLasts,
         Key::GrantHour,
         Key::GrantMinute,
@@ -2160,6 +2163,7 @@ impl Key {
         Key::TaskSelfCheck,
         Key::TaskArchive,
         Key::TaskChain,
+        Key::TaskChainTime,
         Key::TaskReconcile,
         Key::TaskAudit,
         Key::TaskLedger,
@@ -4157,7 +4161,7 @@ impl Key {
 }
 
 /// Every UI string: `(key, Chinese, English)`. One row per key, both languages in each row.
-pub const TABLE: [(Key, &str, &str); 2043] = [
+pub const TABLE: [(Key, &str, &str); 2045] = [
     (Key::PageRevoke, "撤销授权", "Revoke grant"),
     (Key::PageAdopt, "导入上链存证", "Import anchor proofs"),
     (Key::PageSucceed, "移交账本", "Hand over ledger"),
@@ -4191,7 +4195,8 @@ pub const TABLE: [(Key, &str, &str); 2043] = [
     (Key::DoReadDepth, "计算", "Calculate"),
     (Key::GrantFrom, "起始(秒)", "Start (seconds)"),
     (Key::GrantTo, "截止(秒)", "End (seconds)"),
-    (Key::GrantStartAt, "起始时刻", "Start time"),
+    (Key::GrantStartAt, "起始时间", "Start time"),
+    (Key::GrantChainTimeStale, "以链上时间 {0} 为准,未能读到最新", "Going by chain time {0}; the latest could not be read"),
     (Key::GrantLasts, "时长", "Length"),
     (Key::GrantHour, "时", "h"),
     (Key::GrantMinute, "分", "min"),
@@ -4208,6 +4213,7 @@ pub const TABLE: [(Key, &str, &str); 2043] = [
     (Key::TaskSelfCheck, "自检", "Self-check"),
     (Key::TaskArchive, "计算数据目录用量", "Measuring data folder"),
     (Key::TaskChain, "链上查询", "Chain query"),
+    (Key::TaskChainTime, "读链上时间", "Chain time"),
     (Key::TaskReconcile, "对账", "Reconciling"),
     (Key::TaskAudit, "检查账本", "Checking ledger"),
     (Key::TaskLedger, "读取账本", "Reading ledger"),

@@ -481,6 +481,7 @@ fn task_key(k: crate::task::Kind) -> Key {
         Kind::SelfCheck => Key::TaskSelfCheck,
         Kind::Archive => Key::TaskArchive,
         Kind::Chain => Key::TaskChain,
+        Kind::ChainTime => Key::TaskChainTime,
         Kind::Reconcile => Key::TaskReconcile,
         Kind::Audit => Key::TaskAudit,
         Kind::Ledger => Key::TaskLedger,
@@ -1088,6 +1089,7 @@ fn task_of(a: &Action) -> Option<crate::task::Kind> {
         Action::Reconcile => Kind::Reconcile,
         Action::Measure => Kind::Archive,
         Action::ReadChain => Kind::Chain,
+        Action::ReadChainTime => Kind::ChainTime,
         Action::ReadReadNetwork { .. } => Kind::ReadNet,
         Action::SelfCheck => Kind::SelfCheck,
         Action::CheckPublished { .. } => Kind::Publish,
@@ -1537,6 +1539,8 @@ struct U3 {
     /// Grant drafting: validity preset (days; zero means custom).
     grant_days: u32,
     grant_days_set: bool,
+    /// The chain's time was asked for this grant form (once each time it opens fresh).
+    chain_time_asked: bool,
     /// The new-record sheet: open, and on which step (0 the form, 1 the confirmation).
     new_anchor: Option<u8>,
     others_tab: usize,

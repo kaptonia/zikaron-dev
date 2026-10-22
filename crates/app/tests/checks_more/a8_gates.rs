@@ -186,6 +186,7 @@ fn every(ids: &Ids) -> Vec<Action> {
         Action::Reconcile,
         Action::RecheckAll,
         Action::ReadChain,
+        Action::ReadChainTime,
         Action::SetEndpoints { specs: s() },
         Action::Genesis { statement: "a8 again".into() },
         Action::Adopt { dir: s() },

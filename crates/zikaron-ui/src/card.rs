@@ -572,11 +572,13 @@ impl Form {
 
     /// The lit block of the row in `slot`, in the card `card` ([`crate::band`]): bounded across by the card's
     /// edges (in a sheet, by where a card's edges would be, 20 outside the rows), above and below by the line
-    /// drawn there or else the card's edge.
+    /// drawn there or else the card's edge. A sheet draws no card: the ends of its list are no edge to keep a gap
+    /// from, so its first and last rows are lit as tall as the rows between, each block on its row.
     fn band_of(&self, card: Rect, slot: Rect) -> (Rect, egui::CornerRadius) {
         use crate::band::Bound;
         let (slot, _) = self.bounds_of(card, slot);
-        let at = |y: f32| if self.lines.iter().any(|l| (l - y).abs() < 0.5) && (y - card.top()).abs() >= 0.5 && (y - card.bottom()).abs() >= 0.5 { Bound::Line } else { Bound::Edge };
+        let end = if self.sheet { Bound::Line } else { Bound::Edge };
+        let at = |y: f32| if self.lines.iter().any(|l| (l - y).abs() < 0.5) && (y - card.top()).abs() >= 0.5 && (y - card.bottom()).abs() >= 0.5 { Bound::Line } else { end };
         crate::band::block(slot, self.corner, at(slot.top()), at(slot.bottom()))
     }
 

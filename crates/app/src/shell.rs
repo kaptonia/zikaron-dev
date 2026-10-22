@@ -2061,6 +2061,8 @@ impl Shell {
                         }
                     }
                 }
+                // The chain's time alone (a new grant's start): it joins chain time; nothing else changes.
+                Ok(Done::ChainTime(t)) => self.note_chain_time(*t),
                 Ok(d @ Done::Chain { .. }) => {
                     if let Done::Chain { head_time: Some(t), .. } = d {
                         self.note_chain_time(*t);
@@ -2371,6 +2373,8 @@ impl Shell {
                     // "complete last time" is not this time's answer.
                     self.pen = if *complete { Pen::Granted } else { Pen::Held };
                 }
+                // A failed read of the chain's time is told on the grant form alone (`failed`, above).
+                Err(_) if o.kind == crate::task::Kind::ChainTime => {}
                 Err(f) => {
                     // Network errors go to the status line, not notices: only the status sentence changes;
                     // the fault table still records them.
