@@ -9,6 +9,8 @@ pub enum Code {
     FileMissing,
     /// The system refused access.
     Denied,
+    /// The system says a place on the way is not a folder (a file stands where a folder is expected).
+    NotAFolder,
     /// Any other system error (its message is the evidence).
     Unknown,
     /// The vault is locked: no master key in hand.
@@ -70,6 +72,17 @@ pub enum Code {
     HandedOff,
 }
 
+impl Code {
+    /// Whether this refusal is one key slot's own (its seal does not match, or the key in it is not a key of its
+    /// address), as against the vault's or the machine's (locked, missing, not in shape, no credential): a slot's own
+    /// trouble leaves every other slot readable. Where every identity's key is tried in turn (opening a record package
+    /// addressed to one of them, both ends), a slot that fails so is passed over and the rest are tried; the vault's
+    /// trouble stops the whole.
+    pub fn one_slot(self) -> bool {
+        matches!(self, Code::KeyboxSlot | Code::KeyMalformed)
+    }
+}
+
 /// One refusal: its code and its evidence (paths, members, numbers; never a sentence).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Trouble {
@@ -82,13 +95,14 @@ impl Trouble {
         Trouble { code, tail: tail.into() }
     }
 
-    /// A system error said with `subject` (a path, a source): missing and denied by their codes, any other as
-    /// unknown with the system's message.
+    /// A system error said with `subject` (a path, a source): missing, denied and not a folder by their codes, any
+    /// other as unknown with the system's message. The one table of system errors: the desktop classifies by it too.
     pub fn io(e: &std::io::Error, subject: &str) -> Trouble {
         let tail = format!("{subject}: {e}");
         match e.kind() {
             std::io::ErrorKind::NotFound => Trouble::new(Code::FileMissing, tail),
             std::io::ErrorKind::PermissionDenied => Trouble::new(Code::Denied, tail),
+            std::io::ErrorKind::NotADirectory => Trouble::new(Code::NotAFolder, tail),
             _ => Trouble::new(Code::Unknown, tail),
         }
     }

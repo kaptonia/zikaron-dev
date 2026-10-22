@@ -74,6 +74,9 @@ struct Typed {
     kit_attach: String,
     kit_note: String,
     kit_out: String,
+    /// The export sheet's recipient, when the package is encrypted: an address, or a public key (one of the two).
+    kit_to: String,
+    kit_to_key: String,
     /// Badge location (the shared location picker; empty means this home's kits).
     badge_out: String,
     g_grantee: String,
@@ -108,6 +111,8 @@ struct Typed {
     dg_from: String,
     dg_to: String,
     dg_snapshot: String,
+    /// Where originals are taken out to: the documents folder at first, the last one used after (this run).
+    extract_to: String,
     vf_path: String,
     vf_work: String,
     vt_typed: String,
@@ -419,7 +424,7 @@ impl Win {
     /// delivers nothing; a failed dialog is reported by name like any task refusal. An answer no place takes
     /// within two frames is dropped: the place that asked is gone.
     fn paths_landed(&mut self, ctx: &egui::Context, landed: &[crate::task::Outcome]) {
-        let pass = ctx.cumulative_pass_nr();
+        let pass = zikaron_ui::motion::pass(ctx);
         for o in landed.iter().filter(|o| o.kind == crate::task::Kind::Path) {
             let ticket = ctx.data_mut(|d| d.get_temp_mut_or_default::<PathMail>(path_mail()).ticket.take());
             match &o.result {
@@ -503,6 +508,8 @@ fn task_key(k: crate::task::Kind) -> Key {
         Kind::Migrate => Key::TaskMigrate,
         Kind::Path => Key::TaskPath,
         Kind::CliPath => Key::TaskCliPath,
+        Kind::Seat => Key::TaskSeat,
+        Kind::Extract => Key::DoExtract,
     }
 }
 
@@ -955,6 +962,9 @@ impl Win {
                 | Applied::WordsHidden
                 | Applied::IdentityMade { .. }
                 | Applied::IdentitySwitched { .. }
+                // A switch runs in the background (`Kind::Seat`): the sheet closes at once, and the landing says how
+                // it went.
+                | Applied::Started(crate::task::Kind::Seat)
                 | Applied::IdentityDeleted { .. }
                 | Applied::IdentityNamed { .. }
                 | Applied::KeyBackedUp { .. }
@@ -1063,6 +1073,7 @@ fn task_of(a: &Action) -> Option<crate::task::Kind> {
     Some(match a {
         Action::CheckPayload { .. } => Kind::Check,
         Action::VerifyWork { .. } => Kind::Verify,
+        Action::ExtractOriginals { .. } => Kind::Extract,
         Action::ReadBook { .. } => Kind::Book,
         Action::Diligence { .. } => Kind::Diligence,
         Action::ExportKit { .. } => Kind::Kit,
@@ -1335,6 +1346,8 @@ struct Ux {
     files_of: std::collections::BTreeMap<String, Vec<String>>,
     /// The "save snapshot" sheet on the others' ledgers page is up.
     snapshot_sheet: bool,
+    /// The "take out originals" sheet over record verification is up.
+    extract_sheet: bool,
     /// The folder sheet open over a grant's page (grant file, credential, upstream folder).
     out_sheet: Option<grants::OutSheet>,
     /// That sheet's long action is running; the sheet closes when it lands.
@@ -1545,6 +1558,10 @@ struct U3 {
     kit_orig_off: std::collections::BTreeSet<String>,
     /// Export the kit as a folder (to publish it at an address) rather than one file.
     kit_folder: bool,
+    /// Encrypt the package to one recipient (one file only: the folder switch is off while this is on).
+    kit_addressed: bool,
+    /// The keys page's details are open (held here, as a click leaves them).
+    keys_details: bool,
     /// This pick's originals gate (same key as the list).
     kit_admit: Option<(String, Option<crate::kitx::Originals>)>,
     /// The pick list's working state while open (written back only on "done").

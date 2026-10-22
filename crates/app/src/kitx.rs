@@ -375,6 +375,9 @@ pub struct Made {
     pub pulled: Vec<String>,
     /// Platform junk dropped before export, each named.
     pub dropped: Vec<String>,
+    /// What the kits index records of this package, read from the plain package before it was sealed (when it was):
+    /// the original digests, the author's note, where it says it is anchored (`kitsindex::RowFacts`).
+    pub facts: crate::kitsindex::RowFacts,
 }
 
 /// Export: choose, attach, and hand to the glue crate to write.
@@ -395,6 +398,27 @@ pub fn export(
     out: &Path,
     form: zikaron_glue::pack::Form,
 ) -> Result<Made, Fault> {
+    export_to(_pass, home, pick, attachments, note, out, form, None)
+}
+
+/// [`export`], the one-file package sealed to `to` when given (`addressedx::seal_out`): the plain package is laid
+/// out in a folder of its own in the system's temporary place (never beside `out`), its index facts read there, then
+/// sealed into `out` the one way files land; the plain copy is removed either way. A folder is never sealed
+/// (`ADDRESSED_FOLDER`). Nothing in what is returned names the recipient.
+#[allow(clippy::too_many_arguments)]
+pub fn export_to(
+    _pass: &crate::exitgate::Pass,
+    home: &Home,
+    pick: &Pick,
+    attachments: &[String],
+    note: &str,
+    out: &Path,
+    form: zikaron_glue::pack::Form,
+    to: Option<&[u8; 33]>,
+) -> Result<Made, Fault> {
+    if to.is_some() && form == zikaron_glue::pack::Form::Folder {
+        return Err(Fault::known(Known::AddressedFolder, out.display().to_string()));
+    }
     // Traced here so direct calls that bypass `apply` (tests, the CLI) are traced too.
     crate::trace::mark(crate::feature::Feature::W5);
     let pile = whole(home)?;
@@ -438,18 +462,40 @@ pub fn export(
             }
         }
     }
-    let landed = pack::export_as(out, b, form).map_err(|t| {
-        Fault::of_landing(t)
+    let Some(to) = to else {
+        let landed = pack::export_as(out, b, form).map_err(|t| {
+            Fault::of_landing(t)
+        })?;
+        let facts = crate::kitsindex::RowFacts::of_kit(out)?;
+        return Ok(Made {
+            path: out.display().to_string(),
+            kit_id: landed.kit_id,
+            entries: landed.entries,
+            files: landed.files,
+            pulled: chosen.pulled,
+            dropped: landed.dropped,
+            facts,
+        });
+    };
+    let pulled = chosen.pulled.clone();
+    let ((landed, mut facts), one_time) = crate::addressedx::seal_out(to, out, |plain| {
+        let landed = pack::export_as(plain, b, zikaron_glue::pack::Form::File).map_err(Fault::of_landing)?;
+        let facts = crate::kitsindex::RowFacts::of_kit(plain)?;
+        crate::task::stage_at(crate::task::Kind::Kit, 4);
+        Ok((landed, facts))
     })?;
+    facts.one_time = Some(zikaron::hexfmt::encode(&one_time));
     Ok(Made {
         path: out.display().to_string(),
         kit_id: landed.kit_id,
         entries: landed.entries,
         files: landed.files,
-        pulled: chosen.pulled,
+        pulled,
         dropped: landed.dropped,
+        facts,
     })
 }
+
 
 #[cfg(test)]
 mod stem_tests {

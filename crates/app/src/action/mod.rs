@@ -242,8 +242,9 @@ pub enum Action {
     /// Pick once: range and record hash fields (disk walked in the background).
     PickKit { from: String, to: String, ids: String },
     /// Write a kit (background): pick, attach, hand to the kit output crate to lay out and self-verify; lands
-    /// only on KIT_OK.
-    ExportKit { from: String, to: String, ids: String, attach: String, note: String, out: String, form: String },
+    /// only on KIT_OK. `recipient` (an address) or `recipient_key` (a public key), at most one: the one-file package
+    /// is sealed to that key (`addressedx`), the address's key found on chain first; both empty, it is not sealed.
+    ExportKit { from: String, to: String, ids: String, attach: String, note: String, out: String, form: String, recipient: String, recipient_key: String },
     /// Digest attachments first: each path dropped on the export page is digested in the background in
     /// content form.
     VetAttachments { paths: Vec<String> },
@@ -304,8 +305,13 @@ pub enum Action {
     SaveSnapshot { to: String },
     // Record verification.
     /// Verify a record (background): kit verification (kit core), anchor review (anchoring crate and core),
-    /// depth reading (kit core).
-    VerifyWork { path: String, work: String },
+    /// depth reading (kit core). `then_to`: the folder the originals go to once the verification lands (the command
+    /// line's `kit-verify --originals-to` through the door, which takes them out by `ExtractOriginals` as the page's
+    /// key does); empty from the page, whose key opens the sheet instead.
+    VerifyWork { path: String, work: String, then_to: String },
+    /// Take the originals out of a record package verified here (background): the package read again and judged,
+    /// its matching originals placed in `to` all or nothing (`zikaron_glue::extract`).
+    ExtractOriginals { kit: String, to: String },
     // Delivery check.
     /// Delivery check (background): read the delivered bytes and compare their sha256 with the recorded hash.
     CheckDelivery { path: String, expect: String },
@@ -664,6 +670,7 @@ impl Action {
             | Action::ReviewVault
             | Action::ListHeld
             | Action::VerifyWork { .. }
+            | Action::ExtractOriginals { .. }
             | Action::CheckDelivery { .. }
             | Action::Diligence { .. }
             | Action::SaveSnapshot { .. }
@@ -767,6 +774,7 @@ impl Action {
             | Action::ForgetAddress { .. } => Feature::W14,
             Action::Diligence { .. } | Action::SaveSnapshot { .. } => Feature::D1,
             Action::VerifyWork { .. } => Feature::D2,
+            Action::ExtractOriginals { .. } => Feature::D2,
             Action::CheckDelivery { .. } => Feature::D4,
             Action::ImportGrant { .. } | Action::ImportGrantDir { .. } | Action::SetUpstream { .. } | Action::NoteHeld { .. } | Action::ReviewVault => Feature::D6,
             Action::ListHeld => Feature::D6,
@@ -888,6 +896,7 @@ impl Action {
             Action::Diligence { .. } => None,
             Action::SaveSnapshot { .. } => None,
             Action::VerifyWork { .. } => None,
+            Action::ExtractOriginals { .. } => None,
             Action::CheckDelivery { .. } => None,
             Action::CheckPayload { .. } => None,
             Action::ImportGrant { .. } => None,
@@ -1013,6 +1022,7 @@ impl Action {
             Action::Audit => Some("audit"),
             Action::DraftGrant { .. } => Some("grant"),
             Action::ExportKit { .. } => Some("kit-export"),
+            Action::VerifyWork { .. } => Some("kit-verify"),
             Action::ReadDepth { .. } => Some("depth"),
             Action::Revoke { .. } => Some("revoke"),
             Action::AdoptAnchors { .. } => Some("adopt"),
@@ -1461,6 +1471,7 @@ pub fn landed(shell: &mut Shell, k: Kind, got: Result<Done, crate::fault::Fault>
             }
             Applied::RecordedBatch { ids, stopped, queued: n.queued, next: n.next }
         }
+        (Kind::Seat, got) => seat_landed(shell, got),
         (Kind::Migrate, Ok(Done::Copied { old, root })) => match migrate_landed(shell, &old, &root) {
             Ok(root) => Applied::Migrated { root },
             Err(f) => shell.trouble(f),
@@ -1486,7 +1497,11 @@ fn take_started(shell: &mut Shell, source: crate::anchorx::Source, p: std::path:
 fn said_settled(shell: &mut Shell, k: Kind) -> Applied {
     loop {
         if let Some(done) = shell.said.remove(&k) {
-            return done;
+            // A landing that started the same kind again (a seat switch going on to the seat wished meanwhile) is a
+            // step on the way: the answer is the one that ends it.
+            if done != Applied::Started(k) {
+                return done;
+            }
         }
         let finished = shell.tasks.finished_in_flight(k);
         shell.drain_hold();
@@ -1580,7 +1595,7 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
         }
 
         Action::SwitchRole => match switch_role(shell) {
-            Ok(r) => Applied::Seated(r),
+            Ok(a) => a,
             Err(f) => shell.trouble(f),
         },
         Action::ReadIdentities => match crate::register::view() {
@@ -1610,10 +1625,8 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             Ok(started) => started,
             Err(f) => shell.trouble(f),
         },
-        Action::SwitchIdentity { id } => match switch_identity(shell, &id) {
-            Ok(row) => Applied::IdentitySwitched { id: row.id },
-            Err(f) => shell.trouble(f),
-        },
+        // Off the window's thread, as a seat switch (`keys::switch_identity`): it answers where it lands.
+        Action::SwitchIdentity { id } => switch_identity(shell, &id),
         Action::NameIdentity { id, label } => match name_identity(shell, &id, &label) {
             Ok(row) => Applied::IdentityNamed { id: row.id, label: row.label },
             Err(f) => shell.trouble(f),
@@ -2051,8 +2064,8 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             }
             Err(f) => shell.trouble(f),
         },
-        Action::ExportKit { from, to, ids, attach, note, out, form } => {
-            match export_kit(shell, &from, &to, &ids, &attach, &note, &out, &form) {
+        Action::ExportKit { from, to, ids, attach, note, out, form, recipient, recipient_key } => {
+            match export_kit(shell, &from, &to, &ids, &attach, &note, &out, &form, &recipient, &recipient_key) {
                 Ok(s) => match s {
                     Spawned::Started => Applied::Started(Kind::Kit),
                     Spawned::InFlight => Applied::Refused(Kind::Kit),
@@ -2192,13 +2205,14 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             Ok(bytes) => Applied::Snapshot { path: to.trim().to_string(), bytes },
             Err(f) => shell.trouble(f),
         },
-        Action::VerifyWork { path, work } => match verify_work(shell, &path, &work) {
+        Action::VerifyWork { path, work, .. } => match verify_work(shell, &path, &work) {
             Ok(s) => match s {
                 Spawned::Started => Applied::Started(Kind::Verify),
                 Spawned::InFlight => Applied::Refused(Kind::Verify),
             },
             Err(f) => shell.trouble(f),
         },
+        Action::ExtractOriginals { kit, to } => extract_originals(shell, &kit, &to),
         Action::CheckDelivery { path, expect } => match check_delivery(shell, &path, &expect) {
             Ok(s) => match s {
                 Spawned::Started => Applied::Started(Kind::Delivery),
@@ -2507,6 +2521,7 @@ use self::grants::*;
 pub use self::home::*;
 pub use self::identity::*;
 use self::keys::*;
+pub use self::keys::Seating;
 use self::kit::*;
 use self::ledger::*;
 pub use self::queue::*;

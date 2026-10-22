@@ -200,7 +200,8 @@ fn the_tools_are_the_verb_tables_and_no_withheld_one_appears() {
         ("annotate", &["home", "subject", "note"], false),
         ("retract", &["home", "subject", "note"], false),
         ("anchor", &["home"], false),
-        ("kit-export", &["home", "entry", "note", "out", "as"], false),
+        // A package sealed to one recipient: an address or a key.
+        ("kit-export", &["home", "entry", "note", "out", "as", "to", "to-key"], false),
         ("show", &["ledger", "entry", "path"], true),
         ("audit", &["ledger", "root", "input", "fragment", "unavailable"], true),
         ("scan", &["home"], true),
@@ -208,7 +209,9 @@ fn the_tools_are_the_verb_tables_and_no_withheld_one_appears() {
         ("chain-check", &["ledger", "root", "hop", "now", "input", "fragment", "unavailable"], true),
         ("depth", &["ledger", "root", "work", "input", "fragment", "unavailable"], true),
         ("badge", &["decode"], true),
-        ("kit-verify", &["kit", "fragment", "unavailable"], true),
+        // `kit-verify` takes the originals out when given a place: a write; a sealed package opens through the home,
+        // which may be left out.
+        ("kit-verify", &["kit", "fragment", "unavailable", "originals-to", "home"], false),
         ("contract", &[], true),
     ];
     let want: Vec<(String, Vec<String>, bool)> = want
@@ -233,6 +236,10 @@ fn the_tools_are_the_verb_tables_and_no_withheld_one_appears() {
     let anchor = tools.iter().find(|t| t.member("name").and_then(Value::as_str) == Some("anchor")).expect("anchor");
     let notes = anchor.member("annotations").expect("annotations");
     assert_eq!((notes.member("destructiveHint"), notes.member("openWorldHint")), (Some(&Value::Bool(true)), Some(&Value::Bool(true))));
+    // The write tools need `home`, but `kit-verify`, which verifies a plain package with none.
+    let required = |name: &str| tools.iter().find(|t| t.member("name").and_then(Value::as_str) == Some(name)).and_then(|t| t.member("inputSchema")).and_then(|i| i.member("required")).cloned();
+    assert_eq!(required("kit-export"), Some(Value::Arr(vec![Value::Str("home".into())])));
+    assert_eq!(required("kit-verify"), None);
     // A repeated flag is a list of texts.
     let kit = tools.iter().find(|t| t.member("name").and_then(Value::as_str) == Some("kit-export")).expect("kit-export");
     let entry = kit.member("inputSchema").and_then(|i| i.member("properties")).and_then(|p| p.member("entry")).expect("entry");
@@ -317,6 +324,22 @@ fn misuse_and_what_is_refused_by_name() {
         assert!(is_error(r), "{args}");
         assert_eq!(text_of(r).lines().next(), Some(first), "{args}");
     }
+    // The place originals are taken out to is a path, taken whole only: nothing runs for a relative one.
+    let r = s.call(5, "kit-verify", &format!(r#"{{"kit":"{home}","originals-to":"rel/out"}}"#));
+    let r = result(&r);
+    assert!(is_error(r));
+    assert_eq!(text_of(r).lines().next(), Some("E_ARGS --originals-to"));
+    // Through the desktop (no credential here), `kit-verify` takes the flags of its `--home` row only: a chain reading
+    // given beside `home` is refused by name before anything runs.
+    let r = s.call(6, "kit-verify", &format!(r#"{{"home":"{home}","kit":"{home}","fragment":"{home}"}}"#));
+    let r = result(&r);
+    assert!(is_error(r));
+    assert_eq!(text_of(r).lines().next(), Some("E_ARGS --fragment"));
+    // Both ways to name a recipient: the verb's misuse, judged before the desktop is asked.
+    let r = s.call(7, "kit-export", &format!(r#"{{"home":"{home}","out":"{home}/o.zkit","to":"0x{}","to-key":"0x02{}"}}"#, "11".repeat(20), "11".repeat(32)));
+    let r = result(&r);
+    assert!(is_error(r));
+    assert_eq!((exit_of(r), text_of(r).lines().next()), (Some(2), Some("E_ARGS --to --to-key")));
     for (n, at) in [("-1", "params.arguments.n"), ("1.5", "params.arguments.n"), ("9007199254740992", "params.arguments.n")] {
         s.send(&format!(r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"annotate","arguments":{{"n":{n}}}}}}}"#));
         let (line, v) = s.next(30).expect("answered");
@@ -472,6 +495,15 @@ fn parameters_are_laid_out_as_the_table_says() {
     assert_eq!(entries, vec![format!("0x{one}").as_str(), format!("0x{two}").as_str()], "once per value, in order");
     let r = s.call(3, "annotate", &format!(r#"{{"home":"{home}","note":"a\u0000b"}}"#));
     assert_eq!(text_of(result(&r)).lines().next(), Some("E_ARGS --note"));
+    // A recipient's key goes to the desktop as given; `kit-verify` with `home` goes through it, its flags whole.
+    let g = "0x0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+    let r = s.call(4, "kit-export", &format!(r#"{{"home":"{home}","out":"/o2","to-key":"{g}"}}"#));
+    assert_eq!(exit_of(result(&r)), Some(0), "{r:?}");
+    let q = rx.recv_timeout(Duration::from_secs(30)).expect("asked");
+    assert!(q.args.iter().any(|(k, v)| k == "to-key" && v == g), "{:?}", q.args);
+    let _ = s.call(5, "kit-verify", &format!(r#"{{"home":"{home}","kit":"/k.zkit","originals-to":"/out"}}"#));
+    let q = rx.recv_timeout(Duration::from_secs(30)).expect("asked");
+    assert_eq!((q.verb.as_str(), q.args.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>()), ("kit-verify", vec!["kit", "originals-to"]));
     s.end();
     closer.close();
 }

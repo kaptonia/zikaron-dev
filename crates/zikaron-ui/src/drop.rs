@@ -59,7 +59,7 @@ fn zones_at(ctx: &egui::Context, pass: u64) -> Zones {
 /// receiver lights up while a file is dragged, and only it takes the file: the lit zone is the one that gets
 /// it.
 fn is_receiver(ctx: &egui::Context, me: egui::Id) -> bool {
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     let pointer = ctx.input(|i| i.pointer.latest_pos());
     let z = zones_at(ctx, pass);
     if z.last.iter().any(|(id, _)| *id == me) {
@@ -71,7 +71,7 @@ fn is_receiver(ctx: &egui::Context, me: egui::Id) -> bool {
 }
 
 fn register(ctx: &egui::Context, me: egui::Id, rect: Rect) {
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     let mut z = zones_at(ctx, pass);
     z.this.push((me, rect));
     ctx.data_mut(|d| d.insert_temp(zones_id(), z));

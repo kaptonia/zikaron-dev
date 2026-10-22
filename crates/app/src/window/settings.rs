@@ -445,6 +445,11 @@ impl Win {
         let mut raw: Vec<(&str, Val)> = Vec::new();
         if let Some(a) = self.shell.anchor.filter(|_| !unseated) {
             raw.push((t(Key::IdAddress), Val::mono(a.hex())));
+            // The public key under the key address, with its copy key: what someone sealing a record package to this
+            // key fills in.
+            if let Some(p) = self.shell.anchor_public {
+                raw.push((t(Key::IdPublicKey), Val::mono(zikaron::hexfmt::encode(&p))));
+            }
         }
         raw.push((t(Key::IdSeatRowAuthor), seat_addr(crate::roles::Role::Author)));
         raw.push((t(Key::IdSeatRowGrantee), seat_addr(crate::roles::Role::Grantee)));
@@ -467,7 +472,9 @@ impl Win {
                 Val::text(t(Key::IdSeatEmpty))
             },
         ));
-        stagger(ui, 4, |ui| details_card(ui, "keys-details", &raw));
+        let mut open = self.ux.u3.keys_details;
+        stagger(ui, 4, |ui| details_card_held(ui, "keys-details", &raw, &mut open));
+        self.ux.u3.keys_details = open;
         let mut delete = false;
         stagger(ui, 5, |ui| {
             if current.is_some() {

@@ -424,10 +424,22 @@ pub enum Said {
     McpNotText,
     McpNotTexts,
     McpNoProgram,
+    /// `mcp` refusing a parameter the way through the desktop does not take.
+    McpNotThroughDesktop,
+    /// A record package addressed to one key: the two ways to name the recipient, a folder, a key off the curve (the
+    /// words the addressed package's one table gives, `zikaron_seal::addressed::words`).
+    AddressedBoth,
+    AddressedFolder,
+    AddressedKeyShape,
+    OnlyWithTo,
+    ChainNotDeployed,
+    AddressedNeedsKey,
+    AddressedElsewhere,
+    LedgerNotHome,
 }
 
 impl Said {
-    pub const ALL: [Said; 80] = [
+    pub const ALL: [Said; 89] = [
         Said::Usage,
         Said::NotAVerb,
         Said::NotAFlag,
@@ -508,6 +520,15 @@ impl Said {
         Said::McpNotText,
         Said::McpNotTexts,
         Said::McpNoProgram,
+        Said::McpNotThroughDesktop,
+        Said::AddressedBoth,
+        Said::AddressedFolder,
+        Said::AddressedKeyShape,
+        Said::OnlyWithTo,
+        Said::ChainNotDeployed,
+        Said::AddressedNeedsKey,
+        Said::AddressedElsewhere,
+        Said::LedgerNotHome,
     ];
 
     /// The words, one table: Chinese and English.
@@ -598,6 +619,15 @@ impl Said {
             Said::McpNotText => ("要一段文字", "text is needed"),
             Said::McpNotTexts => ("要一列文字", "a list of texts is needed"),
             Said::McpNoProgram => ("起不了命令行程序", "the command line program could not be started"),
+            Said::McpNotThroughDesktop => ("经桌面这一路不收这一参", "the way through the desktop does not take this parameter"),
+            Said::AddressedBoth => zikaron_seal::addressed::words::BOTH,
+            Said::AddressedFolder => zikaron_seal::addressed::words::FOLDER,
+            Said::AddressedKeyShape => zikaron_seal::addressed::words::RECIPIENT,
+            Said::OnlyWithTo => ("只与 --to 同给", "taken only with --to"),
+            Said::ChainNotDeployed => ("这条链不在已知部署表内", "this chain is not in the known deployments table"),
+            Said::AddressedNeedsKey => ("这是加密记录包:以 --key-file、--ledger 或 --home 打开", "This is an encrypted record package: open it with --key-file, --ledger or --home"),
+            Said::AddressedElsewhere => ("这是加密记录包,用 kit-verify 打开", "This is an encrypted record package; open it with kit-verify"),
+            Said::LedgerNotHome => ("--ledger 要桌面所管之家的账本", "--ledger takes the ledger of a home the desktop keeps"),
             Said::ScanTooWide => (
                 "这一扇窗按节点收得下的跨度问不完:把起始区块往前挪,或换一处收得下更宽窗的节点",
                 "This window cannot be read at the span the node takes: move the start block forward, or use a node that takes wider windows",

@@ -146,6 +146,13 @@ pub(super) fn details_card(ui: &mut egui::Ui, id_salt: &str, rows: &[(&str, Val)
     tell_copied(ui.ctx(), copied);
 }
 
+/// [`details_card`] whose open state the page holds (`open`).
+pub(super) fn details_card_held(ui: &mut egui::Ui, id_salt: &str, rows: &[(&str, Val)], open: &mut bool) {
+    let (detail, widest) = detail_rows(ui, rows);
+    let copied = card::form(ui, |ui, f| f.details_held(ui, id_salt, t(Key::SetEvidence), &detail, widest, open));
+    tell_copied(ui.ctx(), copied);
+}
+
 /// The details fold as a row of the form being drawn (an overview's tail, a sheet's group).
 pub(super) fn details_row(ui: &mut egui::Ui, f: &mut card::Form, id_salt: &str, rows: &[(&str, Val)]) {
     let (detail, widest) = detail_rows(ui, rows);
@@ -303,7 +310,7 @@ pub(super) fn stage_words(k: crate::task::Kind) -> &'static [Key] {
         Kind::Verify => &[Key::StageReadKit, Key::StageReadChain, Key::StageCompareEach],
         Kind::Book => &[Key::StageConnect, Key::StageScanBlocks],
         Kind::Diligence => &[Key::StageConnect, Key::StageScanBlocks, Key::StageCheckLedger],
-        Kind::Kit => &[Key::StageGather, Key::StageCheckOriginals, Key::StageWriteKit],
+        Kind::Kit => &[Key::StageGather, Key::StageCheckOriginals, Key::StageWriteKit, Key::StageReadChain, Key::StageSeal],
         Kind::Badge => &[Key::StageGrantChain, Key::StageWriteBadge],
         Kind::Review => &[Key::StageReadChain, Key::StageReadUpstream],
         Kind::Reconcile => &[Key::StageReconcile],

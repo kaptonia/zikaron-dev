@@ -191,6 +191,34 @@ pub fn land_tree(out: &Path, staged: &Path) -> Result<(), Trouble> {
     }
 }
 
+/// Write a file in full inside a staging area of our own, streamed from `body`, and fsync it: a name already
+/// there (two names one case-folding file system takes as one) is refused, never written over.
+pub fn put_new_from(path: &Path, body: &mut dyn std::io::Read) -> Result<(), Trouble> {
+    let mut o = zikaron_os::Options::new();
+    o.write(true).create_new(true);
+    let mut f = o.open(path).map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { Trouble::Occupied(say(path)) } else { failed(path, "write", path, &e) })?;
+    std::io::copy(body, &mut f).map_err(|e| failed(path, "write", path, &e))?;
+    f.sync_all().map_err(|e| failed(path, "write", path, &e))
+}
+
+/// Take back what an all-or-nothing landing placed a moment ago (a file, or a tree when `tree`), when a later step of
+/// the same landing failed. Only what this process just placed is ever passed here.
+pub fn take_back(at: &Path, tree: bool) {
+    let _ = if tree { std::fs::remove_dir_all(at) } else { std::fs::remove_file(at) };
+}
+
+/// Move a file laid out in full in a staging area of our own into place, never replacing (`zikaron_os::land_new`,
+/// as [`land_bytes_for`] moves its temporary); the staged name is cleared either way. An existing path is refused.
+pub fn place_file(staged: &Path, out: &Path) -> Result<(), Trouble> {
+    let linked = zikaron_os::land_new(staged, out);
+    let _ = std::fs::remove_file(staged);
+    match linked {
+        Ok(_) => sync_parent(out),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(Trouble::Occupied(say(out))),
+        Err(e) => Err(failed(out, "land", out, &e)),
+    }
+}
+
 /// Write a file inside a staging area we just created. Unlike [`land_bytes`], nothing of anyone else's can be
 /// overwritten there and nobody reads it yet.
 pub fn put(path: &Path, bytes: &[u8]) -> Result<(), Trouble> {

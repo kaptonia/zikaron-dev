@@ -988,3 +988,45 @@ fn a_passcode_row_under_a_sheet_takes_no_keys() {
     assert_eq!(typed(false), 3, "with nothing over it the row takes what is typed");
     assert_eq!(typed(true), 0, "under the sheet the row takes nothing");
 }
+
+/// U4 · A field or row in a sheet named as the sheet is titled draws no name: the title already names it (the
+/// "Published address" sheet's one field). Victim: whoever reads the sheet, one word read twice and a line of
+/// nothing. A field named otherwise keeps its name, and outside a sheet the same name is drawn: the judgement
+/// is the library's one place (`sheet::echoes_title`), asked by fields and rows alike.
+#[test]
+fn a_name_that_says_the_sheet_title_again_is_not_drawn() {
+    use zikaron_ui::{card, fields};
+    let mut f = Frames::new();
+    let title = "发布地址";
+    let draw = |ctx: &egui::Context| {
+        let mut unit = ();
+        let _ = sheet::show(
+            ctx,
+            sheet::Spec::new("u4-echo", tokens::SHEET_W),
+            &mut unit,
+            |ui, _| {
+                sheet::title(ui, title, "");
+                fields::stack(ui, |ui, st| {
+                    st.field(ui, title, None, None, |ui, w| ui.allocate_exact_size(vec2(w, 38.0), egui::Sense::hover()));
+                    st.field(ui, "名称", None, None, |ui, w| ui.allocate_exact_size(vec2(w, 38.0), egui::Sense::hover()));
+                });
+                card::form(ui, |ui, f| {
+                    let _ = f.info(ui, title, card::Show::Text("x"));
+                });
+            },
+            |_, _| (),
+        );
+        egui::Area::new(egui::Id::new("u4-page")).fixed_pos(pos2(20.0, 20.0)).show(ctx, |ui| {
+            ui.set_width(300.0);
+            fields::stack(ui, |ui, st| st.field(ui, title, None, None, |ui, w| ui.allocate_exact_size(vec2(w, 38.0), egui::Sense::hover())));
+        });
+    };
+    let mut out = f.run(0.1, vec![], draw);
+    for _ in 0..12 {
+        out = f.run(0.1, vec![], draw);
+    }
+    let said = texts(&out);
+    let n = |s: &str| said.iter().filter(|(t, _)| t == s).count();
+    assert_eq!(n(title), 2, "the sheet's title and the field outside any sheet; the field and the row in the sheet draw no name: {said:?}");
+    assert_eq!(n("名称"), 1, "a field named otherwise keeps its name");
+}

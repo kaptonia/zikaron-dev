@@ -322,11 +322,34 @@ struct Seen {
     pass: u64,
 }
 
+/// The library's pass: how many passes the app has drawn. egui runs passes the app draws nothing in (a window
+/// covered by another or made small runs its logic and not its drawing, `eframe`'s `is_visible`), and everything that
+/// asks "was this drawn last pass?" (an overlay's age, a layer's leaving, a sheet kept up) would read such a pass as
+/// its thing having left, and play its coming again when the window shows once more. Counted here instead: a pass
+/// counts the first time the library is asked in it, so only a pass the app draws in counts. Read it before taking
+/// the context's data lock.
+pub fn pass(ctx: &Context) -> u64 {
+    #[derive(Clone, Copy, Default)]
+    struct Passes {
+        egui: u64,
+        drawn: u64,
+    }
+    let now = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| {
+        let p = d.get_temp_mut_or_default::<Passes>(Id::new("zikaron-drawn-pass"));
+        if p.egui != now {
+            p.egui = now;
+            p.drawn += 1;
+        }
+        p.drawn
+    })
+}
+
 /// Seconds since `id` appeared, or since `key` changed. Not drawn for a pass counts as leaving: the next time
 /// it is drawn it appears again.
 pub fn age(ctx: &Context, id: Id, key: u64) -> f32 {
     let t = now(ctx);
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     ctx.data_mut(|d| {
         let s = d.get_temp_mut_or_insert_with(id, || Seen { key, t0: t, pass });
         if s.key != key || s.pass + 1 < pass {
@@ -344,7 +367,7 @@ pub fn age(ctx: &Context, id: Id, key: u64) -> f32 {
 /// it is still leaving takes its entrance up where its leaving had reached).
 pub fn set_age(ctx: &Context, id: Id, key: u64, age: f32) {
     let t = now(ctx);
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     ctx.data_mut(|d| d.insert_temp(id, Seen { key, t0: t - f64::from(age.max(0.0)), pass }));
 }
 
@@ -369,7 +392,7 @@ impl Curve {
 /// Restart an entrance: the next [`age`] of `id` counts from now.
 pub fn restart(ctx: &Context, id: Id) {
     let t = now(ctx);
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     ctx.data_mut(|d| {
         if let Some(mut s) = d.get_temp::<Seen>(id) {
             s.t0 = t;

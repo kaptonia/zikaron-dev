@@ -74,7 +74,7 @@ pub fn keep(ctx: &Context, key: Id, layer: LayerId, dur: f32, to_scale: f32, cen
     let k = crate::motion::travel(ctx);
     let (to_scale, moved) = (1.0 + (to_scale - 1.0) * k, moved * k);
     let shapes: Vec<egui::epaint::ClippedShape> = ctx.graphics(|g| g.get(layer).map(|l| l.all_entries().cloned().collect()).unwrap_or_default());
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     ctx.data_mut(|d| {
         let t = d.get_temp_mut_or_default::<Vec<(Id, Snap)>>(table_id());
         t.retain(|(k, _)| *k != key);
@@ -150,7 +150,7 @@ pub fn leaving_colour(col: egui::Color32, alpha: f32) -> egui::Color32 {
 
 /// Draw the layers that have left and are still fading. Call once per frame, after everything else.
 pub fn fade_out(ctx: &Context) {
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     let now = crate::motion::now(ctx);
     let mut snaps: Vec<(Id, Snap)> = ctx.data(|d| d.get_temp::<Vec<(Id, Snap)>>(table_id())).unwrap_or_default();
     let mut keep_going = Vec::new();
@@ -323,7 +323,7 @@ fn card_rect_id(id: Id) -> Id {
 /// Record where a floating card under `id` lies this frame (its owner reads it in [`follow`]), and when it opened
 /// (a card not drawn the pass before opens now).
 pub fn card_at(ctx: &Context, id: Id, rect: Rect) {
-    let (now, pass) = (crate::motion::now(ctx), ctx.cumulative_pass_nr());
+    let (now, pass) = (crate::motion::now(ctx), crate::motion::pass(ctx));
     ctx.data_mut(|d| {
         let opened = match d.get_temp::<(f64, u64)>(card_rect_id(id).with("seen")) {
             Some((at, last)) if last + 1 >= pass => at,
@@ -391,7 +391,7 @@ struct Esc {
 /// this one was opened last. Every overlay that closes on Esc asks here, each frame it is drawn, under its own
 /// key; one Esc so closes one overlay (the date card over a pick list, not the list too).
 pub fn esc(ctx: &Context, key: Id) -> bool {
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     let pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let tid = Id::new("zikaron-esc-owners");
     ctx.data_mut(|d| {

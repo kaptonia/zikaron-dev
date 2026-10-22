@@ -98,7 +98,7 @@ pub fn height(ctx: &Context, id: Id, natural: f32, w: f32) -> f32 {
 /// [`height`], taking `natural` as it is when the content is itself on its way (`inner`): the content already
 /// moves, and a second ease after it would trail by its own length.
 pub fn height_following(ctx: &Context, id: Id, natural: f32, w: f32, inner: bool) -> f32 {
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     let hid = id.with("zikaron-grow");
     let prev = ctx.data(|d| d.get_temp::<Grown>(hid));
     let steady = prev.map(|p| p.pass + 1 >= pass && (p.w - w).abs() < 0.5).unwrap_or(false);
@@ -175,7 +175,7 @@ impl Group {
     /// shorter the list shows than it is laid out: what the rows still opening lack and the rows still closing
     /// add (a list that draws its own block adds it to the block's height; one inside [`grow`] needs nothing).
     pub fn finish(self, ctx: &Context) -> f32 {
-        let pass = ctx.cumulative_pass_nr();
+        let pass = crate::motion::pass(ctx);
         let now = crate::motion::now(ctx);
         let mut mem = ctx.data(|d| d.get_temp::<Memory>(self.id)).unwrap_or_default();
         let steady = mem.pass + 1 >= pass && mem.pass != 0 && (mem.width - self.width).abs() < 0.5 && !crate::scroll::by_hand(ctx) && !morphing(ctx);
@@ -436,7 +436,7 @@ pub fn pointer_on(ui: &egui::Ui, rect: Rect) -> bool {
         return false;
     }
     let held = egui::Id::new("zikaron-lit-this-pass");
-    let pass = ui.ctx().cumulative_pass_nr();
+    let pass = crate::motion::pass(ui.ctx());
     let key = (ui.layer_id(), [rect.min.x, rect.min.y, rect.max.x, rect.max.y].map(f32::to_bits));
     match ui.ctx().data(|d| d.get_temp::<(u64, (egui::LayerId, [u32; 4]))>(held)) {
         Some((at, k)) if at == pass => k == key,

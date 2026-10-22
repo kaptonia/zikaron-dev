@@ -27,10 +27,20 @@ pub fn glass() -> bool {
     GLASS.load(Ordering::Relaxed)
 }
 
+/// How much of the rail's tint lies over the system's glass, light and dark: the system's glass stands for the
+/// whole-machine preview's blurred, saturated wallpaper and its sheen, and this tint for the preview's glass fill
+/// over them (`--lg-fill`: light 0.38, dark 0.42), so the rail reads as clear as the preview's.
+pub const RAIL_GLASS_TINT: (f32, f32) = (0.38, 0.42);
+
 /// The rail's ground (the side rail, the first-run wizard's steps): over the system's material a translucent
-/// tint of it, else the tint itself, opaque.
+/// tint of it ([`RAIL_GLASS_TINT`], light to dark as the theme blends), else the tint itself, opaque.
 pub fn rail_ground() -> Color32 {
-    if glass() { c(C::Rail).gamma_multiply(0.55) } else { c(C::Rail) }
+    if glass() {
+        let (light, dark) = RAIL_GLASS_TINT;
+        c(C::Rail).gamma_multiply(light + (dark - light) * crate::palette::blend())
+    } else {
+        c(C::Rail)
+    }
 }
 
 /// A raised surface's level above the page ground.

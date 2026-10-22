@@ -99,7 +99,7 @@ fn unframed() -> egui::Frame {
 pub(crate) fn field_id(ui: &egui::Ui, kind: &str, hint: &str) -> egui::Id {
     let worded = worded_id(ui, kind, hint);
     let ctx = ui.ctx();
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     let order_key = egui::Id::new("zikaron-field-order");
     let mut order: (u64, Vec<(egui::Id, u32)>) = ctx.data(|d| d.get_temp(order_key)).filter(|o: &(u64, Vec<(egui::Id, u32)>)| o.0 == pass).unwrap_or((pass, Vec::new()));
     let place = ui.id().with(kind);
@@ -127,7 +127,7 @@ pub(crate) fn field_id(ui: &egui::Ui, kind: &str, hint: &str) -> egui::Id {
 
 fn worded_id(ui: &egui::Ui, kind: &str, hint: &str) -> egui::Id {
     let base = ui.id().with((kind, hint));
-    let pass = ui.ctx().cumulative_pass_nr();
+    let pass = crate::motion::pass(ui.ctx());
     let key = egui::Id::new("zikaron-field-places");
     let seen: Option<(u64, Vec<(egui::Id, u32)>)> = ui.ctx().data(|d| d.get_temp(key));
     let mut table = match seen {

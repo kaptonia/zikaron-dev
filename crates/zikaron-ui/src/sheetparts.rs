@@ -169,6 +169,7 @@ pub fn radio(ui: &mut egui::Ui, id_salt: &str, on: bool) {
 /// A sheet's title with its tabs as a small segmented control (each cell as wide as its words) at the right end
 /// of the same line, then the room a title leaves under it. Returns the tab clicked when it is not the current one.
 pub fn title_seg(ui: &mut egui::Ui, title: &str, id_salt: &str, labels: &[&str], current: usize) -> Option<usize> {
+    crate::sheet::said_title(ui.ctx(), title);
     let w = ui.available_width();
     // The title keeps the line every sheet title has; the seg, taller, sits on the title's middle and reaches
     // as far above the line as below it.

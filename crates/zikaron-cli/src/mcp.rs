@@ -11,7 +11,8 @@
 //!
 //! The tools are read off the verb table: the write tools are verbs the desktop does under `--home`
 //! (`verbs::HOME`), each taking that row's flags and `home`; the read tools are verbs of the table taking their
-//! row's flags less the ones withheld. A verb not named here is no tool.
+//! row's flags less the ones withheld (`kit-verify` among them writes when it takes originals out, and its `home`,
+//! which may be left out, goes the way a write's goes). A verb not named here is no tool.
 
 use crate::args::Args;
 use crate::codes::Reason;
@@ -37,9 +38,19 @@ const READS: [(&str, &[&str]); 9] = [
     ("chain-check", &[]),
     ("depth", &[]),
     ("badge", &["encode"]),
-    ("kit-verify", &[]),
+    ("kit-verify", &["ledger", "key"]),
     ("contract", &[]),
 ];
+
+/// The tools of the read table that write: `kit-verify` takes the originals out into a folder (`originals-to`). Each is
+/// marked as writing (not read-only) and, cancelled while it runs, is let finish and answered, as a write is. A verb
+/// with a read tool (`kit-verify`) is offered once, as that tool, though the desktop does it under `--home` too: its
+/// `home` goes the way a write's goes.
+const WRITES_TOO: [&str; 1] = ["kit-verify"];
+
+/// The write tools whose `home` may be left out: `kit-verify` verifies a plain package, and takes its originals out,
+/// with no home (a package addressed to one key is opened through a home: the credential's, or the desktop's).
+const HOME_OPTIONAL: [&str; 1] = ["kit-verify"];
 
 /// A read tool's flag given as the home: `scan` reads with the home's chain settings and nodes (`--ledger
 /// <home>/ledger`).
@@ -50,7 +61,7 @@ const HOME: &str = "home";
 
 /// The parameters whose values are paths (any tool when the tool is empty); each is taken whole only. A `hop` is
 /// one path or two joined by `=`.
-const PATHS: [(&str, &str); 12] = [
+const PATHS: [(&str, &str); 13] = [
     ("", "home"),
     ("", "ledger"),
     ("", "input"),
@@ -59,6 +70,7 @@ const PATHS: [(&str, &str); 12] = [
     ("adopt", "anchors"),
     ("kit-export", "out"),
     ("kit-verify", "kit"),
+    ("kit-verify", "originals-to"),
     ("show", "path"),
     ("check-grant", "grant"),
     ("chain-check", "hop"),
@@ -75,7 +87,7 @@ struct Tool {
 /// The tools, read off the verb table.
 fn tools() -> Vec<Tool> {
     let mut all = Vec::new();
-    for name in verbs::HOME.iter().map(|(v, _)| *v).filter(|v| !NOT_WRITES.contains(v)) {
+    for name in verbs::HOME.iter().map(|(v, _)| *v).filter(|v| !NOT_WRITES.contains(v) && !READS.iter().any(|(r, _)| r == v)) {
         let params = verbs::accepts(name, true).unwrap_or_default();
         all.push(Tool { name, write: true, params });
     }
@@ -86,7 +98,7 @@ fn tools() -> Vec<Tool> {
             .filter(|f| !withheld.contains(f))
             .map(|f| if AS_HOME.contains(&(name, f)) { HOME } else { f })
             .collect();
-        all.push(Tool { name, write: false, params });
+        all.push(Tool { name, write: WRITES_TOO.contains(&name), params });
     }
     all
 }
@@ -113,7 +125,7 @@ fn told(tool: &str) -> &'static str {
         "adopt" => ("收编已在链上的存证", "Adopt anchors already on chain"),
         "annotate" => ("给一条记录添加注记", "Annotate a record"),
         "retract" => ("删除一条记录(写一条撤回)", "Retract a record (write a retraction)"),
-        "kit-export" => ("把记录包导出到给定位置", "Export a record kit to the given place"),
+        "kit-export" => ("把记录包导出到给定位置;给了接收方即加密给它", "Export a record kit to the given place; given a recipient, encrypt it to them"),
         "anchor" => (
             "上链:发送本家的待上链队列;自动发送时花这个身份的 gas",
             "Anchor: send this home's queue; with sending automatic it spends this identity's gas",
@@ -125,7 +137,10 @@ fn told(tool: &str) -> &'static str {
         "chain-check" => ("核验一条转授权链", "Check a chain of grants"),
         "depth" => ("读一条记录的上链深度", "Read an entry's anchoring depth"),
         "badge" => ("解读一份授权码", "Decode a grant code"),
-        "kit-verify" => ("核验一份记录包", "Verify a record kit"),
+        "kit-verify" => (
+            "核验一份记录包,加密的经本家打开;给了位置即把原件取到那里",
+            "Verify a record kit, an encrypted one opened through this home; given a place, take its originals out there",
+        ),
         "contract" => ("读命令行的契约:动词、旗与退出码", "Read the command line's contract: verbs, flags and exit codes"),
         _ => ("", ""),
     };
@@ -150,7 +165,7 @@ fn listed() -> Value {
         .map(|t| {
             let props = Value::Obj(t.params.iter().map(|p| (p.to_string(), if repeated(t.name, flag_of(t.name, p)) { texts.clone() } else { text.clone() })).collect());
             let mut input = vec![("type", st("object")), ("properties", props), ("additionalProperties", Value::Bool(false))];
-            if t.params.contains(&HOME) {
+            if t.write && t.params.contains(&HOME) && !HOME_OPTIONAL.contains(&t.name) {
                 input.push(("required", Value::Arr(vec![st(HOME)])));
             }
             let output = o(vec![
@@ -190,10 +205,22 @@ fn command(tool: &Tool, given: &[(String, Value)]) -> Result<Vec<String>, String
             return Err(refusal(Subject::Placed { at: i + 1, bytes: k.len() }, Said::McpNotAParameter));
         }
     }
+    // Which way a write goes, judged once for the call: with the credential while this machine writes alone, else
+    // through the desktop, which takes the flags of the verb's `--home` row and no other (one given is refused here
+    // by name, before any process starts).
+    let homed = tool.write && given.iter().any(|(k, _)| k == HOME);
+    let alone = homed && alone();
+    if homed && !alone {
+        let through = verbs::accepts(tool.name, true).unwrap_or_default();
+        if let Some((k, _)) = given.iter().find(|(k, _)| !through.iter().any(|f| f == k)) {
+            let param = tool.params.iter().find(|p| *p == k).copied().unwrap_or(HOME);
+            return Err(refusal(Subject::flag(param), Said::McpNotThroughDesktop));
+        }
+    }
     let mut argv = vec![tool.name.to_string()];
     for param in &tool.params {
         let Some((_, v)) = given.iter().find(|(k, _)| k == param) else {
-            if tool.write && *param == HOME {
+            if tool.write && *param == HOME && !HOME_OPTIONAL.contains(&tool.name) {
                 return Err(refusal(Subject::flag(HOME), Said::Missing));
             }
             continue;
@@ -220,7 +247,7 @@ fn command(tool: &Tool, given: &[(String, Value)]) -> Result<Vec<String>, String
                 let ledger = std::path::Path::new(x).join(zikaron_seal::envelope::LEDGER_DIR).display().to_string();
                 if !tool.write {
                     argv.extend([format!("--{flag}"), ledger]);
-                } else if alone() {
+                } else if alone {
                     argv.extend(["--ledger".to_string(), ledger]);
                 } else {
                     argv.extend(["--home".to_string(), x.to_string()]);

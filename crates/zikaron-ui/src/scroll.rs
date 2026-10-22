@@ -58,7 +58,7 @@ fn rooms_id() -> egui::Id {
 fn note<R>(ctx: &egui::Context, out: &egui::scroll_area::ScrollAreaOutput<R>) {
     let id = out.id.with("zikaron-scroll-at");
     let at = out.state.offset;
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     let moved = ctx.data(|d| d.get_temp::<egui::Vec2>(id)).map(|p| (p - at).length() > 0.1).unwrap_or(false);
     let room = (out.content_size.y - out.inner_rect.height() - at.y).max(0.0);
     let now = ctx.input(|i| i.time);
@@ -78,7 +78,7 @@ fn note<R>(ctx: &egui::Context, out: &egui::scroll_area::ScrollAreaOutput<R>) {
 
 /// How much further down the innermost area showing `at` can scroll (as of the last pass); none outside any.
 pub fn room_below(ctx: &egui::Context, at: egui::Rect) -> f32 {
-    let pass = ctx.cumulative_pass_nr();
+    let pass = crate::motion::pass(ctx);
     let r = ctx.data(|d| d.get_temp::<Rooms>(rooms_id())).unwrap_or_default();
     let list = if r.pass == pass { &r.last } else { &r.this };
     list.iter().filter(|(rect, _)| rect.contains(at.center())).min_by(|a, b| a.0.area().total_cmp(&b.0.area())).map(|x| x.1).unwrap_or(0.0)
@@ -131,8 +131,19 @@ pub fn by_hand(ctx: &egui::Context) -> bool {
 /// sheet keeps nothing of the sheet's wheel).
 fn keep<R>(ui: &egui::Ui, out: &egui::scroll_area::ScrollAreaOutput<R>) {
     let shown = out.inner_rect;
-    let more = out.content_size.x > shown.width() + 0.5 || out.content_size.y > shown.height() + 0.5;
+    let more = !holds(out.content_size.x, shown.width()) || !holds(out.content_size.y, shown.height());
     if more && ui.rect_contains_pointer(shown) {
         ui.ctx().input_mut(|i| i.smooth_scroll_delta = egui::Vec2::ZERO);
     }
+}
+
+/// How far content may run past what shows and still count as shown whole: a layout's fractions of a point (a height
+/// rounded to whole points, a re-measure that waits for half a point of change).
+pub const SLACK: f32 = 0.5;
+
+/// Whether `content` long fits in `shown`: the library's one judgment of "it has more than it shows", for keeping
+/// the wheel ([`nested`]) and for whether a scroll bar shows at all (a sheet that holds its body whole shows none,
+/// `crate::sheet::show`).
+pub fn holds(content: f32, shown: f32) -> bool {
+    content <= shown + SLACK
 }

@@ -282,6 +282,7 @@ impl Win {
         self.read_net_sheet(ctx, now);
         self.publish_sheet(ctx, now);
         self.publish_edit_sheet(ctx, now);
+        self.extract_sheet(ctx, now);
         self.dir_sheet(ctx, now);
         self.estimate_due(ctx);
         self.new_anchor_sheet(ctx, now);

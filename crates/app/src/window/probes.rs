@@ -1544,6 +1544,17 @@ pub enum DataScene {
     PendingDetail,
     /// The record kit page with its export sheet up (where the kit lands).
     KitExport,
+    /// The record kit page with "encrypt the record package" on (the folder switch off and greyed), no sheet.
+    KitPageSealed,
+    /// The same with "encrypt the record package" on: the sheet's two recipient fields, both empty.
+    KitExportSealed,
+    /// The same with an address in the first field: the public key field greyed.
+    KitExportSealedTo,
+    /// The same with this identity's own public key in the second field: the sheet ready to export (for the window
+    /// bench, where the export key is pressed and its progress and check are seen).
+    KitExportSealedKey,
+    /// Settings, keys: the details open (the key address and, under it, the public key).
+    KeysDetails,
 }
 
 /// A sheet the geometry reading opens, each in a state its ordinary content needs.
@@ -1591,6 +1602,10 @@ pub enum SheetScene {
     GrantFile,
     Badge,
     HeldUpstream,
+    /// The published address's own sheet (its one field).
+    PublishEdit,
+    /// Taking the originals out of the kit verified (the record verification's data scene staged under it).
+    ExtractOriginals,
 }
 
 /// The passcode gate's states.
@@ -1602,6 +1617,8 @@ pub enum GateScene {
     RecoverNone,
     LockedOut,
     RestoreLocked,
+    /// Restoring a backup at the gate, at its new passcode.
+    RestoreNewPin,
 }
 
 impl Scene {
@@ -1657,6 +1674,8 @@ pub fn scenes(role: crate::roles::Role) -> Vec<Scene> {
         (Place::Settings(Section::Network), SheetScene::NetEdit),
         (Place::Settings(Section::Network), SheetScene::ReadNet),
         (Place::Settings(Section::Network), SheetScene::PublishCheck),
+        (Place::Settings(Section::Network), SheetScene::PublishEdit),
+        (Place::View(View::Verify, crate::nav::tab::VERIFY_WORK), SheetScene::ExtractOriginals),
         (data, SheetScene::DataFolder),
     ];
     match role {
@@ -1686,7 +1705,7 @@ pub fn scenes(role: crate::roles::Role) -> Vec<Scene> {
         ]),
     }
     out.extend(sheets.into_iter().map(|(p, s)| Scene::Sheet(p, s)));
-    out.extend([GateScene::Unlock, GateScene::RecoverWords, GateScene::RecoverFile, GateScene::RecoverNone, GateScene::LockedOut, GateScene::RestoreLocked].map(Scene::Gate));
+    out.extend([GateScene::Unlock, GateScene::RecoverWords, GateScene::RecoverFile, GateScene::RecoverNone, GateScene::LockedOut, GateScene::RestoreLocked, GateScene::RestoreNewPin].map(Scene::Gate));
     out.push(Scene::IdMenu);
     let check = Place::View(View::Verify, crate::nav::tab::VERIFY_CHECK);
     out.extend([Scene::Data(check, DataScene::CheckNoNode), Scene::Data(check, DataScene::CheckSourceOpen)]);
@@ -1695,6 +1714,7 @@ pub fn scenes(role: crate::roles::Role) -> Vec<Scene> {
         Scene::Data(Place::View(View::Verify, crate::nav::tab::VERIFY_OTHERS), DataScene::OthersRead),
         Scene::Data(Place::View(View::Verify, crate::nav::tab::VERIFY_OTHERS), DataScene::OthersList),
         Scene::Data(Place::View(View::Verify, crate::nav::tab::VERIFY_OTHERS), DataScene::OtherEntry),
+        Scene::Data(Place::Settings(Section::Keys), DataScene::KeysDetails),
     ]);
     if role == Role::Author {
         out.extend([Scene::Data(Place::Home, DataScene::NewRecordBatch), Scene::Data(log, DataScene::AdoptListed)]);
@@ -1704,6 +1724,10 @@ pub fn scenes(role: crate::roles::Role) -> Vec<Scene> {
             Scene::Data(log, DataScene::EntryDetail),
             Scene::Data(Place::View(View::Works, 1), DataScene::PendingDetail),
             Scene::Data(Place::View(View::Works, 2), DataScene::KitExport),
+            Scene::Data(Place::View(View::Works, 2), DataScene::KitPageSealed),
+            Scene::Data(Place::View(View::Works, 2), DataScene::KitExportSealed),
+            Scene::Data(Place::View(View::Works, 2), DataScene::KitExportSealedTo),
+            Scene::Data(Place::View(View::Works, 2), DataScene::KitExportSealedKey),
         ]);
     } else {
         let mine = Place::View(View::MyGrants, 0);
@@ -1890,6 +1914,15 @@ fn stage_data(win: &mut Win, d: DataScene) {
             let at = win.shell.home.as_ref().map(|h| h.dir(crate::home::Slot::Kits).join("kit-geometry")).unwrap_or_default();
             win.typed.vf_path = at.display().to_string();
             let n = works.len();
+            // Each record's original goes out under its name (a file each), as taking them out would take them.
+            let take = works
+                .iter()
+                .map(|r| {
+                    let name = r.facts.note.clone().filter(|x| !x.trim().is_empty()).unwrap_or_else(|| r.id.clone());
+                    let content = r.work.clone().unwrap_or_default();
+                    zikaron_glue::extract::Original { content: content.clone(), kept: zikaron_glue::extract::Kept::File, name: name.clone(), package_name: name.clone(), members: vec![zikaron_glue::extract::Member { path: name, rel: Vec::new(), sha: content }], names_hold: true }
+                })
+                .collect();
             let records = works
                 .iter()
                 .map(|r| crate::verifyx::RecordRow {
@@ -1913,6 +1946,7 @@ fn stage_data(win: &mut Win, d: DataScene) {
                 depth,
                 mismatches: Vec::new(),
                 records,
+                takes: Some(Ok(zikaron_glue::extract::Plan { take, left: Vec::new() })),
                 not_added: None,
                 missed: Vec::new(),
                 read: vec![31337],
@@ -1982,13 +2016,33 @@ fn stage_data(win: &mut Win, d: DataScene) {
             }
         }
         // The sheet itself is kept in the window's memory (`stage_memory`).
-        DataScene::KitExport => {}
+        DataScene::KitExport => win.ux.u3.kit_addressed = false,
+        DataScene::KitPageSealed => {
+            win.ux.u3.kit_folder = true;
+            win.ux.u3.kit_addressed = true;
+        }
+        DataScene::KitExportSealed => {
+            win.ux.u3.kit_addressed = true;
+            win.typed.kit_to.clear();
+            win.typed.kit_to_key.clear();
+        }
+        DataScene::KitExportSealedTo => {
+            win.ux.u3.kit_addressed = true;
+            win.typed.kit_to = format!("0x{}", "5b".repeat(20));
+            win.typed.kit_to_key.clear();
+        }
+        DataScene::KitExportSealedKey => {
+            win.ux.u3.kit_addressed = true;
+            win.typed.kit_to.clear();
+            win.typed.kit_to_key = win.shell.anchor_public.map(|p| zikaron::hexfmt::encode(&p)).unwrap_or_default();
+        }
+        DataScene::KeysDetails => win.ux.u3.keys_details = true,
     }
 }
 
 /// Set what a scene keeps in the window's memory rather than in its state: the record kit's export sheet.
 fn stage_memory(ctx: &egui::Context, scene: Scene) {
-    let up = matches!(scene, Scene::Data(_, DataScene::KitExport));
+    let up = matches!(scene, Scene::Data(_, DataScene::KitExport | DataScene::KitExportSealed | DataScene::KitExportSealedTo | DataScene::KitExportSealedKey));
     super::kit::kit_export_up(ctx, up);
 }
 
@@ -2046,7 +2100,10 @@ fn stage(win: &mut Win, scene: Scene) {
         Scene::Wizard(step) => {
             match step {
                 Step::Pin => win.shell.vault = Vault::Read(State::Absent),
-                Step::Key => win.shell.anchor = None,
+                Step::Key => {
+                    win.shell.anchor = None;
+                    win.shell.anchor_public = None;
+                }
                 Step::Genesis => win.shell.rooted = false,
                 Step::Backup => win.shell.machine.backup = None,
                 Step::Network | Step::Gas => {}
@@ -2072,6 +2129,11 @@ fn stage(win: &mut Win, scene: Scene) {
                 GateScene::RestoreLocked => {
                     win.shell.backup_peek = None;
                     win.bk_open(Bk::Restore(RestoreFrom::Locked));
+                }
+                GateScene::RestoreNewPin => {
+                    win.shell.backup_peek = None;
+                    win.bk_open(Bk::Restore(RestoreFrom::Locked));
+                    win.ux.bk_step = BkStep::NewPin;
                 }
             }
         }
@@ -2183,6 +2245,11 @@ fn stage(win: &mut Win, scene: Scene) {
                 SheetScene::NetEdit => win.net_edit_open(),
                 SheetScene::ReadNet => win.read_net_new_open(),
                 SheetScene::PublishCheck => win.ux.publish_sheet = true,
+                SheetScene::PublishEdit => win.ux.publish_edit = true,
+                SheetScene::ExtractOriginals => {
+                    stage_data(win, DataScene::VerifyKit);
+                    win.extract_open();
+                }
                 SheetScene::DataFolder => win.dir_open(settings::DirSheet::Home),
                 SheetScene::Snapshot => win.snapshot_open(),
                 SheetScene::GrantFile => {

@@ -704,7 +704,39 @@ fn no_path_writes_a_plaintext_key_to_disk() {
     assert!(code.contains("\n    fn bytes(&self)"), "bytes() 要住 key.rs 自己一处");
     assert!(!code.contains("pub(crate) fn bytes"), "bytes() 不许对 crate 公开");
     assert!(!code.contains("pub fn bytes"), "bytes() 不许对外公开");
-    // The exits are exactly these, and none hands out plaintext that could be written to disk.
+    // The exits are a closed set: every function of `impl Secret` is one of these, and none hands out plaintext
+    // that could be written to disk.
+    let at = code.find("impl Secret {").expect("impl Secret");
+    let block = &code[at..at + code[at..].find("\n}\n").expect("impl Secret 收尾")];
+    let mut fns: Vec<String> = block.lines().map(str::trim).filter(|l| (l.starts_with("pub") || l.starts_with("fn ")) && l.contains("fn ")).map(|l| l.trim_end_matches('{').trim_end().to_string()).collect();
+    fns.sort();
+    let mut want: Vec<String> = [
+        "pub fn take(bytes: [u8; 32]) -> Option<Secret>",
+        "fn bytes(&self) -> &[u8; 32]",
+        "pub fn address(&self) -> Option<Address>",
+        "pub fn public(&self) -> Option<[u8; 33]>",
+        "pub(in crate::sign) fn with_sign_key<R>(&self, f: impl FnOnce(&[u8; 32]) -> R) -> R",
+        "pub(in crate::sign) fn with_tx_key<R>(&self, f: impl FnOnce(&[u8; 32]) -> R) -> R",
+        "pub(crate) fn ciphered(&self, key: &[u8; 16], iv: &[u8; 16]) -> Vec<u8>",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    want.sort();
+    assert_eq!(fns, want, "Secret 的出口闭集变了");
+    // The agreement exit is one place: key.rs's one `Recipient` for `Secret`, whose body is the sealed layer's
+    // Diffie-Hellman; no other shipped source agrees or lends a key as a recipient.
+    for (name, text) in shipped() {
+        let t = code_only(&text);
+        let agrees = t.matches("crypto::agree(").count();
+        let lends = t.matches("Recipient for ").count();
+        if name == "key.rs" {
+            assert_eq!((agrees, lends), (1, 1), "key.rs 里协商借钥恰一处");
+            assert!(t.contains("impl zikaron_seal::addressed::Recipient for Secret {"), "借钥那一处是 Secret 的 Recipient");
+        } else {
+            assert_eq!((agrees, lends), (0, 0), "{name} 里另有协商借钥");
+        }
+    }
     for exit in [
         // The key-lending exit is visible only to `sign`, so no other file can even write a call that signs
         // arbitrary domain strings.
@@ -1395,6 +1427,8 @@ fn every_legal_action_names_a_verb_from_the_contract_six_table() {
             note: String::new(),
             out: String::new(),
             form: "folder".into(),
+            recipient: String::new(),
+            recipient_key: String::new(),
         },
         Action::ReadDepth { work: String::new() },
         Action::DraftGrant {
@@ -3221,17 +3255,18 @@ fn opening_a_home_is_judged_in_one_place() {
     assert_eq!(set_home, 2, "摆「正开着的那一处家」现数 {set_home} 处");
     assert_eq!(set_lock, 2, "摆那一把锁现数 {set_lock} 处");
     let code = code_only(&read_src_file("action.rs").expect("读不出 action.rs"));
-    // The re-entry reuse check exists only in opening, and comes before taking the lock.
-    let at = code.find("fn open_home_at").expect("开家那一段");
+    // The re-entry reuse check exists only in opening's disk half (`opening`, which switching seat runs off the
+    // window's thread), and comes before taking the lock.
+    let at = code.find("fn opening(").expect("开家那一段");
     let body = &code[at..code[at..].find("\n}\n").map(|e| at + e).unwrap_or(code.len())];
-    assert!(body.contains("crate::lock::holds_writer(shell.lock.as_ref(), &home)"), "复用那一判要在开家那一处");
-    assert_eq!(code.matches("crate::lock::holds_writer(").count(), 1, "复用那一判只许一处");
-    // Both home-opening paths go through here: the one the user chose (`open_home`) and entering an identity's
-    // seat (`enter`).
-    for caller in ["fn open_home(", "fn enter("] {
+    assert!(body.contains("crate::lock::holds_writer_at(ask.held.as_deref(), &home)"), "复用那一判要在开家那一处");
+    assert_eq!(code.matches("crate::lock::holds_writer_at(").count(), 1, "复用那一判只许一处");
+    // Every home-opening path goes through here: the one the user chose (`open_home`, by `open_home_at`) and
+    // entering an identity's seat (`enter` and the seat switch, by `entering`).
+    for (caller, through) in [("fn open_home(", "open_home_at("), ("fn open_home_at(", "opening("), ("fn enter(", "entering("), ("fn entering(", "opening("), ("fn seat_start(", "entering(")] {
         let a = code.find(caller).unwrap_or_else(|| panic!("找不到 {caller}"));
         let b = &code[a..code[a..].find("\n}\n").map(|e| a + e).unwrap_or(code.len())];
-        assert!(b.contains("open_home_at("), "{caller} 该走开家那一处");
+        assert!(b.contains(through), "{caller} 该走开家那一处({through})");
     }
 }
 
@@ -3964,11 +3999,12 @@ fn the_known_deployments_are_compiled_in_and_one_entry_point_fills_a_home() {
     assert_eq!((t.chain_id, t.registry.to_lowercase().as_str(), t.from_block), (11_155_111, "0xc29410b882c4c3b77e33659d2f06ac563e7b08a3", 11_715_660));
     assert!(d.nodes.iter().all(|u| u.starts_with("https://")) && d.nodes[0] != d.nodes[1]);
     let action = code_only(&read_src_file("action.rs").expect("读不出 action.rs"));
-    // A network (a known row or one filled in by hand) enters a home through one entry point, called from two
-    // places: a writer opening a home without a network takes its identity's, and the wizard's network step
-    // fills the current home.
-    assert_eq!(action.matches("adopt_network(shell, ").count(), 2, "two call sites use the one entry point");
-    assert_eq!(action.matches("adopt_deployment(shell, d)").count(), 1, "a known row fills a home inside the one entry point only");
+    // A network (a known row or one filled in by hand) enters a home's settings through one entry point
+    // (`network_into`), called from two places: a writer opening a home without a network takes its identity's in
+    // the disk half of opening, and the wizard's network step fills the current home (`adopt_network`).
+    assert_eq!(action.matches("fn network_into(").count(), 1, "one entry point");
+    assert_eq!(action.matches("network_into(").count(), 3, "the entry point and its two call sites");
+    assert_eq!(action.matches("adopt_network(shell, ").count(), 1, "the wizard's step takes a network through the window's way");
     let machine = code_only(&read_src_file("machine.rs").expect("读不出 machine.rs"));
     assert!(!machine.contains("11155111") && !machine.contains("11_155_111"), "机器级设置档不留链号的第二份说法");
 }
@@ -4271,8 +4307,10 @@ fn every_exit_effect_takes_the_gates_pass() {
     // A batch's broadcast is the sender's, and it takes the gate's pass too.
     let batch = code_only(&read_crate_file("zikaron-send", "batch.rs").expect("读不出发送器 batch.rs"));
     assert!(batch.contains("pub fn cast(_pass: &gate::Pass,"), "batch.rs:出口那一处效果不收闸的令牌");
-    let effects: [(&str, &str); 4] = [
+    let effects: [(&str, &str); 5] = [
         ("kitx.rs", "pub fn export(\n    _pass: &crate::exitgate::Pass,"),
+        // The package sealed to one key is the same exit, by the same pass.
+        ("kitx.rs", "pub fn export_to(\n    _pass: &crate::exitgate::Pass,"),
         ("badgex.rs", "pub fn export(_pass: &crate::exitgate::Pass,"),
         ("mirror.rs", "pub fn export(_pass: &crate::exitgate::Pass,"),
         ("grantfilex.rs", "pub fn export(_pass: &crate::exitgate::Pass,"),
@@ -5308,6 +5346,8 @@ mod gaps_r21b2;
 mod local_writes;
 #[path = "checks_more/gate_landing.rs"]
 mod gate_landing;
+#[path = "checks_more/seat_switch.rs"]
+mod seat_switch;
 #[path = "checks_more/seat_landing.rs"]
 mod seat_landing;
 #[path = "checks_more/unsafe_confined.rs"]
@@ -5358,4 +5398,46 @@ fn a_broken_way_is_said_in_the_desktops_words_with_machine_evidence() {
         assert!(head.contains(kind.0) || head.contains(kind.1), "the kind in the table's words: {said}");
         assert_eq!(said.matches(url).count(), 1, "the node named once: {said}");
     }
+}
+
+/// A key slot is named by its key's address: one holding another address's key is refused for that slot alone
+/// (`KEY_MALFORMED`, the one-slot kind the key search passes over), as the command line refuses it; the slot's own
+/// key reads back. Guards the person whose slot came to hold a key the register does not name for it: the desktop
+/// signed or opened with that key as if it were the seat's.
+#[test]
+fn a_key_slot_holding_another_addresss_key_is_refused_for_that_slot_alone() {
+    use zikaron_seal::Coded as _;
+    vault_open();
+    let mine = app::key::Secret::take([0x41; 32]).expect("a key").address().expect("its address");
+    let other = app::key::Secret::take([0x42; 32]).expect("a key").address().expect("its address");
+    let slot = app::places::key_slot(&mine);
+    assert_eq!(app::places::slot_address(&slot), Some(mine), "the slot name reads back to its address");
+    app::keybox::put(&slot, &[0x42; 32]).expect("stored");
+    let refused = app::key::load(Some(&slot)).err().expect("another address's key is not this slot's");
+    assert_eq!(refused.which(), Some(app::fault::Known::KeyMalformed));
+    assert!(refused.sealed_code().is_some_and(|c| c.one_slot()), "refused for this slot alone");
+    assert_ne!(other, mine);
+    let _ = app::keybox::drop_item(&slot);
+    app::keybox::put(&slot, &[0x41; 32]).expect("stored");
+    let read = app::key::load(Some(&slot)).expect("its own key reads").expect("a key");
+    assert_eq!(read.address(), Some(mine));
+    assert_eq!(app::places::slot_address(&app::places::seed_slot("x")), None, "a seed slot names no key's address");
+    let _ = app::keybox::drop_item(&slot);
+}
+
+/// A place on the way that is a file where a folder should be (a home replaced by a plain file) is refused by name
+/// (`NOT_A_FOLDER`), by the one table of system errors both ends classify with; never said as unknown. Guards the
+/// person whose home folder another program replaced with a file: told why the home does not open.
+#[test]
+fn a_file_where_a_folder_should_be_is_refused_by_name() {
+    let base = std::env::temp_dir().join(format!("zk-not-a-folder-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&base);
+    let home = base.join("home");
+    std::fs::write(&home, b"a plain file").expect("written");
+    let e = std::fs::read(home.join("settings").join("home-label.json")).err().expect("nothing reads below a file");
+    let f = app::fault::classify(&e, "home");
+    assert_eq!(f.which(), Some(app::fault::Known::NotAFolder));
+    assert_eq!(zikaron_seal::Trouble::io(&e, "home").code, zikaron_seal::Code::NotAFolder);
+    assert_eq!(app::fault::Fault::from(zikaron_seal::Trouble::io(&e, "home")).which(), Some(app::fault::Known::NotAFolder));
+    let _ = std::fs::remove_dir_all(&base);
 }

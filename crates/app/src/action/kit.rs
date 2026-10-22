@@ -23,11 +23,27 @@ pub(super) fn export_kit(
     note: &str,
     out: &str,
     form: &str,
+    recipient: &str,
+    recipient_key: &str,
 ) -> Result<Spawned, crate::fault::Fault> {
     // The form's word: `folder`, `file`, or none for one file; any other word is refused by name.
     let form = match form.trim() {
         "" => zikaron_glue::pack::Form::File,
         w => zikaron_glue::pack::Form::of(w).ok_or_else(|| crate::fault::Fault::known(crate::fault::Known::KitFormWord, w.to_string()))?,
+    };
+    // Whom the package is sealed to, judged before any background work: at most one of the two, each in its form
+    // (`addressedx::to_of`); only the one-file form is sealed, judged where the package is written (`kitx::export_to`).
+    let sealed_to = crate::addressedx::to_of(recipient, recipient_key)?;
+    // An address's key is looked for on the main network and every read-only network.
+    let main = crate::addressedx::Main {
+        chain: shell.settings.chain_id,
+        registry: shell.settings.registry.map(|a| a.0),
+        from_block: shell.settings.from_block,
+        nodes: shell.endpoints.iter().filter(|e| Some(e.chain) == shell.settings.chain_id).map(|e| e.url.clone()).collect(),
+    };
+    let readonly = match sealed_to {
+        Some(crate::addressedx::To::Address(_)) => read_nets_now()?,
+        _ => Vec::new(),
     };
     let root = shell
         .home
@@ -47,6 +63,16 @@ pub(super) fn export_kit(
     let publish = shell.settings.publish.clone();
     let ask = crate::exitgate::ask_of(shell)?;
     Ok(shell.tasks.spawn(Kind::Kit, move || {
+        // The recipient's key first: an address's is found on chain (its own proof), and every refusal leaves zero
+        // bytes written.
+        let key = match sealed_to {
+            None => None,
+            Some(crate::addressedx::To::Key(k)) => Some(k),
+            Some(crate::addressedx::To::Address(a)) => {
+                crate::task::stage_at(Kind::Kit, 3);
+                Some(crate::addressedx::key_for(&a, &main, &readonly)?)
+            }
+        };
         crate::task::stage_at(Kind::Kit, 0);
         let home = crate::home::Home::open(&root)?;
         // In the UI, attachments are chosen by their digests at export time: files whose digest is not an
@@ -69,7 +95,7 @@ pub(super) fn export_kit(
         crate::task::stage_at(Kind::Kit, 2);
         // The exit gate, last before the bundle is written.
         let pass = crate::exitgate::pass(&ask)?;
-        let made = crate::kitx::export(
+        let made = crate::kitx::export_to(
             &pass,
             &home,
             &pick,
@@ -77,6 +103,7 @@ pub(super) fn export_kit(
             &note,
             std::path::Path::new(&out),
             form,
+            key.as_ref(),
         )?;
         Ok(Done::Kit {
             root,
@@ -89,6 +116,7 @@ pub(super) fn export_kit(
             dropped: made.dropped,
             left_out,
             unreadable,
+            facts: made.facts,
         })
     }))
 }

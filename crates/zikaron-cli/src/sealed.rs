@@ -131,12 +131,7 @@ pub fn open(ledger: &str, now: u64) -> Result<Opened, Trouble> {
     let label = env::read_label(&home, &local)?.ok_or_else(|| Trouble::new(Code::LocalSeal, env::label_path(&home).display().to_string()))?;
     // Which key signs for this home: its identity's address on its seat, in the identity register (a home of
     // no identity's seat is signed for by the current identity and seat, as on the desktop).
-    let register_name = zikaron_seal::places::registry_file_for(&account);
-    let register_at = machine.join(&register_name);
-    let raw = std::fs::read(&register_at).map_err(|e| Trouble::io(&e, &register_at.display().to_string()))?;
-    let ex = Expect { owner: Some(Owner::Machine), doc: Doc::Registry, rel: Some(register_name.clone()) };
-    let plain = env::open_with(&local, &ex, &raw, &register_name, Some(&names))?;
-    let book = zikaron_seal::identities::Book::parse(&plain).map_err(|w| Trouble::new(Code::IdentitiesShape, w))?;
+    let book = register_of(&machine, &account, &local, &names)?;
     let (identity, seat) = match (label.whose.clone(), book.current.clone()) {
         (Some(w), _) => w,
         (None, Some((id, seat))) => (id, seat.to_string()),
@@ -145,13 +140,7 @@ pub fn open(ledger: &str, now: u64) -> Result<Opened, Trouble> {
     let line = book.lines.iter().find(|l| l.id == identity).ok_or_else(|| Trouble::new(Code::IdentitiesShape, identity.clone()))?;
     let address = line.address(&seat).ok_or_else(|| Trouble::new(Code::IdentitiesShape, format!("{identity} {seat}")))?;
     let author = zikaron::hexfmt::encode(&address);
-    let secret = keybox::get(&vault, &zikaron_seal::places::key_slot_for(&account, &author))?.ok_or_else(|| Trouble::new(Code::KeyboxSlot, author.clone()))?;
-    let key: [u8; 32] = secret.as_slice().try_into().map_err(|_| Trouble::new(Code::KeyMalformed, author.clone()))?;
-    let mut secret = secret;
-    zikaron_os::wipe(&mut secret);
-    if crate::entry::address(&key).as_deref() != Some(author.as_str()) {
-        return Err(Trouble::new(Code::KeyMalformed, author));
-    }
+    let key = key_in(&vault, &account, &author)?.ok_or_else(|| Trouble::new(Code::KeyboxSlot, author.clone()))?;
     let ledger = zikaron_seal::ledger::Ledger::open(&ledger_dir)?;
     let items = ledger.pile(&keys(&local, &names, &label.number))?.items;
     Ok(Opened { home, machine, account, ledger, local, names, number: label.number, key, author, items, lock: Some(lock) })
@@ -177,15 +166,76 @@ pub fn read(ledger: &str, now: u64) -> Result<Reading, Trouble> {
     crate::seam();
     let home = home_of(ledger);
     let Unlocked { machine, account, local, names, .. } = unlock(now)?;
-    match zikaron_seal::writer::mark_read(&home) {
-        zikaron_seal::writer::Mark::None => {}
-        zikaron_seal::writer::Mark::Machine(m) if m == zikaron_seal::writer::this_machine(&machine)? => {}
-        zikaron_seal::writer::Mark::Machine(_) => return Err(Trouble::new(Code::HomeOtherMachine, zikaron_seal::writer::mark_path(&home).display().to_string())),
-        zikaron_seal::writer::Mark::Unread(u) => return Err(Trouble::new(Code::HomeOtherMachine, u.tail)),
-    }
+    this_machines(&home, &machine)?;
     let label = env::read_label(&home, &local)?.ok_or_else(|| Trouble::new(Code::LocalSeal, env::label_path(&home).display().to_string()))?;
     let items = zikaron_seal::ledger::Ledger::open(Path::new(ledger))?.pile(&keys(&local, &names, &label.number))?.items;
     Ok(Reading { home, machine, account, local, names, number: label.number, items })
+}
+
+/// A home this machine may read: no writer mark, or this machine's; another machine's mark, or one that does not
+/// read, is refused by name (`E_HOME_OTHER_MACHINE`).
+fn this_machines(home: &Path, machine: &Path) -> Result<(), Trouble> {
+    match zikaron_seal::writer::mark_read(home) {
+        zikaron_seal::writer::Mark::None => Ok(()),
+        zikaron_seal::writer::Mark::Machine(m) if m == zikaron_seal::writer::this_machine(machine)? => Ok(()),
+        zikaron_seal::writer::Mark::Machine(_) => Err(Trouble::new(Code::HomeOtherMachine, zikaron_seal::writer::mark_path(home).display().to_string())),
+        zikaron_seal::writer::Mark::Unread(u) => Err(Trouble::new(Code::HomeOtherMachine, u.tail)),
+    }
+}
+
+/// The identity register of this machine's account, as it opens (`zikaron_seal::identities`).
+fn register_of(machine: &Path, account: &str, local: &LocalKey, names: &NameKey) -> Result<zikaron_seal::identities::Book, Trouble> {
+    let register_name = zikaron_seal::places::registry_file_for(account);
+    let register_at = machine.join(&register_name);
+    let raw = std::fs::read(&register_at).map_err(|e| Trouble::io(&e, &register_at.display().to_string()))?;
+    let ex = Expect { owner: Some(Owner::Machine), doc: Doc::Registry, rel: Some(register_name.clone()) };
+    let plain = env::open_with(local, &ex, &raw, &register_name, Some(names))?;
+    zikaron_seal::identities::Book::parse(&plain).map_err(|w| Trouble::new(Code::IdentitiesShape, w))
+}
+
+/// The private key the vault keeps for `author` (`0x` and lowercase), checked to be that address's; `None` when
+/// its slot is empty.
+fn key_in(vault: &Vault, account: &str, author: &str) -> Result<Option<[u8; 32]>, Trouble> {
+    let Some(mut secret) = keybox::get(vault, &zikaron_seal::places::key_slot_for(account, author))? else { return Ok(None) };
+    let key: Result<[u8; 32], _> = secret.as_slice().try_into();
+    zikaron_os::wipe(&mut secret);
+    let key = key.map_err(|_| Trouble::new(Code::KeyMalformed, author.to_string()))?;
+    if crate::entry::address(&key).as_deref() != Some(author) {
+        return Err(Trouble::new(Code::KeyMalformed, author.to_string()));
+    }
+    Ok(Some(key))
+}
+
+/// This machine's identities' keys, to try on a record package addressed to one key, with the credential, as the
+/// desktop tries them (`addressedx::local_keys`): each seat of each identity in the register, in the register's
+/// order, author seat first; a seat whose slot is empty is passed over (an identity's seed slot holds no key and is
+/// not read); so is one whose slot is unreadable on its own (`zikaron_seal::Code::one_slot`), the first such trouble
+/// kept beside the keys, as the desktop keeps it. `ledger` names a home the desktop keeps (the credential road's one
+/// form, `--ledger <home>/ledger`): the same opening and refusals as a read (the credential's three, another machine's
+/// mark); its ledger is not read.
+pub fn identity_keys(ledger: &str, now: u64) -> Result<(Vec<[u8; 32]>, Option<Trouble>), Trouble> {
+    crate::seam();
+    let home = home_of(ledger);
+    let Unlocked { machine, account, vault, local, names } = unlock(now)?;
+    this_machines(&home, &machine)?;
+    let book = register_of(&machine, &account, &local, &names)?;
+    let (mut keys, mut passed) = (Vec::new(), None);
+    for line in &book.lines {
+        for seat in env::SEATS {
+            let Some(address) = line.address(seat) else { continue };
+            match key_in(&vault, &account, &zikaron::hexfmt::encode(&address)) {
+                Ok(Some(k)) => {
+                    keys.push(k);
+                }
+                Ok(None) => {}
+                Err(t) if t.code.one_slot() => {
+                    passed.get_or_insert(t);
+                }
+                Err(t) => return Err(t),
+            }
+        }
+    }
+    Ok((keys, passed))
 }
 
 /// One sealed file's plain bytes (`None` when it is not there): at `dir`/`rel`, owned by `owner`.
@@ -241,6 +291,11 @@ impl Reading {
         let Some(doc) = record.doc.clone() else { return Ok(None) };
         let rel = zikaron_seal::terms::doc_rel_on_disk(&self.names, &record.terms);
         Ok(self.sealed(&self.home, &rel, Doc::TermsDoc, owner())?.map(|bytes| (doc, bytes)))
+    }
+
+    /// This machine's read-only networks (`zikaron_seal::readnets`, the table the desktop keeps); none is no rows.
+    pub fn read_networks(&self) -> Result<Vec<zikaron_seal::readnets::Row>, Trouble> {
+        zikaron_seal::readnets::read(&self.machine)
     }
 
     /// This machine's index of signed files (`zikaron_seal::records`); none kept is no rows.

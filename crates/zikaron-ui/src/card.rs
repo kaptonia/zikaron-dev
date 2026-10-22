@@ -276,6 +276,8 @@ pub fn form<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui, &mut Form) -> 
         quiet: false,
         sheet,
         next_tag: None,
+        tail: 0.0,
+        fold_last: false,
         corner: if sheet { ui.ctx().data(|d| d.get_temp::<f32>(crate::sheet::rows_corner_id())).unwrap_or(Radius::Card.px()) } else { Radius::Card.px() },
     };
     let (r, shown) = crate::flow::grow(ui, gid, |ui| {
@@ -287,6 +289,12 @@ pub fn form<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui, &mut Form) -> 
             .inner;
         let bottom = f.bottom;
         f.close_row(ui, bottom);
+        // In a sheet or under a column of fields, rows ending in a fold say where they end and the blank under the
+        // fold's words (the keys under them take it off the room above them: `sheet::show`, `fields::Stack::foot`).
+        if f.sheet && f.fold_last {
+            let at = (f.bottom, f.tail);
+            ui.ctx().data_mut(|d| d.insert_temp(crate::sheet::trailing(), at));
+        }
         if let Some(g) = f.group.take() {
             let _ = g.finish(ui.ctx());
         }
@@ -370,6 +378,11 @@ pub struct Form {
     /// A word right after the next row's title ([`Form::tag_next`], [`Form::quiet_next`]): its words and whether
     /// it is the quiet word (else a small blue tag).
     next_tag: Option<(String, bool)>,
+    /// The blank the last row keeps under what it shows (its words, key or field), where the row kind knows it; none
+    /// for a row that lights (its block takes that blank).
+    tail: f32,
+    /// The last row is a fold row (`Form::fold_from`): in a sheet its blank goes to the keys under it.
+    fold_last: bool,
 }
 
 /// What an information row shows at its right end (one right edge per card).
@@ -511,6 +524,8 @@ impl Form {
     /// A row starts at `top` (the last one ends there).
     fn begin(&mut self, ui: &egui::Ui, top: f32) {
         self.close_row(ui, top);
+        self.tail = 0.0;
+        self.fold_last = false;
         if let Some(g) = &self.group {
             let k = self.next_key.take().unwrap_or_else(|| egui::Id::new(("zikaron-form-row", self.rows)).value());
             self.open_row = Some((k, top, g.start(ui.ctx())));
@@ -595,6 +610,8 @@ impl Form {
     /// The title (and its second line) at the left of a row, from `x`, within `room`, centred as a pair.
     #[allow(clippy::too_many_arguments)]
     fn words(ui: &egui::Ui, rect: Rect, x: f32, title: &str, sub: &str, sub_mono: bool, room: f32, ink: egui::Color32, tag: Option<(&str, bool)>) {
+        // A row's title that says again the title of the sheet it is in is not drawn (`sheet::echoes_title`).
+        let title = if crate::sheet::echoes_title(ui.ctx(), title) { "" } else { title };
         let p = ui.painter();
         let font = title_font();
         let tag_w = tag.map(|(s, quiet)| title_tag_w(ui, s, quiet)).unwrap_or(0.0);
@@ -665,6 +682,9 @@ impl Form {
         child.spacing_mut().item_spacing.x = TRAIL_GAP;
         let r = trail(&mut child);
         let used = child.min_rect();
+        // What it shows is centred: its words, or what the trail laid if that stands taller.
+        let words_h = TITLE_LINE + if sub.is_empty() { 0.0 } else { SUB_GAP + Type::Small.line() };
+        self.tail = if open { 0.0 } else { ((rect.height() - words_h.max(used.height())) / 2.0).max(0.0) };
         let title_room = ((if used.width() > 1.0 { used.left() - 16.0 } else { rx }) - x).max(0.0);
         let tag = self.next_tag.take();
         Self::words(ui, rect, x, title, sub, sub_mono, title_room, ink, tag.as_ref().map(|(s, q)| (s.as_str(), *q)));
@@ -866,7 +886,10 @@ impl Form {
         };
         Self::words(ui, rect, x, title, "", false, (lane - summary_w).max(0.0), c(C::Ink), None);
         let _ = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        let row_tail = ((h - TITLE_LINE) / 2.0).max(0.0);
         if t <= 0.0 {
+            self.tail = row_tail;
+            self.fold_last = true;
             return None;
         }
         // The rows it holds: in this card, fading with the fold and taking their height with it (open and close
@@ -898,6 +921,8 @@ impl Form {
             quiet: false,
             sheet: self.sheet,
             next_tag: None,
+            tail: 0.0,
+            fold_last: false,
             corner: self.corner,
         };
         let r = add(&mut child, &mut inner);
@@ -916,6 +941,9 @@ impl Form {
         ui.advance_cursor_after_rect(Rect::from_min_size(top0, vec2(w, take)));
         self.bottom = self.bottom.max(top0.y + take);
         self.rows += 1;
+        // The blank under it: the row's while the rows are still to come, their last one's once they stand.
+        self.tail = row_tail * (1.0 - grow) + inner.tail * grow;
+        self.fold_last = true;
         // Opened by a press just now: the page follows the rows as they come, as a fold's body does
         // ([`crate::fold::reveal`]: their foot 32 above the bottom, the head never past the top).
         let now = motion::now(&ctx);
@@ -933,6 +961,11 @@ impl Form {
     /// from the label's line. Returns the words copied.
     pub fn details(&mut self, ui: &mut egui::Ui, id_salt: &str, title: &str, rows: &[(&str, Detail)], widest: f32) -> Option<String> {
         self.fold(ui, id_salt, title, "", |ui, f| f.detail_rows(ui, id_salt, rows, widest)).flatten()
+    }
+
+    /// [`Form::details`] whose open state the page holds (`open`, as [`Form::fold_held`]).
+    pub fn details_held(&mut self, ui: &mut egui::Ui, id_salt: &str, title: &str, rows: &[(&str, Detail)], widest: f32, open: &mut bool) -> Option<String> {
+        self.fold_held(ui, id_salt, title, "", open, |ui, f| f.detail_rows(ui, id_salt, rows, widest)).flatten()
     }
 
     /// The details list's rows themselves (inside a fold, or open in a sheet).
@@ -1179,6 +1212,7 @@ impl Form {
         child.spacing_mut().item_spacing.x = tokens::S2;
         let r = add(&mut child);
         self.bottom = rect.bottom();
+        self.tail = rect.bottom() - inner.bottom();
         r
     }
 
@@ -1192,6 +1226,7 @@ impl Form {
             add(ui)
         });
         self.bottom = shown.response.rect.bottom();
+        self.tail = 10.0;
         crate::probe::part(ui.ctx(), ui.layer_id(), shown.response.rect);
         shown.inner
     }
@@ -1206,6 +1241,7 @@ impl Form {
             add(ui)
         });
         self.bottom = shown.response.rect.bottom();
+        self.tail = 18.0;
         crate::probe::part(ui.ctx(), ui.layer_id(), shown.response.rect);
         shown.inner
     }

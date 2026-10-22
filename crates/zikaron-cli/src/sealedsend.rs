@@ -141,7 +141,7 @@ pub fn anchor(ledger: &str, wait: std::time::Duration) -> Answer {
 
 fn run(home: &mut Opened, wait: std::time::Duration) -> Result<Answer, Fail> {
     let cli = home.machine_settings()?;
-    zikaron_anchor::rpc::set_choice(zikaron_send::node::route_of(cli.proxy.as_deref()));
+    zikaron_send::node::take_machine_route(cli.proxy.as_deref());
     let ground = home.ground()?;
     let queue = home.read_queue()?;
     let count = queue.sendable();

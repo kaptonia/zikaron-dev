@@ -154,11 +154,27 @@ impl Win {
                 };
                 [first, deepest, span]
             });
+            // A package read from this machine (a folder or one file) gives its originals out: the key is live when it passed
+            // and holds an original that matches its record, and says why not otherwise. One fetched from a publish
+            // address is fetched again instead.
+            let local = matches!(x.source, crate::verifyx::Source::Kit(_) | crate::verifyx::Source::File(_) | crate::verifyx::Source::Addressed(_));
+            let take_why = extract_why(x);
+            let mut take = false;
             stagger(ui, 3, |ui| {
                 card::form(ui, |ui, f| {
-                    let again = f.summary(ui, glyph, tint, &title, None, &fetched, |ui| remote.is_some() && key::key(ui, t(Key::CheckRefetch), Role::Secondary, true).clicked());
-                    if again {
+                    let pressed = f.summary(ui, glyph, tint, &title, None, &fetched, |ui| {
+                        if remote.is_some() {
+                            key::key(ui, t(Key::CheckRefetch), Role::Secondary, true).clicked()
+                        } else if local {
+                            key::show(ui, key::Key::new(t(Key::DoExtract), Role::Secondary).enabled(take_why.is_none()).why(take_why.unwrap_or(""))).clicked()
+                        } else {
+                            false
+                        }
+                    });
+                    if pressed && remote.is_some() {
                         go = true;
+                    } else if pressed {
+                        take = true;
                     }
                     if let Some(three) = &three {
                         // The first anchoring is a date: monospace, as dates are on the other pages.
@@ -192,6 +208,9 @@ impl Win {
                     }
                 });
             });
+            if take {
+                self.extract_open();
+            }
             // Record by record: its name, its state on chain; the original in the kit when it does not match.
             if !x.records.is_empty() {
                 stagger(ui, 4, |ui| {
@@ -292,7 +311,7 @@ impl Win {
             if busy {
                 self.ux.u4.verify_again = true;
             } else {
-                let a = Action::VerifyWork { path: self.typed.vf_path.clone(), work: self.typed.vf_work.clone() };
+                let a = Action::VerifyWork { path: self.typed.vf_path.clone(), work: self.typed.vf_work.clone(), then_to: String::new() };
                 self.act(a, now);
             }
         }
@@ -305,6 +324,7 @@ fn source_key(s: &crate::verifyx::Source) -> Key {
         crate::verifyx::Source::Kit(_) => Key::SourceKit,
         crate::verifyx::Source::Bytes(_) => Key::SourceBytes,
         crate::verifyx::Source::File(_) => Key::SourceGrantFile,
+        crate::verifyx::Source::Addressed(_) => Key::SourceAddressed,
         crate::verifyx::Source::Remote(_) => Key::SetPublish,
     }
 }
@@ -315,5 +335,91 @@ impl Win {
     pub(super) fn chain_label(&self, chain: u64) -> String {
         let typed = self.shell.read_nets.as_ref().and_then(|ns| ns.iter().find(|n| n.chain_id == chain).and_then(|n| n.name.clone()));
         crate::readnets::chain_name(chain, typed.as_deref())
+    }
+}
+
+/// Why the originals of what was verified cannot be taken out, or `None` when they can: the package did not pass
+/// (or was not read again to see), or it holds no original that matches its record.
+fn extract_why(x: &crate::verifyx::Verified) -> Option<&'static str> {
+    match &x.takes {
+        Some(Ok(p)) if !p.take.is_empty() => None,
+        Some(Ok(_)) | Some(Err(zikaron_glue::extract::Refused::Nothing)) => Some(t(Key::ExtractWhyNone)),
+        Some(Err(_)) | None => Some(t(Key::ExtractWhyKit)),
+    }
+}
+
+impl Win {
+    /// Open "take out originals": the folder is the one used last in this run, else the documents folder.
+    pub(super) fn extract_open(&mut self) {
+        if self.typed.extract_to.trim().is_empty() {
+            self.typed.extract_to = self.shell.documents.clone();
+        }
+        self.ux.extract_sheet = true;
+    }
+
+    /// "Take out originals": the folder in one row (the last one used, else the documents folder),
+    /// "choose folder" at the bottom left, cancel and "take out" at the bottom right. Above the keys, how many
+    /// originals go and each one's name (with the package's name when its own cannot name a file), and each record
+    /// whose original does not match or is missing, named, not taken. Writing happens only on "take out", in the
+    /// background (`Action::ExtractOriginals`); a toast says how many were taken.
+    pub(super) fn extract_sheet(&mut self, ctx: &egui::Context, now: f64) {
+        if !self.ux.extract_sheet {
+            return;
+        }
+        let Some(x) = self.shell.verified.clone() else {
+            self.ux.extract_sheet = false;
+            return;
+        };
+        let plan = match &x.takes {
+            Some(Ok(p)) => p.clone(),
+            _ => zikaron_glue::extract::Plan { take: Vec::new(), left: Vec::new() },
+        };
+        let to = self.typed.extract_to.clone();
+        let busy = self.shell.tasks.in_flight(crate::task::Kind::Extract);
+        let ready = !plan.take.is_empty() && !to.trim().is_empty() && !busy;
+        let name_of = |id: &str| x.records.iter().find(|r| r.id == id).and_then(|r| r.name.clone()).filter(|n| !n.trim().is_empty()).unwrap_or_else(|| t(Key::UnnamedRecord).to_string());
+        let (mut go, mut close, mut picked) = (false, false, None);
+        let out = sheet::show(
+            ctx,
+            sheet::Spec::new("extract-originals", tk::SHEET_W),
+            self,
+            |ui, _me| {
+                sheet::title(ui, t(Key::DoExtract), "");
+                card::form(ui, |ui, f| f.folder(ui, t(Key::ExtractTo), &to, t(Key::PickNone)));
+                card::form(ui, |ui, f| {
+                    let _ = f.info(ui, t(Key::ExtractWill), card::Show::Text(&fill1(Key::ExtractCount, &plan.take.len().to_string())));
+                    for o in &plan.take {
+                        let glyph = if o.kept == zikaron_glue::extract::Kept::Dir { Glyph::Folder } else { Glyph::File };
+                        let sub = if o.names_hold { "" } else { t(Key::ExtractPackageName) };
+                        let _ = f.line(ui, Some(card::Lead::Glyph(glyph)), o.landing_name(), sub, false, false, c(C::Ink), |_| ());
+                    }
+                    for l in &plan.left {
+                        let name = l.name.clone().unwrap_or_else(|| name_of(&l.entry_id));
+                        let why = match l.why {
+                            zikaron_glue::extract::Why::Mismatch => t(Key::ExtractLeftMismatch),
+                            zikaron_glue::extract::Why::Missing => t(Key::ExtractLeftMissing),
+                        };
+                        let _ = f.info(ui, &name, card::Show::Mark(Mark::Warn, why));
+                    }
+                });
+            },
+            |ui, _me| {
+                go = key::key(ui, t(Key::ExtractGo), Role::Primary, ready).clicked();
+                close = key::key(ui, t(Key::CfBack), Role::Secondary, true).clicked();
+                picked = foot_pick(ui, "extract-originals", crate::platform::Pick::Folder);
+            },
+        );
+        if let Some(p) = picked {
+            self.typed.extract_to = p;
+        }
+        if close || out.esc {
+            self.ux.extract_sheet = false;
+            return;
+        }
+        if go && ready {
+            let a = Action::ExtractOriginals { kit: x.path.clone(), to: self.typed.extract_to.trim().to_string() };
+            self.act(a, now);
+            self.ux.extract_sheet = false;
+        }
     }
 }

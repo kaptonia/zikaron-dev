@@ -44,6 +44,8 @@ pub fn stack<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui, &mut Stack) -
 }
 
 fn stack_gap<R>(ui: &mut egui::Ui, gap: f32, add: impl FnOnce(&mut egui::Ui, &mut Stack) -> R) -> R {
+    // What rows ending in a fold noted before this stack is not this stack's ([`Stack::foot`] reads its own).
+    ui.ctx().data_mut(|d| d.remove::<(f32, f32)>(crate::sheet::trailing()));
     ui.vertical(|ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = gap;
@@ -77,12 +79,15 @@ pub struct Stack {
 
 impl Stack {
     /// A field: its name (with `optional`'s word after it when the field may stay empty), the control `add` draws
-    /// (given its width), and under it `line` (its words, and whether they say something is wrong).
+    /// (given its width), and under it `line` (its words, and whether they say something is wrong). A name that
+    /// says again the title of the sheet it is in is not drawn, nor the room it takes (`sheet::echoes_title`).
     pub fn field<R>(&mut self, ui: &mut egui::Ui, label: &str, optional: Option<&str>, line: Option<(&str, bool)>, add: impl FnOnce(&mut egui::Ui, f32) -> R) -> R {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
-            name(ui, label, optional);
-            ui.add_space(name_gap() - 8.0);
+            if !crate::sheet::echoes_title(ui.ctx(), label) {
+                name(ui, label, optional);
+                ui.add_space(name_gap() - 8.0);
+            }
             let w = ui.available_width();
             let r = add(ui, w);
             if let Some((s, bad)) = line.filter(|(s, _)| !s.is_empty()) {
@@ -125,9 +130,14 @@ impl Stack {
         }
     }
 
-    /// The form's keys at its foot, on the right, 8 apart.
+    /// The form's keys at its foot, on the right, 8 apart. Rows ending in a fold just above the keys stand off them
+    /// as a field does: the blank under the fold's words comes off the room above the keys (the rows note where they
+    /// end and that blank as they end, `card::form`; a sheet's keys take it the same way, `sheet::show`).
     pub fn foot<R>(&mut self, ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-        ui.add_space(4.0 - self.gap.min(4.0));
+        let ends = ui.ctx().data_mut(|d| d.remove_temp::<(f32, f32)>(crate::sheet::trailing()));
+        let top = ui.cursor().top();
+        let trim = ends.filter(|(bottom, _)| (bottom + self.gap - top).abs() < crate::scroll::SLACK).map(|(_, tail)| tail.round()).unwrap_or(0.0);
+        ui.add_space(4.0 - self.gap.min(4.0) - trim);
         ui.allocate_ui_with_layout(vec2(ui.available_width(), tokens::KEY_H), egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = tokens::S2;
             add(ui)
@@ -220,6 +230,20 @@ pub fn joined<R>(ui: &mut egui::Ui, text: &mut String, hint: &str, w: f32, look:
     };
     ui.painter().set(slot, shape);
     (resp, answer)
+}
+
+/// A control greyed and taking nothing while `off` (the field beside it was filled instead): drawn as it is, faint
+/// (`tokens::OFF`), in a region of its own that takes no input; as it is otherwise. The one place a field is greyed
+/// so (the cells box and the span box grey themselves the same way).
+pub fn off<R>(ui: &mut egui::Ui, off: bool, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.scope(|ui| {
+        if off {
+            ui.disable();
+            ui.multiply_opacity(tokens::OFF);
+        }
+        add(ui)
+    })
+    .inner
 }
 
 /// The joined input with nothing inside its right end: returns the words' response.

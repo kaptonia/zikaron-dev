@@ -27,6 +27,7 @@
 pub mod action;
 pub mod anchorx;
 pub mod about;
+pub mod addressedx;
 pub mod adoptx;
 pub mod auditx;
 pub mod exitgate;

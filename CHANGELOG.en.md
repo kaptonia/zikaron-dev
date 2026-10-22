@@ -4,7 +4,18 @@
 
 ## Next version
 
-This version lays out and draws the whole app anew, with motion that flows and no flash on refresh; alerts list only what needs attention; AI apps can call the command line through MCP, by the same two ways as before, "Through the desktop app" and "With a credential".
+This version lays out and draws the whole app anew, with motion that flows and no flash on refresh; alerts list only what needs attention; AI apps can call the command line through MCP, by the same two ways as before, "Through the desktop app" and "With a credential". A record package's originals can be taken out once it is verified, and a record package can be encrypted to one recipient, so that only they can open it.
+
+### Record packages
+
+- **Take out originals**: "Take out originals" on the verify result card takes the originals that match their records into a folder you choose, under their own names; a signed folder comes out whole. A name the folder already holds refuses the whole batch with not a byte written; everything is written into a staging place and checked against its fingerprint before it is moved into place, and a failure on the way takes it all back; a link is refused, and nothing is ever written outside the chosen folder.
+- **Encrypted record packages**: turn on "Encrypt the record package" on the export page and give the recipient's address (the app finds a transaction they signed on chain and recovers their public key) or their public key, and the `.zkit` exported opens for them alone. The package does not say who it is for; whoever is not the recipient cannot even verify it. The limits are in the user manual's "Record kit" section.
+- "Details" in Settings > Identity key has a "Public key" row with a copy key: what others fill in to encrypt a record package to you.
+- An encrypted record package dropped elsewhere (others' ledgers, due diligence) is refused with "This is an encrypted record package. Open it on the verify page".
+- Opening an encrypted record package, a key of one identity on this machine that does not read no longer stops the others: the next is tried; when none opens it, the one that did not read is named, never "none is the recipient".
+- Exporting to an address: a read-only network with a node not yet synced to the block its registry was deployed in is read on its other nodes, no longer counted as not read; a read-only row with the current network's own chain and registry is that network itself, and failing to reach it no longer says the chain could not be read; with no chain set for the data folder, the read-only networks read through with no anchor say "not anchored".
+- Taking out originals: the same file attached alone and inside an attached folder comes out under the name it was signed with alone; a file inside a signed folder that comes out whole is no longer placed again beside it; a signed file kept inside a folder comes out under its own name.
+- The command line with the credential, scanning its home, finding a recipient's key and sending its home's queue, goes by this machine's proxy setting; set to "System", it follows the system's proxy settings, never the terminal's proxy variables (not even those an AI app starts it with).
 
 ### Interface
 
@@ -28,6 +39,10 @@ This version lays out and draws the whole app anew, with motion that flows and n
 - **"Choose a record" in a new grant** opens a sheet: a search field, start and end dates (with a calendar), and the records below; click one to choose it. Records that cannot be granted yet are greyed out with the reason.
 - **A key is as wide as what it says now**: no room is kept for what it says while busy, and its width eases as the words change.
 - **The setup wizard's column** is as wide as the main window's side bar; leaving the wizard goes straight to the main window, with no ghost of it left behind.
+- **Switching identity no longer stalls**: the sidebar's switch between Recorder and User, and switching identity in settings, run in the background, and the new identity's pages replace the old in place once read; switching again on the way, the last one stands; a switch that fails says why and stays where it was.
+- **A field named as its dialog's title no longer repeats the name** (as "Publish address").
+- **Sheet details**: no scroll bar along a sheet's right edge when its content fits; an "Advanced options" or "By hand" fold at a sheet's foot stands off the keys below as anything else there does, closed or open; switching to another app and back with a sheet open no longer flashes the window or brings the sheet up again.
+- **Page form details**: a form on a page ending in an "Advanced options" fold stands off the keys below as a field does, closed or open.
 
 ### Alerts
 
@@ -37,6 +52,7 @@ This version lays out and draws the whole app anew, with motion that flows and n
 
 - **`zikaron mcp`**: AI apps call the command line through the Model Context Protocol (MCP), with no terminal needed. The write tools (`history`, `grant`, `revoke`, `adopt`, `annotate`, `retract`, `kit-export`, `anchor`) write this machine's data folder only, each call going "With a credential" or "Through the desktop app" as the switches stand at that moment; the read tools are `show`, `audit`, `scan`, `check-grant`, `chain-check`, `depth`, `badge`, `kit-verify` and `contract`. Each call is that command, and its answer's bytes and exit code are those of the same command typed in a terminal; making keys, every way that takes a private key, handing a ledger over and the fee bump are not given. Putting on chain follows "Putting on chain from the command line": with "Send automatically" it spends this identity's gas.
 - **"Connect an AI app"**: in the "Terminal" group of Settings > Command line and AI control, "Copy config" copies the configuration to paste into the AI app's MCP settings.
+- **Taking originals out and encrypted record packages work on the command line and in AI apps too**, through the desktop and with a credential alike, with the desktop's conclusions and refusals word for word: `kit-verify --originals-to <folder>` takes the originals out (a plain package needs no home and no key); `kit-export --to <address>` or `--to-key <public key>` exports an encrypted package (with a credential, the key is looked for on the data folder's network and this machine's read-only networks; directly on a plain ledger folder, give `--to-key`, or `--to` with `--endpoint`); `kit-verify` opens an encrypted package with the desktop's identities through the desktop, with this machine's identities with a credential (`--ledger <home>/ledger`), or with `--key-file` directly. An encrypted package's refusals are the new `E_ADDRESSED`; a network not read is exit 4 (no answer), through the desktop too. In AI apps `kit-export` takes `to` and `to-key`, and `kit-verify` is a write tool whose `home` may be left out.
 - `scan --ledger <a desktop data folder's ledger>` with no `--endpoint` takes that data folder's nodes with the credential (and this machine's proxy), read as anchoring with a credential reads them.
 - `CLI-SCHEMA.md` gains section 13, the protocol; `contract` lists `mcp` among the verbs.
 
@@ -122,6 +138,8 @@ This version lets the command line write the data the desktop keeps sealed even 
 
 - **Actions that ask for the passcode again only check it**: showing the recovery phrase, exporting a key file, deleting an identity and the other actions that ask for the passcode again check it in the background and open nothing; if the app locks while it is being checked, the action is not done and the app stays locked (before, the action went ahead and the app came back unlocked).
 - **Creating, importing or switching an identity keeps your role**: you stay in the role in use (Recorder or User) when the identity has it, else land in the role it has; before, it was always the Recorder.
+- **A data folder replaced by a file says so**: switching role or identity to a data folder another program replaced with a plain file is refused with "A file stands where a folder should be", no longer as an unknown fault.
+- **A wrong key in the key store is not used**: a slot holding a key whose address is not the slot's own is refused by the desktop (the other slots still read), as the command line refuses it; before, it was used.
 - **A recovery-phrase primary identity can recover the passcode with a key file too**: a forgotten passcode can be reset with a key file exported from either role of the primary identity and its password, as well as with the recovery phrase ("Recover with a key file" on the recovery page).
 
 ### Interface

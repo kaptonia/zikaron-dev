@@ -210,8 +210,13 @@ impl Win {
                 });
                 stagger(ui, 4, |ui| {
                     card::form(ui, |ui, f| {
-                        if f.switch(ui, t(Key::KitAsFolder), "", self.ux.u3.kit_folder, true) {
+                        // Encrypted, the package is one file: the folder switch is off and greyed meanwhile.
+                        let sealed = self.ux.u3.kit_addressed;
+                        if f.switch(ui, t(Key::KitAsFolder), "", self.ux.u3.kit_folder && !sealed, !sealed) {
                             self.ux.u3.kit_folder = !self.ux.u3.kit_folder;
+                        }
+                        if f.switch(ui, t(Key::KitAddressed), "", sealed, true) {
+                            self.ux.u3.kit_addressed = !sealed;
                         }
                     });
                 });
@@ -289,7 +294,7 @@ impl Win {
             self.typed.kit_attach.push_str(&p);
         }
         if export_open {
-            kit_sheet_set(ui.ctx(), Some(KitSheet::Export { waiting: false }));
+            kit_sheet_set(ui.ctx(), Some(KitSheet::Export { waiting: false, sealed: false }));
         }
         if cancel {
             self.back(now);
@@ -327,9 +332,13 @@ impl Win {
             // Exporting into a folder creates a new kit folder under it, named after the first chosen record's
             // digest.
             let pick = crate::kitx::Pick::parse_ids(&self.typed.pick_from, &self.typed.pick_to, &self.typed.pick_ids).unwrap_or_default();
-            let stem = crate::kitx::landing_stem(&rows, &pick);
+            // An encrypted package's name takes nothing from what it holds (`kit.zkit`); a plain one is named after the
+            // first chosen record's digest.
+            let sealed = self.ux.u3.kit_addressed;
+            let stem = if sealed { zikaron_glue::addressed::DEFAULT_STEM.to_string() } else { crate::kitx::landing_stem(&rows, &pick) };
+            let folder = self.ux.u3.kit_folder && !sealed;
             // One `.zkit` file unless a folder was asked for.
-            let kind = if self.ux.u3.kit_folder {
+            let kind = if folder {
                 crate::home::Kind::Bundle { stem: stem.clone() }
             } else {
                 crate::home::Kind::File { stem: stem.clone(), ext: zikaron_glue::container::EXT_KIT.to_string() }
@@ -354,11 +363,14 @@ impl Win {
                 attach: attach.join("\n"),
                 note: self.typed.kit_note.clone(),
                 out,
-                form: if self.ux.u3.kit_folder { zikaron_glue::pack::Form::Folder } else { zikaron_glue::pack::Form::File }.word().to_string(),
+                form: if folder { zikaron_glue::pack::Form::Folder } else { zikaron_glue::pack::Form::File }.word().to_string(),
+                recipient: if sealed { self.typed.kit_to.trim().to_string() } else { String::new() },
+                recipient_key: if sealed { self.typed.kit_to_key.trim().to_string() } else { String::new() },
             };
-            // The sheet stays up, its key running, until the export lands.
+            // The sheet stays up, its key running, until the export lands (an encrypted one's key shows its check a
+            // moment first).
             let started = matches!(self.act(a, now), Applied::Started(crate::task::Kind::Kit));
-            kit_sheet_set(ui.ctx(), started.then_some(KitSheet::Export { waiting: true }));
+            kit_sheet_set(ui.ctx(), started.then_some(KitSheet::Export { waiting: true, sealed }));
         }
     }
 
@@ -404,15 +416,24 @@ impl Win {
             return false;
         }
         match open {
-            KitSheet::Export { waiting } => {
+            KitSheet::Export { waiting, sealed } => {
                 let running = self.shell.tasks.in_flight(crate::task::Kind::Kit);
-                if waiting && !running {
+                let phase = self.phase_of(crate::task::Kind::Kit);
+                // Landed: the sheet goes; an encrypted export that landed well keeps it up while its key shows the
+                // check, then it goes by itself. A refusal closes it at once (the toast says why).
+                if waiting && !running && !(sealed && matches!(phase, Phase::Done { .. })) {
                     kit_sheet_set(ctx, None);
                     return false;
                 }
                 let at = self.typed.kit_out.clone();
-                let ready = ready && Self::landing_ok(&at);
-                let phase = self.phase_of(crate::task::Kind::Kit);
+                // Encrypted: the recipient's address or public key, one of the two, in its form.
+                let addressed = self.ux.u3.kit_addressed;
+                let (to, to_key) = (self.typed.kit_to.trim().to_string(), self.typed.kit_to_key.trim().to_string());
+                let to_bad = !to.is_empty() && !crate::addressedx::address_ok(&to);
+                let key_bad = !to_key.is_empty() && crate::addressedx::key_of(&to_key).is_none();
+                let recipient_ok = !addressed || (to.is_empty() != to_key.is_empty() && !to_bad && !key_bad);
+                let ready = ready && Self::landing_ok(&at) && recipient_ok;
+                let why = if recipient_ok { "" } else if to_bad { t(Key::KitToWhyAddress) } else if key_bad { t(Key::KitToWhyKey) } else { t(Key::KitToWhy) };
                 let (mut go, mut close, mut picked) = (false, false, None);
                 let out = sheet::show(
                     ctx,
@@ -424,10 +445,21 @@ impl Win {
                             let _ = f.info(ui, t(Key::LedgerEntries), card::Show::Text(&fill1(Key::U3EntriesCount, &entries.to_string())));
                             f.folder(ui, t(Key::IdStore), &at, t(Key::PickNone));
                         });
+                        if addressed {
+                            // The two ways to name the recipient: filling one greys the other.
+                            fields::stack(ui, |ui, st| {
+                                st.field(ui, t(Key::KitToAddress), None, to_bad.then(|| (t(Key::KitToWhyAddress), true)), |ui, w| {
+                                    fields::off(ui, !to_key.is_empty(), |ui| fields::line(ui, &mut me.typed.kit_to, "0x", w, fields::Look { mono: true, bad: to_bad, ..Default::default() }))
+                                });
+                                st.field(ui, t(Key::KitToKey), None, key_bad.then(|| (t(Key::KitToWhyKey), true)), |ui, w| {
+                                    fields::off(ui, !to.is_empty(), |ui| fields::line(ui, &mut me.typed.kit_to_key, "0x", w, fields::Look { mono: true, bad: key_bad, ..Default::default() }))
+                                });
+                            });
+                        }
                         me.stage_line(ui, crate::task::Kind::Kit);
                     },
                     |ui, _me| {
-                        go = key::show(ui, key::Key::new(t(Key::IdExportGroup), Role::Primary).enabled(ready).phase(phase)).clicked();
+                        go = key::show(ui, key::Key::new(t(Key::IdExportGroup), Role::Primary).enabled(ready).phase(phase).why(why)).clicked();
                         close = key::key(ui, t(Key::CfBack), Role::Secondary, true).clicked();
                         picked = foot_pick(ui, "kit-out", crate::platform::Pick::Folder);
                     },
@@ -632,8 +664,9 @@ const PICK_SEQ_GAP: f32 = 8.0;
 /// Which of the kit page's own sheets is up (kept in the window's memory; the page draws them).
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum KitSheet {
-    /// Where the export lands; `waiting` once the export started (the sheet closes when it lands).
-    Export { waiting: bool },
+    /// Where the export lands; `waiting` once the export started (the sheet closes when it lands; `sealed`, an
+    /// encrypted export, once its key's check has shown).
+    Export { waiting: bool, sealed: bool },
     /// A kit exported on this machine, by its path.
     Local(String),
 }
@@ -645,7 +678,7 @@ fn kit_sheet_id() -> egui::Id {
 /// The sheet up, as long as the page drew it in the last pass too (a sheet left by going elsewhere is gone when
 /// the page comes back); kept for this pass.
 fn kit_sheet_get(ctx: &egui::Context) -> Option<KitSheet> {
-    let pass = ctx.cumulative_pass_nr();
+    let pass = zikaron_ui::motion::pass(ctx);
     let kept = ctx.data(|d| d.get_temp::<Option<(KitSheet, u64)>>(kit_sheet_id())).flatten();
     let now = kept.filter(|(_, at)| at + 1 >= pass).map(|(s, _)| s);
     kit_sheet_set(ctx, now.clone());
@@ -653,11 +686,11 @@ fn kit_sheet_get(ctx: &egui::Context) -> Option<KitSheet> {
 }
 
 fn kit_sheet_set(ctx: &egui::Context, s: Option<KitSheet>) {
-    let pass = ctx.cumulative_pass_nr();
+    let pass = zikaron_ui::motion::pass(ctx);
     ctx.data_mut(|d| d.insert_temp(kit_sheet_id(), s.map(|s| (s, pass))));
 }
 
 /// Put the export sheet up or take any of the kit page's sheets down (the still-frame readings stage it).
 pub(super) fn kit_export_up(ctx: &egui::Context, up: bool) {
-    kit_sheet_set(ctx, up.then_some(KitSheet::Export { waiting: false }));
+    kit_sheet_set(ctx, up.then_some(KitSheet::Export { waiting: false, sealed: false }));
 }

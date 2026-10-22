@@ -5,10 +5,10 @@
  "components": [
   {
    "id": "transport",
-   "familyVersion": 3,
+   "familyVersion": 4,
    "origin": {
     "by": "ZIKARON",
-    "previous": 2
+    "previous": 3
    },
    "home": [
     "crates/app/src/proxycells.rs",
@@ -485,10 +485,10 @@
   },
   {
    "id": "node-answer",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "crates/app/src/chainx.rs",
@@ -1044,10 +1044,10 @@
   },
   {
    "id": "log-scan",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "crates/app/tests/checks_more/gaps_r20b1.rs",
@@ -1288,10 +1288,10 @@
   },
   {
    "id": "tx-send",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "crates/app/src/action/mod.rs",
@@ -2038,10 +2038,10 @@
   },
   {
    "id": "node-agreement",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "crates/app/src/auditx.rs",
@@ -3337,10 +3337,10 @@
   },
   {
    "id": "single-writer",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "crates/app/src/action/home.rs",
@@ -3721,10 +3721,10 @@
   },
   {
    "id": "local-seal",
-   "familyVersion": 3,
+   "familyVersion": 4,
    "origin": {
     "by": "ZIKARON",
-    "previous": 2
+    "previous": 3
    },
    "home": [
     "crates/app/local-data-standard.md",
@@ -4147,10 +4147,10 @@
   },
   {
    "id": "key-file",
-   "familyVersion": 3,
+   "familyVersion": 4,
    "origin": {
     "by": "ZIKARON",
-    "previous": 2
+    "previous": 3
    },
    "home": [
     "crates/app/src/action/identity.rs",
@@ -4310,10 +4310,10 @@
   },
   {
    "id": "machine-backup",
-   "familyVersion": 4,
+   "familyVersion": 5,
    "origin": {
     "by": "ZIKARON",
-    "previous": 3
+    "previous": 4
    },
    "home": [
     "crates/app/src/action/identity.rs",
@@ -5215,6 +5215,10 @@
     },
     {
      "path": "crates/zikaron-ui/tests/layers.rs",
+     "name": "a_name_that_says_the_sheet_title_again_is_not_drawn"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/layers.rs",
      "name": "a_passcode_row_under_a_sheet_takes_no_keys"
     },
     {
@@ -5631,6 +5635,7 @@
     "crates/app/tests/checks_more/gaps_r20b2.rs",
     "crates/app/tests/checks_more/gaps_r21b2.rs",
     "crates/app/tests/checks_more/refresh_steady.rs",
+    "crates/app/tests/checks_more/seat_switch.rs",
     "crates/app/tests/tasks.rs",
     "crates/app/tests/thread_start.rs",
     "crates/zikaron-anchor/tests/anchoring.rs",
@@ -5779,6 +5784,14 @@
     {
      "path": "crates/app/tests/checks_more/refresh_steady.rs",
      "name": "the_ledger_state_holds_its_conclusion_while_a_new_report_is_paired"
+    },
+    {
+     "path": "crates/app/tests/checks_more/seat_switch.rs",
+     "name": "a_seat_switch_runs_in_the_background_and_the_last_press_stands"
+    },
+    {
+     "path": "crates/app/tests/checks_more/seat_switch.rs",
+     "name": "an_identity_switch_runs_in_the_background_and_the_last_asked_stands"
     },
     {
      "path": "crates/app/tests/tasks.rs",
@@ -6514,10 +6527,10 @@
   },
   {
    "id": "family-literals",
-   "familyVersion": 3,
+   "familyVersion": 4,
    "origin": {
     "by": "ZIKARON",
-    "previous": 2
+    "previous": 3
    },
    "home": [
     "crates/app/family-literals.json",
@@ -6590,6 +6603,10 @@
     },
     {
      "path": "crates/app/tests/checks.rs",
+     "name": "a_file_where_a_folder_should_be_is_refused_by_name"
+    },
+    {
+     "path": "crates/app/tests/checks.rs",
      "name": "a_grant_file_is_one_enumeration_judged_by_the_same_function"
     },
     {
@@ -6607,6 +6624,10 @@
     {
      "path": "crates/app/tests/checks.rs",
      "name": "a_homes_settings_keep_what_this_version_does_not_know"
+    },
+    {
+     "path": "crates/app/tests/checks.rs",
+     "name": "a_key_slot_holding_another_addresss_key_is_refused_for_that_slot_alone"
     },
     {
      "path": "crates/app/tests/checks.rs",
@@ -7840,17 +7861,17 @@
     },
     {
      "path": "crates/zikaron-seal/tests/closure.rs",
-     "name": "the_sealed_layers_third_party_crates_are_the_closed_seven"
+     "name": "the_sealed_layers_third_party_crates_are_the_closed_eight"
     }
    ],
    "nameZh": "封存层(桌面与命令行同一实现)"
   },
   {
    "id": "one-file",
-   "familyVersion": 1,
+   "familyVersion": 2,
    "origin": {
     "by": "ZIKARON",
-    "previous": null
+    "previous": 1
    },
    "home": [
     "crates/zikaron-cli/tests/handoff.rs",
@@ -7989,6 +8010,7 @@
   {
    "why": "this product's own features (record packages, grants and their vault, retraction, mirrors, verification and its read-only networks, the first-run wizard and the rest), reached from the components' files only through wiring.",
    "paths": [
+    "crates/app/src/addressedx.rs",
     "crates/app/src/adoptx.rs",
     "crates/app/src/anchorx.rs",
     "crates/app/src/badgex.rs",
@@ -8046,8 +8068,10 @@
     "crates/zikaron-anchor/src/input.rs",
     "crates/zikaron-anchor/src/kit.rs",
     "crates/zikaron-anchor/src/mpt.rs",
+    "crates/zikaron-glue/src/addressed.rs",
     "crates/zikaron-glue/src/anchoredon.rs",
     "crates/zikaron-glue/src/basis.rs",
+    "crates/zikaron-glue/src/extract.rs",
     "crates/zikaron-glue/src/grantfile.rs",
     "crates/zikaron-glue/src/kitnames.rs",
     "crates/zikaron-glue/src/mirror.rs",
@@ -8055,7 +8079,11 @@
     "crates/zikaron-glue/src/recording.rs",
     "crates/zikaron-glue/src/retraction.rs",
     "crates/zikaron-glue/src/select.rs",
-    "crates/zikaron-glue/src/tidy.rs"
+    "crates/zikaron-glue/src/tidy.rs",
+    "crates/zikaron-seal/src/addressed.rs",
+    "crates/zikaron-seal/src/readnets.rs",
+    "crates/zikaron-send/src/fingerprint.rs",
+    "crates/zikaron-send/src/recipient.rs"
    ]
   },
   {

@@ -150,7 +150,8 @@ impl Win {
                     menu::toggle(ctx, egui::Id::new("zikaron-id-menu"));
                 }
                 chip = Some(r.rect);
-                let cur = usize::from(role == crate::roles::Role::Grantee);
+                // The seat a switch goes to shows at once, while the switch runs in the background (`Shell::seat_wish`).
+                let cur = usize::from(self.shell.seat_wish.unwrap_or(role) == crate::roles::Role::Grantee);
                 if rail::seat(ui, [t(Key::IdSeatAuthor), t(Key::IdSeatGrantee)], cur).is_some() {
                     switch = true;
                 }
