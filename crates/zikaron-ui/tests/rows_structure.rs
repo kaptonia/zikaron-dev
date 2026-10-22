@@ -14,7 +14,7 @@ fn strays(loose: bool) -> Vec<Rect> {
         let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1000.0, 700.0))), time: Some(t), ..Default::default() };
         let _ = ctx.run_ui(input, |ui| {
             probe::begin(ui.ctx());
-            ui.allocate_ui_at_rect(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(600.0, 600.0)), |ui| {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(600.0, 600.0))), |ui| {
                 card::form(ui, |ui, f| {
                     let _ = f.act(ui, "一行", "", button::Key::new("键", button::Role::Secondary));
                     if loose {

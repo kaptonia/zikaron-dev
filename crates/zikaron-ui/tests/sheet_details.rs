@@ -7,6 +7,14 @@ use std::cell::Cell;
 use zikaron_ui::egui::{self, pos2, vec2, Event, Pos2, Rect};
 use zikaron_ui::{button, fields, layer, sheet, tokens};
 
+/// A page's central panel drawn at the top level from the context alone: `show_inside` on a background-layer ui over
+/// the screen's content rect, clipped to it, under the id egui gives its own top-level central panel.
+fn central<R>(ctx: &egui::Context, panel: egui::CentralPanel, add: impl FnOnce(&mut egui::Ui) -> R) -> egui::InnerResponse<R> {
+    let mut top = egui::Ui::new(ctx.clone(), egui::Id::new((ctx.viewport_id(), "central_panel")), egui::UiBuilder::new().layer_id(egui::LayerId::background()).max_rect(ctx.content_rect()));
+    top.set_clip_rect(ctx.content_rect());
+    panel.show_inside(&mut top, add)
+}
+
 const SCREEN: egui::Vec2 = egui::Vec2 { x: 1180.0, y: 800.0 };
 
 struct Frames {
@@ -27,7 +35,8 @@ impl Frames {
         self.t += dt;
         let mut input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)), time: Some(self.t), events, ..Default::default() };
         input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(2.0);
-        self.ctx.run(input, |ctx| {
+        self.ctx.run_ui(input, |root| {
+            let ctx = &root.ctx().clone();
             if draw {
                 ui(ctx);
                 layer::fade_out(ctx);
@@ -197,7 +206,7 @@ fn a_fold_row_ending_a_page_form_card_stands_off_its_keys_as_a_field_does() {
         let shown = Cell::new(Rect::NOTHING);
         let mut s = String::new();
         let draw = |ctx: &egui::Context, s: &mut String| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+            central(ctx, egui::CentralPanel::default(), |ui| {
                 fields::card(ui, |ui, st| {
                     st.field(ui, "名称", None, None, |ui, w| {
                         let _ = fields::line(ui, s, "", w, fields::Look::default());

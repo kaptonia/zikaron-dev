@@ -32,8 +32,6 @@ fn head_of(k: Key) -> String {
 
 /// 7 wei as the window says a held amount (every decimal down to wei).
 const SEVEN_WEI: &str = "0.000000000000000007";
-/// 1.5 ETH in wei, and as the window says it (short enough for the grants page's narrow column).
-const ONE_AND_A_HALF: u128 = 1_500_000_000_000_000_000;
 
 // ───────────────────── Reading what a frame drew ─────────────────────
 
@@ -117,10 +115,6 @@ fn last_frame(seen: &Seen) -> Frame {
 
 fn drawn(f: &Frame, text: &str) -> bool {
     f.iter().any(|(t, _)| t == text)
-}
-
-fn drawn_from(f: &Frame, head: &str) -> bool {
-    f.iter().any(|(t, _)| t.starts_with(head))
 }
 
 fn click(at: egui::Pos2) -> Vec<(f64, Vec<egui::Event>)> {

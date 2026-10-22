@@ -15,8 +15,8 @@ fn frame(ctx: &egui::Context, events: Vec<egui::Event>, mut add: impl FnMut(&mut
     let mut input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)), time: Some(t), events, ..Default::default() };
     // Two pixels a point, as the window has on the screens it ships to (layout rounds to pixels).
     input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(2.0);
-    ctx.run(input, |ctx| {
-        egui::CentralPanel::default().show(ctx, |ui| add(ui));
+    ctx.run_ui(input, |root| {
+        egui::CentralPanel::default().show_inside(root, |ui| add(ui));
     })
 }
 
@@ -390,8 +390,8 @@ fn a_menu_rows_lit_block_is_where_it_takes_the_pointer() {
         let t = ctx.input(|i| i.time) + 1.0 / 60.0;
         let mut input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)), time: Some(t), events: vec![egui::Event::PointerMoved(rest)], ..Default::default() };
         input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(2.0);
-        let out = ctx.run(input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| draw(ui.ctx()));
+        let out = ctx.run_ui(input, |root| {
+            egui::CentralPanel::default().show_inside(root, |ui| draw(ui.ctx()));
         });
         for r in painted(&out).into_iter().filter_map(|s| match s { egui::Shape::Rect(r) if r.fill == hover => Some(r.rect), _ => None }) {
             seen += 1;
@@ -415,7 +415,8 @@ fn under_a_scaled_layer_the_row_drawn_under_the_pointer_is_the_one_lit() {
         for _ in 0..3 {
             let mut input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)), time: Some(ctx.input(|i| i.time) + 0.5), events: vec![egui::Event::PointerMoved(at)], ..Default::default() };
             input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(2.0);
-            let _ = ctx.run(input, |ctx| {
+            let _ = ctx.run_ui(input, |root| {
+                let ctx = &root.ctx().clone();
                 ctx.set_transform_layer(layer, egui::emath::TSTransform { scaling: 0.5, translation: egui::Vec2::ZERO });
                 egui::Area::new(layer.id).order(layer.order).fixed_pos(Pos2::ZERO).show(ctx, |ui| {
                     let _ = ui.allocate_rect(Rect::from_min_size(Pos2::ZERO, egui::vec2(300.0, 300.0)), egui::Sense::hover());

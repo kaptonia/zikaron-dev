@@ -282,7 +282,8 @@ fn the_wizard_asks_the_one_esc_owner_and_one_esc_goes_to_the_last_opened() {
     let frame = |pressed: bool, over_shown: bool| -> (bool, bool) {
         let events = if pressed { esc().remove(0).1 } else { Vec::new() };
         let mut got = (false, false);
-        let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |c| {
+        let _ = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |root| {
+            let c = &root.ctx().clone();
             got.0 = zikaron_ui::layer::esc(c, under);
             if over_shown {
                 got.1 = zikaron_ui::layer::esc(c, over);

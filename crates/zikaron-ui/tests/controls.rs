@@ -420,8 +420,8 @@ fn one_key_shape_six_roles() {
     let ctx = egui::Context::default();
     let _ = zikaron_ui::skin::dress(&ctx);
     let mut sizes = Vec::new();
-    let _ = ctx.run(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() }, |ctx| {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), ..Default::default() }, |root| {
+        egui::CentralPanel::default().show_inside(root, |ui| {
             for k in [Role::Primary, Role::Secondary, Role::Guide, Role::Commit] {
                 sizes.push(zikaron_ui::button::key(ui, "键", k, true).rect.height());
             }
@@ -442,8 +442,8 @@ fn the_parts_draw_and_read_egui_input() {
     let mut input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0))), ..Default::default() };
     input.dropped_files.push(egui::DroppedFile { path: Some("/tmp/a-dropped-file".into()), ..Default::default() });
     let mut got_drop = Vec::new();
-    let out = ctx.run(input, |ctx| {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    let out = ctx.run_ui(input, |root| {
+        egui::CentralPanel::default().show_inside(root, |ui| {
             seg::seg(ui, "s", &[seg::Cell::from("a"), seg::Cell::from("b")], 0);
             seg::tabs(ui, "t", &["a", "b"], 0);
             let mut on = true;
@@ -474,7 +474,7 @@ fn a_toast_is_one_at_a_time_and_a_failing_one_stays_open_with_its_raw_words() {
     let run = |ctx: &egui::Context, t: &mut Toasts, time: f64, events: Vec<egui::Event>| {
         let mut rects = Vec::new();
         let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1180.0, 800.0))), time: Some(time), events, ..Default::default() };
-        let _ = ctx.run(input, |ctx| rects = t.draw(ctx, 216.0).rects);
+        let _ = ctx.run_ui(input, |root| rects = t.draw(root.ctx(), 216.0).rects);
         rects
     };
     t.say("已上链 1 条", Tone::Note, 0.0);
@@ -563,7 +563,7 @@ fn a_new_toast_enters_once_the_one_it_replaces_has_left() {
     let run = |ctx: &egui::Context, t: &mut Toasts, time: f64| {
         let mut rects = Vec::new();
         let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1180.0, 800.0))), time: Some(time), ..Default::default() };
-        let _ = ctx.run(input, |ctx| rects = t.draw(ctx, 216.0).rects);
+        let _ = ctx.run_ui(input, |root| rects = t.draw(root.ctx(), 216.0).rects);
         rects
     };
     t.say_full("无法与节点建立安全连接。", "请检查节点地址,或更换节点。", "NODE_TLS · TLS_CONNECT · via proxy http://127.0.0.1:9", Tone::Bad, 0.0);
@@ -601,8 +601,8 @@ fn a_scrolling_full_window_column_keeps_its_right_edge_clear_of_the_bar() {
         // The pointer over the column's right part, so the floating bar shows.
         let events = if i > 0 { vec![egui::Event::PointerMoved(egui::pos2(520.0, 200.0))] } else { Vec::new() };
         let input = egui::RawInput { screen_rect: Some(screen), time: Some(time), events, ..Default::default() };
-        out = ctx.run(input, |ctx| {
-            egui::CentralPanel::default().frame(egui::Frame::NONE).show(ctx, |ui| {
+        out = ctx.run_ui(input, |root| {
+            egui::CentralPanel::default().frame(egui::Frame::NONE).show_inside(root, |ui| {
                 zikaron_ui::full::centered(ui, "bar-room", screen, 420.0, 0.0, |ui| {
                     for _ in 0..20 {
                         let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 40.0), egui::Sense::hover());
@@ -645,8 +645,8 @@ fn a_centred_field_draws_its_number_and_its_hint_in_the_middle() {
         let mut out = egui::FullOutput::default();
         for time in [0.0, 0.1] {
             let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0))), time: Some(time), ..Default::default() };
-            out = ctx.run(input, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            out = ctx.run_ui(input, |root| {
+                egui::CentralPanel::default().show_inside(root, |ui| {
                     field = input::field(ui, &mut text, "0", 64.0, Look { mono: true, centred, ..Default::default() }).rect;
                 });
             });

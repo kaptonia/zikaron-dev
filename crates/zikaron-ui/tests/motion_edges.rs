@@ -105,7 +105,7 @@ fn a_run_turned_midway_goes_on_from_its_place_and_speed() {
 /// A card of rows kept continuous: the first row, then the middle one when `middle`, then the last (named by the
 /// first three Chinese ordinal signs).
 fn rows(ui: &mut egui::Ui, middle: bool, width: f32) {
-    ui.allocate_ui_at_rect(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(width, 600.0)), |ui| {
+    ui.scope_builder(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(width, 600.0))), |ui| {
         card::form(ui, |ui, f| {
             f.keep(ui);
             f.key("a");
@@ -193,7 +193,7 @@ fn a_card_that_changes_width_puts_its_rows_at_once() {
 // ───────────────────────── A pill ─────────────────────────
 
 fn pill(ui: &mut egui::Ui, s: &str, tone: Tone) {
-    ui.allocate_ui_at_rect(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(300.0, 40.0)), |ui| {
+    ui.scope_builder(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(300.0, 40.0))), |ui| {
         ui.push_id("edge-pill", |ui| mark::pill(ui, s, tone));
     });
 }
@@ -239,7 +239,7 @@ fn under_reduced_motion_rows_arrive_at_once_and_still_fade() {
 #[test]
 fn under_reduced_motion_a_fold_opens_at_once_and_its_rows_fade() {
     let fold = |ui: &mut egui::Ui| {
-        ui.allocate_ui_at_rect(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(600.0, 700.0)), |ui| {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(Rect::from_min_size(pos2(40.0, 40.0), egui::vec2(600.0, 700.0))), |ui| {
             card::form(ui, |ui, f| {
                 let _ = f.fold(ui, "edge-fold", "折叠", "两行", |ui, f| {
                     let _ = f.info(ui, "里一", card::Show::Text("一"));

@@ -24,8 +24,8 @@ impl Frames {
         self.t += dt;
         let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)), time: Some(self.t), ..Default::default() };
         let mut h = 0.0;
-        let _ = self.ctx.run(input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| {
+        let _ = self.ctx.run_ui(input, |root| {
+            egui::CentralPanel::default().show_inside(root, |ui| {
                 let top = ui.cursor().min.y;
                 add(ui);
                 h = ui.cursor().min.y - top;
@@ -118,8 +118,8 @@ fn a_folds_rows_give_up_their_height_as_they_fade() {
     let press = |at: Pos2| vec![egui::Event::PointerMoved(at), egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }, egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }];
     f.t += 1.0 / 60.0;
     let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)), time: Some(f.t), events: press(Pos2::new(200.0, head_y + 8.0)), ..Default::default() };
-    let _ = f.ctx.run(input, |ctx| {
-        egui::CentralPanel::default().show(ctx, |ui| draw(ui));
+    let _ = f.ctx.run_ui(input, |root| {
+        egui::CentralPanel::default().show_inside(root, |ui| draw(ui));
     });
     let mut heights = Vec::new();
     for _ in 0..30 {
@@ -139,7 +139,7 @@ fn a_key_is_as_wide_as_what_it_says_now() {
     use zikaron_ui::button::{self, Phase, Role};
     let mut f = Frames::new();
     let key = |phase| button::Key::new("迁移", Role::Secondary).phase(phase).busy_text("正在迁移数据目录");
-    let mut run = |f: &mut Frames, phase: Phase, dt: f64| {
+    let run = |f: &mut Frames, phase: Phase, dt: f64| {
         let mut w = 0.0;
         let _ = f.run(dt, |ui| {
             ui.horizontal(|ui| w = button::show(ui, key(phase)).rect.width());

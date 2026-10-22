@@ -454,7 +454,7 @@ fn the_module_listens_on_nothing_writes_nothing_and_opens_no_key() {
 fn messages_are_refused_by_what_and_where() {
     let b = Bench::new("refused");
     let mut s = b.session(EN);
-    let mut line = |s: &mut Session, m: &str| {
+    let line = |s: &mut Session, m: &str| {
         s.send(m);
         s.next(30).expect("answered").0
     };

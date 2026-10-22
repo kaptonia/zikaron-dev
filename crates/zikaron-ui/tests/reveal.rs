@@ -138,7 +138,7 @@ fn a_drop_down_near_the_foot_takes_the_page_along() {
     let items = [menu::Item::Row(menu::Row { label: "甲", ..Default::default() }), menu::Item::Row(menu::Row { label: "乙", ..Default::default() }), menu::Item::Row(menu::Row { label: "丙", ..Default::default() }), menu::Item::Row(menu::Row { label: "丁", ..Default::default() })];
     let mut f = Frames::new();
     let mut key = Rect::NOTHING;
-    let mut draw = |ui: &mut egui::Ui, key: &mut Rect| {
+    let draw = |ui: &mut egui::Ui, key: &mut Rect| {
         ui.add_space(540.0);
         let top = ui.cursor().min;
         let _ = menu::menu_key(ui, "m", "选择", true, 120.0, &items);
@@ -178,7 +178,7 @@ fn a_row_that_comes_while_the_window_scrolls_on_its_own_still_opens_in() {
     let mut f = Frames::new();
     let mut head = Rect::NOTHING;
     let mut with_c = false;
-    let mut draw = |ui: &mut egui::Ui, with_c: bool, head: &mut Rect| {
+    let draw = |ui: &mut egui::Ui, with_c: bool, head: &mut Rect| {
         let rows: Vec<table::Row> = if with_c { vec![row("甲"), row("乙"), row("丙")] } else { vec![row("甲"), row("乙")] };
         let _ = table::table(ui, "t", &cols, false, &rows, "");
         ui.add_space(380.0);

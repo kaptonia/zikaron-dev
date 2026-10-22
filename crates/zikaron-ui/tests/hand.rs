@@ -19,9 +19,9 @@ fn cursor(ctx: &egui::Context, at: Pos2, mut add: impl FnMut(&mut egui::Ui)) -> 
         let t = ctx.input(|x| x.time) + 0.1;
         let events = if i == 0 { Vec::new() } else { vec![egui::Event::PointerMoved(at)] };
         let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)), time: Some(t), events, ..Default::default() };
-        let out = ctx.run(input, |ctx| {
-            egui::CentralPanel::default().show(ctx, |ui| add(ui));
-            zikaron_ui::hand::finish(ctx);
+        let out = ctx.run_ui(input, |root| {
+            egui::CentralPanel::default().show_inside(root, |ui| add(ui));
+            zikaron_ui::hand::finish(root.ctx());
         });
         icon = out.platform_output.cursor_icon;
     }
