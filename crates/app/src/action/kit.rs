@@ -87,7 +87,7 @@ pub(super) fn export_kit(
         for (i, p) in attachments.into_iter().enumerate() {
             crate::task::count(Kind::Kit, i as u64, total);
             match crate::kitx::digest_of(std::path::Path::new(p.trim())) {
-                Ok(d) if originals.admits(&d) => kept.push(p),
+                Ok(d) if originals.admits_any(&d) => kept.push(p),
                 Ok(_) => left_out.push(p),
                 Err(f) => unreadable.push((p, f)),
             }

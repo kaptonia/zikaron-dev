@@ -98,7 +98,7 @@ impl Win {
                                             removed += 1;
                                             continue;
                                         }
-                                        let changed = matches!((self.shell.vetted.get(&one.path), admit.as_ref()), (Some(Ok(d)), Some(a)) if !a.admits_hex(d));
+                                        let changed = matches!((self.shell.vetted.get(&one.path), admit.as_ref()), (Some(Ok(d)), Some(a)) if !a.admits_any_hex(d));
                                         let sub = if !one.present {
                                             t(Key::KitOriginalGone)
                                         } else if changed {
@@ -173,7 +173,7 @@ impl Win {
                                 let sub = match (self.shell.vetted.get(path), named) {
                                     (None, _) => t(Key::KitVetting).to_string(),
                                     (Some(Err(e)), _) => e.human().to_string(),
-                                    (Some(Ok(d)), _) if admit.as_ref().map(|a| !a.admits_hex(d)).unwrap_or(false) => t(Key::KitNotAnOriginalRow).to_string(),
+                                    (Some(Ok(d)), _) if admit.as_ref().map(|a| !a.admits_any_hex(d)).unwrap_or(false) => t(Key::KitNotAnOriginalRow).to_string(),
                                     (Some(Ok(_)), Ok(Some((n, _)))) => fill1(Key::KitExportAs, n),
                                     (Some(Ok(_)), Ok(None)) => {
                                         blocked = true;

@@ -6607,6 +6607,10 @@
     },
     {
      "path": "crates/app/tests/checks.rs",
+     "name": "a_folder_is_checked_in_both_spellings_its_record_may_have"
+    },
+    {
+     "path": "crates/app/tests/checks.rs",
      "name": "a_grant_file_is_one_enumeration_judged_by_the_same_function"
     },
     {
@@ -7842,6 +7846,10 @@
     {
      "path": "crates/zikaron-seal/src/records.rs",
      "name": "the_index_reads_back_what_it_wrote_and_refuses_another_form"
+    },
+    {
+     "path": "crates/zikaron-seal/src/trouble.rs",
+     "name": "a_missing_path_below_a_file_is_not_a_folder"
     },
     {
      "path": "crates/zikaron-seal/src/unfetched.rs",

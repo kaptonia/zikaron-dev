@@ -505,7 +505,7 @@ The "New record" card has two steps.
    | Kind | How |
    |---|---|
    | File | SHA-256 of the file's bytes |
-   | Folder | Over every file name and its content |
+   | Folder | Over every file name and its content; paths inside the folder are joined by `/` on every system, so the same folder gives the same fingerprint on macOS, Linux and Windows |
    | Git repository | Over the current commit |
 
    The zone then shows "Selected: …"; click it again to pick something else ("Click to replace"). If "Record name" is empty, it is filled in with the full name of the file, folder or repository, extension and all.
@@ -1183,7 +1183,7 @@ With a record hash filled in, three readings for that record are shown as well: 
 
 - "Take out to" holds a default folder, the last one used in this run of the app; "Choose folder" at the bottom left changes it through the system's dialog; "Cancel" and "Take out" at the bottom right. Only "Take out" writes, in the background, and a notice then says "Took out N originals".
 - The dialog lists the originals "Taking out" by name, with how many ("N originals"); those that do not match their records are listed by name with "Does not match its record; not taken", those the package lacks with "Not in the package; not taken".
-- Matching: a single file, the SHA-256 of its bytes is the content recorded; a signed folder, its folder digest recomputed by the same method signing used is the content recorded, and the whole folder is taken out as it is. Taking out reads the package again and judges again; it does not trust the verification's result.
+- Matching: a single file, the SHA-256 of its bytes is the content recorded; a signed folder, its folder digest recomputed by the same method signing used is the content recorded, and the whole folder is taken out as it is; a folder signed on Windows by earlier versions (paths joined by `\`) is recognised too. Taking out reads the package again and judges again; it does not trust the verification's result.
 - Names: each original gets back its name from the package's name table; a name that is not one valid file name (a path separator, `.` or `..`, a control character, a name the system reserves) is replaced by its name in the package, and the dialog says "Its name cannot name a file; the package name is used". A package path not in the kit form is refused.
 - A name the chosen folder already holds refuses the whole batch, not a byte written, naming which; a link met on the way under the chosen folder is refused, and nothing is ever written outside the chosen folder by following one.
 - Everything is first written into a staging folder inside the chosen folder and checked file by file against its fingerprint, then moved into place one by one; if any step fails, what was placed is taken back and the staging folder removed, and the chosen folder is as it was before.

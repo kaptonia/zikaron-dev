@@ -416,3 +416,79 @@ fn a_file_inside_a_folder_lands_under_its_own_last_name() {
     assert_eq!(landed.names, vec!["第一章 草稿.txt".to_string()]);
     assert_eq!(std::fs::read(to.join("第一章 草稿.txt")).expect("there"), bytes);
 }
+
+/// A tree of four files, two of them below folders, one beside a folder whose name sorts between the two
+/// spellings (`sub0.txt`): its rows as signing walks them.
+fn spelled_tree(w: &Scratch) -> (PathBuf, Vec<zikaron_glue::recording::DirRow>) {
+    let src = w.0.join("tree");
+    std::fs::create_dir_all(src.join("sub").join("deeper")).expect("a tree");
+    std::fs::write(src.join("a.txt"), b"a").expect("w");
+    std::fs::write(src.join("sub").join("b.txt"), b"b").expect("w");
+    std::fs::write(src.join("sub").join("deeper").join("c.txt"), b"c").expect("w");
+    std::fs::write(src.join("sub0.txt"), b"zero").expect("w");
+    let (rows, _) = zikaron_glue::recording::dir_rows(&src).expect("walks");
+    (src, rows)
+}
+
+/// The content a directory's rows give now (`/` between names, on every system) and in the spelling directories
+/// signed on Windows had before (`\`), each worked out apart from the code under test: the sha256 of the canonical
+/// manifest, rows sorted by their spelled path.
+const SLASH_CONTENT: &str = "0x8fe7b9e3a4101514c152dc6f373e62419c5ae0612c1b74cae09bffc418433f0a";
+const BACKSLASH_CONTENT: &str = "0x24374221625602543896b8d26a071b47a11cdb2ca555183dfd5eabde3d0dfe51";
+
+/// A directory's manifest spells its paths with `/` on every system, so a tree signed on macOS or Linux keeps the
+/// content it had, and the same tree signed on Windows now gets that content too; the old Windows spelling is
+/// another content, reordered by its own spelling. Victim: whoever signs a folder on one system and verifies or takes
+/// it out on another.
+#[test]
+fn a_directorys_rows_are_spelled_with_a_slash_on_every_system() {
+    let w = scratch("slash");
+    let (_, rows) = spelled_tree(&w);
+    let paths: Vec<&str> = rows.iter().map(|(p, _)| p.as_str()).collect();
+    assert_eq!(paths, vec!["a.txt", "sub/b.txt", "sub/deeper/c.txt", "sub0.txt"]);
+    let all = zikaron_glue::recording::dir_contents(&rows);
+    let spelled: Vec<String> = all.iter().map(|(d, _)| zikaron::hexfmt::encode(d)).collect();
+    assert_eq!(spelled, vec![SLASH_CONTENT.to_string(), BACKSLASH_CONTENT.to_string()], "signed now, then the old Windows spelling");
+    assert_eq!(zikaron::hexfmt::encode(&zikaron_glue::recording::dir_content(&rows).0), SLASH_CONTENT, "signing writes the slash spelling only");
+    assert!(zikaron_glue::recording::dir_holds(&rows, BACKSLASH_CONTENT) && zikaron_glue::recording::dir_holds(&rows, SLASH_CONTENT));
+    // A folder with no folder inside spells alike either way: one content.
+    let flat = vec![("a.txt".to_string(), hex(b"a"))];
+    assert_eq!(zikaron_glue::recording::dir_contents(&flat).len(), 1);
+    assert!(zikaron_glue::recording::old_dir_content(&flat).is_none());
+}
+
+/// A record of a directory signed on Windows in the old spelling matches that directory kept in a package, and the
+/// directory is taken out whole and checked again against that record. Victim: whoever signed a folder on Windows
+/// with an earlier version and verifies or takes it out on macOS or Linux, getting "missing".
+#[test]
+fn a_directory_recorded_in_the_old_windows_spelling_matches_and_is_taken_out() {
+    let _one = one_at_a_time();
+    let w = scratch("backslash");
+    let (_, _) = spelled_tree(&w);
+    let kit = w.0.join("k");
+    let files = vec![("a.txt", b"a".to_vec()), ("sub/b.txt", b"b".to_vec()), ("sub/deeper/c.txt", b"c".to_vec()), ("sub0.txt", b"zero".to_vec())];
+    package(&kit, zikaron_glue::pack::Form::Folder, entries(&[BACKSLASH_CONTENT.to_string()]), &[("tree", files)]);
+    let rows = zikaron_glue::recordcheck::records(&zikaron_glue::read::kit_entries(&kit).expect("entries"), &zikaron_glue::recordcheck::originals_in_dir(&kit), None);
+    assert_eq!(rows.iter().map(|r| r.original).collect::<Vec<_>>(), vec![zikaron_glue::recordcheck::Original::Match], "the old spelling's record matches");
+    let to = w.0.join("out");
+    std::fs::create_dir_all(&to).expect("a folder");
+    let (plan, landed) = extract::take(&kit, &to).expect("taken");
+    assert_eq!((plan.take.len(), plan.take[0].kept, landed.names.clone()), (1, Kept::Dir, vec!["tree".to_string()]));
+    let (back, _) = zikaron_glue::recording::dir_rows(&to.join("tree")).expect("walks");
+    assert!(zikaron_glue::recording::dir_holds(&back, BACKSLASH_CONTENT), "taken out, it holds the record");
+}
+
+/// The same folder recorded twice, once in each spelling, in one package: taken out once, not refused as two
+/// originals under one name.
+#[test]
+fn a_directory_recorded_in_both_spellings_is_taken_out_once() {
+    let _one = one_at_a_time();
+    let w = scratch("both");
+    let kit = w.0.join("k");
+    let files = vec![("a.txt", b"a".to_vec()), ("sub/b.txt", b"b".to_vec()), ("sub/deeper/c.txt", b"c".to_vec()), ("sub0.txt", b"zero".to_vec())];
+    package(&kit, zikaron_glue::pack::Form::Folder, entries(&[SLASH_CONTENT.to_string(), BACKSLASH_CONTENT.to_string()]), &[("tree", files)]);
+    let to = w.0.join("out");
+    std::fs::create_dir_all(&to).expect("a folder");
+    let (plan, landed) = extract::take(&kit, &to).expect("taken");
+    assert_eq!((plan.take.len(), landed.names.clone(), plan.left.len()), (1, vec!["tree".to_string()], 0));
+}

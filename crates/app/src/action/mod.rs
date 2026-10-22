@@ -1990,7 +1990,7 @@ fn body(shell: &mut Shell, a: Action) -> Applied {
             let rows = paths
                 .into_iter()
                 .map(|p| {
-                    let d = crate::kitx::digest_of(std::path::Path::new(p.trim())).map(|d| zikaron::hexfmt::encode(&d));
+                    let d = crate::kitx::digest_of(std::path::Path::new(p.trim())).map(|d| d.iter().map(|x| zikaron::hexfmt::encode(x)).collect());
                     (p, d)
                 })
                 .collect();

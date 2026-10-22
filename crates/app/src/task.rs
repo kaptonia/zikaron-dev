@@ -437,7 +437,7 @@ pub enum Done {
     /// A backup was opened with its password (nothing here changed).
     BackupSeen { summary: crate::backup::Summary },
     /// Attachment digests: each path as given, with its content-form hex32 or an error.
-    Vetted(Vec<(String, Result<String, crate::fault::Fault>)>),
+    Vetted(Vec<(String, Result<Vec<String>, crate::fault::Fault>)>),
     Check(crate::probe::Report),
     /// A home reading: bytes used, ledger entries, stray files.
     Archive {

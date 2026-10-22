@@ -516,9 +516,9 @@ pub struct Shell {
     pub old_view: Option<OldView>,
     /// The old data the last fetch set aside (announced once after fetching, with a "view" link).
     pub last_aside: Option<std::path::PathBuf>,
-    /// Digests of export attachments by path: content digest or error, computed in the background. Kept
-    /// across homes, since a digest belongs to the file.
-    pub vetted: std::collections::BTreeMap<String, Result<String, Fault>>,
+    /// Digests of export attachments by path: the content digests it may have been signed under (`kitx::digest_of`)
+    /// or the error, computed in the background. Kept across homes, since a digest belongs to the file.
+    pub vetted: std::collections::BTreeMap<String, Result<Vec<String>, Fault>>,
     /// The kit index (machine directory `kits/index.json`); `None` when not read yet or unreadable (the
     /// trouble is recorded).
     pub kits_index: Option<Vec<crate::kitsindex::Row>>,

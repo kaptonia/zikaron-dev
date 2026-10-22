@@ -5434,10 +5434,36 @@ fn a_file_where_a_folder_should_be_is_refused_by_name() {
     let _ = std::fs::create_dir_all(&base);
     let home = base.join("home");
     std::fs::write(&home, b"a plain file").expect("written");
-    let e = std::fs::read(home.join("settings").join("home-label.json")).err().expect("nothing reads below a file");
-    let f = app::fault::classify(&e, "home");
+    let at = home.join("settings").join("home-label.json");
+    let e = std::fs::read(&at).err().expect("nothing reads below a file");
+    // The subject is the path read, as the product passes it everywhere.
+    let read = at.display().to_string();
+    let f = app::fault::classify(&e, &read);
     assert_eq!(f.which(), Some(app::fault::Known::NotAFolder));
-    assert_eq!(zikaron_seal::Trouble::io(&e, "home").code, zikaron_seal::Code::NotAFolder);
-    assert_eq!(app::fault::Fault::from(zikaron_seal::Trouble::io(&e, "home")).which(), Some(app::fault::Known::NotAFolder));
+    assert_eq!(zikaron_seal::Trouble::io(&e, &read).code, zikaron_seal::Code::NotAFolder);
+    assert_eq!(app::fault::Fault::from(zikaron_seal::Trouble::io(&e, &read)).which(), Some(app::fault::Known::NotAFolder));
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// The desktop checks a folder against records in both spellings its record may have: paths joined by `/` (signed now,
+/// on every system) and by `\` (a folder signed on Windows by earlier versions), each content worked out apart from
+/// the code. Guards whoever attaches or exports, on macOS or Linux, a folder signed on Windows: told it is not an
+/// original.
+#[test]
+fn a_folder_is_checked_in_both_spellings_its_record_may_have() {
+    let base = std::env::temp_dir().join(format!("zk-two-spellings-{}", std::process::id()));
+    let src = base.join("tree");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(src.join("sub").join("deeper")).expect("a tree");
+    std::fs::write(src.join("a.txt"), b"a").expect("w");
+    std::fs::write(src.join("sub").join("b.txt"), b"b").expect("w");
+    std::fs::write(src.join("sub").join("deeper").join("c.txt"), b"c").expect("w");
+    std::fs::write(src.join("sub0.txt"), b"zero").expect("w");
+    let got: Vec<String> = app::anchorx::dir_digests(&src).expect("walks").iter().map(|d| zikaron::hexfmt::encode(d)).collect();
+    assert_eq!(
+        got,
+        vec!["0x8fe7b9e3a4101514c152dc6f373e62419c5ae0612c1b74cae09bffc418433f0a".to_string(), "0x24374221625602543896b8d26a071b47a11cdb2ca555183dfd5eabde3d0dfe51".to_string()]
+    );
+    assert_eq!(zikaron::hexfmt::encode(&app::anchorx::of_dir(&src).expect("walks").digest), got[0], "signing writes the slash spelling");
     let _ = std::fs::remove_dir_all(&base);
 }

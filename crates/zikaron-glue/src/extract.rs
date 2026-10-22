@@ -5,8 +5,8 @@
 //! the package as one file (a `contents` row, kit law §7.3); a signed directory as one file per file of it, each
 //! under the directory's name. What the package holds is judged against the record, never against a cache: a
 //! file whose sha256 is the record's `content`, or a directory whose manifest, recomputed from the files kept under
-//! its name with the names it was signed with (`crate::recording::dir_content`, the very function signing a
-//! directory uses), hashes to it. [`crate::recordcheck::records`] makes that judgement for the desktop's
+//! its name with the names it was signed with (`crate::recording::dir_contents`: the spelling signing a directory
+//! uses, or the one a directory signed on Windows had before), hashes to it. [`crate::recordcheck::records`] makes that judgement for the desktop's
 //! verification, the command line's `kit-verify` and this module alike; an original that does not match and a
 //! record without its original are not taken and are named.
 //!
@@ -105,8 +105,9 @@ pub fn plain_name(s: &str) -> bool {
 /// names table, and `read` (a package path to the file's bytes). A file original per `contents` row, its
 /// content as the row lists it and its bytes as read; a directory original per top name under which files are
 /// kept two or more names deep, its content recomputed from those files with the names they were signed with and
-/// its fingerprint bytes being that manifest's canonical bytes (whose sha256 is the directory's content). A
-/// directory with a file that does not read is no candidate.
+/// its fingerprint bytes being that manifest's canonical bytes (whose sha256 is the directory's content), once per
+/// spelling its record may have (`crate::recording::dir_contents`). A directory with a file that does not read is
+/// no candidate.
 pub fn originals(contents: &[(String, String)], names: &[(String, String)], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Vec<(Original, Option<Vec<u8>>)> {
     let original_of = |path: &str| names.iter().find(|(_, to)| to == path).map(|(from, _)| from.clone()).unwrap_or_else(|| path.to_string());
     let mut out: Vec<(Original, Option<Vec<u8>>)> = Vec::new();
@@ -154,12 +155,15 @@ pub fn originals(contents: &[(String, String)], names: &[(String, String)], read
                 (crate::recording::dir_path(&rel), m.sha.clone())
             })
             .collect();
-        let (digest, manifest) = crate::recording::dir_content(&rows);
         let names_hold = plain_name(&top) && members.iter().all(|m| m.rel.iter().all(|s| plain_name(s)));
-        out.push((
-            Original { content: zikaron::hexfmt::encode(&digest), kept: Kept::Dir, name: top, package_name: package_top, members, names_hold },
-            Some(manifest),
-        ));
+        // One candidate per spelling its record may have (`recording::dir_contents`): the record picks the one it holds.
+        let (digest, manifest) = crate::recording::dir_content(&rows);
+        for (digest, manifest) in std::iter::once((digest, manifest)).chain(crate::recording::old_dir_content(&rows)) {
+            out.push((
+                Original { content: zikaron::hexfmt::encode(&digest), kept: Kept::Dir, name: top.clone(), package_name: package_top.clone(), members: members.clone(), names_hold },
+                Some(manifest),
+            ));
+        }
     }
     out
 }
@@ -354,7 +358,8 @@ pub fn plan_of(entries: &[Vec<u8>], held: &[(Original, Option<Vec<u8>>)]) -> Res
                 // The candidate that matched: one whose fingerprint bytes hash to this record's content, a file
                 // attached alone first.
                 let hit = candidates(held, &r.content).find(|(_, b)| b.as_ref().map(|x| zikaron::hexfmt::encode(&crate::recording::content_of(x)) == r.content).unwrap_or(false));
-                if let Some((o, _)) = hit {
+                // A folder a record of its other spelling already takes out is taken out once.
+                if let Some((o, _)) = hit.filter(|(o, _)| !take.iter().any(|t| t.kept == Kept::Dir && o.kept == Kept::Dir && t.members == o.members)) {
                     take.push(o.clone());
                 }
             }
@@ -526,7 +531,7 @@ fn lay_out(plan: &Plan, dir: &Path, staging: &Path) -> Result<(), Refused> {
             Kept::File => sha_at(&top)? == o.content,
             Kept::Dir if o.names_hold => {
                 let (rows, skipped) = crate::recording::dir_rows(&top).map_err(|(e, at)| Refused::Landing(at.display().to_string(), e.to_string()))?;
-                skipped == 0 && zikaron::hexfmt::encode(&crate::recording::dir_content(&rows).0) == o.content
+                skipped == 0 && crate::recording::dir_holds(&rows, &o.content)
             }
             Kept::Dir => {
                 let mut all = true;

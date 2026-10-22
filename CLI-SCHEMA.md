@@ -352,7 +352,8 @@ member); without it every record is `unread`, never "not anchored". Given `--ori
 that match their records are then taken out into it by the one way the desktop takes them (`zikaron_glue::extract`):
 the package read again and judged; a file original by its bytes, a signed directory by its manifest recomputed from the
 files kept under its name with the names it was signed with (`zikaron_glue::recording`, the way signing computes it,
-which is also how `original` judges a directory); each under the name it had (the package's name table) when that is
+which is also how `original` judges a directory: paths joined by `/` on every system, or by `\` as a directory signed on
+Windows by earlier versions has them); each under the name it had (the package's name table) when that is
 one name every system takes, its package name otherwise; laid out in a staging folder inside the chosen one, checked,
 then placed without replacing anything; any name already there, a link, or any step failing leaves the folder as it
 was (`E_EXTRACT`). Taken, the answer is the records' answer with `taken` (the names, in order) and `path`. No home

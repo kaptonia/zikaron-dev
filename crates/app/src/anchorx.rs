@@ -110,6 +110,14 @@ pub fn manifest(dir: &Path) -> Result<(Value, usize, usize), Fault> {
     Ok((zikaron_glue::recording::dir_manifest(&rows), n, skipped))
 }
 
+/// The digests a directory may have been signed under: the one [`of_dir`] signs now, then, when it differs, the one a
+/// directory signed on Windows had before (`zikaron_glue::recording::dir_contents`), from the rows of its
+/// [`manifest`]. Checking a directory against records takes any of them.
+pub fn dir_digests(p: &Path) -> Result<Vec<[u8; 32]>, Fault> {
+    let (doc, _, _) = manifest(p)?;
+    Ok(zikaron_glue::recording::dir_contents(&zikaron_glue::recording::manifest_rows(&doc)).into_iter().map(|(d, _)| d).collect())
+}
+
 /// Directory: the sha256 of the manifest's canonical bytes.
 pub fn of_dir(p: &Path) -> Result<Content, Fault> {
     let (doc, files, skipped) = manifest(p)?;
