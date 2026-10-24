@@ -20,7 +20,8 @@ fn shell_with_ledger(ctx: &egui::Context, name: &str) -> app::shell::Shell {
 }
 
 /// The verify page, scrolled a little, its "verify records" segment pressed: the same entrance, the same scroll, the
-/// route on that tab with no history. Victim: whoever switches the verify page's segments and sees the whole page
+/// route on that tab with no history. The window is low enough that both segments scroll further than that (a scroll
+/// past what the new segment holds is brought back to its end by the scroll area itself, as under every segment). Victim: whoever switches the verify page's segments and sees the whole page
 /// play in again, back at its top.
 #[test]
 fn the_verify_pages_segment_keeps_the_page() {
@@ -29,7 +30,7 @@ fn the_verify_pages_segment_keeps_the_page() {
     }
     let ctx = egui::Context::default();
     let s = shell_with_ledger(&ctx, "verify");
-    let (_, r) = app::window::probe_seg_tab(&ctx, s, Place::View(View::Verify, T::VERIFY_CHECK), t(Key::V2TabVerifyWork), 24.0, 1180.0, 420.0);
+    let (_, r) = app::window::probe_seg_tab(&ctx, s, Place::View(View::Verify, T::VERIFY_CHECK), t(Key::V2TabVerifyWork), 24.0, 1180.0, 300.0);
     assert!(r.pressed, "{r:?}");
     assert_eq!(r.entry_after, r.entry_before, "the page does not enter again: {r:?}");
     assert!(r.scroll_before > 0.0 && r.scroll_after == r.scroll_before, "the scroll stays: {r:?}");

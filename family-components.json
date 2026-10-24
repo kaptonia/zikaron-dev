@@ -6119,10 +6119,10 @@
   },
   {
    "id": "cli-skeleton",
-   "familyVersion": 5,
+   "familyVersion": 6,
    "origin": {
     "by": "ZIKARON",
-    "previous": 4
+    "previous": 5
    },
    "home": [
     "CLI-SCHEMA.md",
@@ -6132,6 +6132,7 @@
     "crates/zikaron-cli/src/codes.rs",
     "crates/zikaron-cli/src/handoff.rs",
     "crates/zikaron-cli/src/lib.rs",
+    "crates/zikaron-cli/src/mcp.rs",
     "crates/zikaron-cli/src/out.rs",
     "crates/zikaron-cli/src/verbs.rs",
     "crates/zikaron-cli/tests/cli.rs",
@@ -6140,6 +6141,7 @@
     "crates/zikaron-cli/tests/endpoint_unechoed.rs",
     "crates/zikaron-cli/tests/gaps.rs",
     "crates/zikaron-cli/tests/key_file.rs",
+    "crates/zikaron-cli/tests/mcp_engine.rs",
     "crates/zikaron-cli/tests/misuse_words.rs",
     "crates/zikaron-cli/tests/proxy_flag.rs"
    ],
@@ -6439,6 +6441,14 @@
     {
      "path": "crates/zikaron-cli/tests/key_file.rs",
      "name": "every_verb_that_takes_the_key_takes_the_key_file"
+    },
+    {
+     "path": "crates/zikaron-cli/tests/mcp_engine.rs",
+     "name": "a_refused_token_is_named_where_it_stands"
+    },
+    {
+     "path": "crates/zikaron-cli/tests/mcp_engine.rs",
+     "name": "the_tools_are_read_off_the_verb_table_and_the_table_handed_in"
     },
     {
      "path": "crates/zikaron-cli/tests/misuse_words.rs",
@@ -8224,9 +8234,9 @@
    ]
   },
   {
-   "why": "this product's own Model Context Protocol server for its command line, reached only through the verb table (`verbs::run` dispatches `mcp`); a product without it writes none.",
+   "why": "this product's own MCP tool table, handed to the engine (`mcp::serve`) by the verb table; each product writes its own.",
    "paths": [
-    "crates/zikaron-cli/src/mcp.rs"
+    "crates/zikaron-cli/src/mcptools.rs"
    ]
   }
  ],

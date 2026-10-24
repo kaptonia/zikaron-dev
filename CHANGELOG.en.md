@@ -9,6 +9,10 @@
 - **A grant's end day**: with custom validity on a new grant, the end date block opens a calendar too; the day picked is the day the grant ends, and its length is worked out from it.
 - **Segments within a page**: switching segments on the Verify and Records pages slides the selection across without playing the whole page in again.
 
+### Command line and AI apps
+
+- **MCP**: the protocol layer joins the command line's shared skeleton; answers and behaviour are unchanged.
+
 ### Fixes
 
 - **Setting the passcode on first start**: the passcode cells on the wizard's first step take what is typed; before, nothing went in, and a new machine could not pass the first step.
