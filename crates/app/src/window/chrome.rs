@@ -89,6 +89,13 @@ impl Win {
             crate::when::set(self.shell.settings.zone.unwrap_or(crate::when::Zone::Utc));
         }
         self.follow_page(now);
+        // A store that turns into no store (reset, or the machine set aside) starts setup over: the wizard is asked
+        // again.
+        let absent = self.shell.vault.absent();
+        if self.ux.vault_absent == Some(false) && absent {
+            self.ux.wizard_asked = false;
+        }
+        self.ux.vault_absent = Some(absent);
         // Whether the wizard opens by itself is asked once, and only with the gate down: while the vault is
         // locked the key cannot be read, and a locked machine would read as one without a key.
         let gate = self.shell.vault.gate_up();

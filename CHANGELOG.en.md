@@ -14,6 +14,7 @@
 - **A command waiting as the desktop quits**: locking, closing the data folder or quitting answers a command waiting through the desktop with `CLOSED` before the connection ends; before, under load, it could read as a broken connection.
 - **The last press of an identity switch stands**: pressing the identity you started from while a switch runs lands on it; before, it landed on the one pressed before.
 - **A way on when the key store cannot be read**: the lock screen has "Move this machine's data aside and start over": the whole machine folder is set aside beside it, not a byte deleted, and the first-run wizard opens, where a whole-machine backup restores it.
+- **After resetting an empty key store**: resetting an empty key store from the lock screen opens the first-run wizard again; before, the window was left empty.
 
 ## 0.1.4
 

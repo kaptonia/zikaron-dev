@@ -648,11 +648,13 @@ pub struct WizPinTyped {
     pub asked_again: bool,
     /// Characters the row held after each key of the second entry.
     pub second: Vec<usize>,
-    /// The key store's state once the second entry's task landed (`Vault::as_str`).
-    pub vault: String,
+    /// The key store as the shell holds it once the second entry's task landed.
+    pub vault: Option<crate::shell::Vault>,
     /// Whether the step's "next" key was drawn, and the step the wizard stands on after it was pressed.
     pub next_drawn: bool,
-    pub after: String,
+    pub after: Option<crate::nav::Step>,
+    /// The language before and after a press on the other language's cell of the cover's column, the step card up.
+    pub cover_lang: Option<(crate::lang::Lang, crate::lang::Lang)>,
 }
 
 /// What a press on an identity in the identity menu did ([`probe_id_menu_press`]).
@@ -719,11 +721,21 @@ pub struct GateAside {
     pub sheet: Vec<String>,
     /// Whether its confirming key was pressed.
     pub confirmed: bool,
-    /// The key store's state after (`Vault::as_str`), and the wizard step open then.
-    pub vault: String,
-    pub wizard: String,
+    /// The key store as the shell holds it after, and the wizard step open then.
+    pub vault: Option<crate::shell::Vault>,
+    pub wizard: Option<crate::nav::Step>,
     /// The refusal said on the sheet, when the move was refused.
-    pub trouble: String,
+    pub trouble: Option<crate::fault::Fault>,
+}
+
+/// What the gate over an empty store locked out did when its reset key was pressed ([`probe_gate_reset_empty`]).
+#[derive(Clone, Debug, Default)]
+pub struct GateReset {
+    /// Whether the reset key was drawn and pressed.
+    pub pressed: bool,
+    /// The key store as the shell holds it after, and the wizard step open then.
+    pub vault: Option<crate::shell::Vault>,
+    pub wizard: Option<crate::nav::Step>,
 }
 
 /// The passcode gate's column read by [`probe_gate_column`] (rectangles in points; the title by its drawn strokes).

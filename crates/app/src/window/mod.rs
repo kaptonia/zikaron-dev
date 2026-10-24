@@ -905,12 +905,7 @@ impl Win {
                 _ => {}
             },
             VaultSite::Gate => match r {
-                Applied::Unlocked | Applied::Recovered | Applied::KeyboxReset => self.ux.gate_clear(),
-                Applied::MachineAside { .. } => {
-                    self.ux.gate_clear();
-                    // A machine started over asks again whether the first-run wizard opens.
-                    self.ux.wizard_asked = false;
-                }
+                Applied::Unlocked | Applied::Recovered | Applied::KeyboxReset | Applied::MachineAside { .. } => self.ux.gate_clear(),
                 Applied::Trouble(f) => {
                     // One failure: shake the row and show the sentence under the cells.
                     self.ux.pin_shake = Some(now);
@@ -1215,6 +1210,8 @@ struct Ux {
     wizard: Option<crate::nav::Step>,
     /// Whether this start has asked "open the wizard by itself" yet.
     wizard_asked: bool,
+    /// Whether the store read as no store on the frame before (none before the first frame).
+    vault_absent: Option<bool>,
     /// A test driver asked to open the wizard.
     wizard_forced: bool,
     /// The confirmation sheet after the key that writes genesis.
@@ -1348,7 +1345,7 @@ struct Ux {
     /// What setting the machine directory aside would move and keep (the confirming sheet is up while held).
     gate_aside: Option<crate::home::AsidePlan>,
     /// Why setting it aside was refused.
-    gate_aside_trouble: Option<String>,
+    gate_aside_trouble: Option<crate::fault::Fault>,
     /// The last human input (interface clock, seconds; the idle lock reads it).
     last_input: f64,
     /// When the "enable command line" row was last drawn; when drawn again after a pause, its location is

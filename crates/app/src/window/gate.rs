@@ -26,7 +26,7 @@ impl Win {
         // new store over the keys it holds (no wizard, no passcode cells). The one way on sets the machine directory aside.
         if let crate::shell::Vault::Damaged(f) = &state {
             let mut ask = false;
-            let unplanned = self.ux.gate_aside.is_none().then(|| self.ux.gate_aside_trouble.clone()).flatten();
+            let unplanned = self.ux.gate_aside.is_none().then(|| self.ux.gate_aside_trouble.as_ref().map(said)).flatten();
             let _ = covers::cover(ctx, "gate", covers::Ground::Lit, |ui| {
                 let rect = ui.max_rect();
                 full::centered(ui, "gate", rect, tk::SHEET_W, 0.0, |ui| {
@@ -46,7 +46,7 @@ impl Win {
                         self.ux.gate_aside = Some(plan);
                         self.ux.gate_aside_trouble = None;
                     }
-                    Err(f) => self.ux.gate_aside_trouble = Some(format!("{} {}", f.human(), f.next())),
+                    Err(f) => self.ux.gate_aside_trouble = Some(f),
                 }
             }
             self.gate_aside_sheet(ctx, now);
@@ -208,8 +208,8 @@ impl Win {
                 field(ui, t(Key::GateAsideBack), None, |ui| {
                     ui.add(egui::Label::new(egui::RichText::new(t(Key::GateAsideBackSay)).font(Type::Body.font()).color(c(C::Ink))).wrap());
                 });
-                if let Some(s) = me.ux.gate_aside_trouble.as_deref() {
-                    states::note_box(ui, s);
+                if let Some(f) = me.ux.gate_aside_trouble.as_ref() {
+                    states::note_box(ui, &said(f));
                 }
             },
             |ui, _me| {
@@ -223,11 +223,16 @@ impl Win {
         } else if go {
             let r = self.act(Action::SetMachineAside, now);
             if let Applied::Trouble(f) = &r {
-                self.ux.gate_aside_trouble = Some(format!("{} {}", f.human(), f.next()));
+                self.ux.gate_aside_trouble = Some(f.clone());
             }
             self.vault_or(VaultSite::Gate, r, now);
         }
     }
+}
+
+/// A refusal of setting the machine directory aside, as the gate says it.
+fn said(f: &crate::fault::Fault) -> String {
+    format!("{} {}", f.human(), f.next())
 }
 
 fn path_words(ui: &mut egui::Ui, path: &str) {

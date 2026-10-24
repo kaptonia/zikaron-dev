@@ -16,7 +16,8 @@ pub const NUM_W: f32 = 40.0;
 pub const GAP: f32 = 6.0;
 
 /// The box: `values[i]` typed before `units[i]`, `hint` in an empty number, `bad[i]` that part past its most.
-pub fn boxed(ui: &mut egui::Ui, id_salt: &str, values: &mut [String], units: &[&str], hint: &str, bad: &[bool], enabled: bool) {
+/// Returns each part's number's response.
+pub fn boxed(ui: &mut egui::Ui, id_salt: &str, values: &mut [String], units: &[&str], hint: &str, bad: &[bool], enabled: bool) -> Vec<egui::Response> {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), tokens::INPUT_H), egui::Sense::hover());
     let id = egui::Id::new(("span-box", id_salt));
     let slot = ui.painter().add(egui::Shape::Noop);
@@ -28,7 +29,7 @@ pub fn boxed(ui: &mut egui::Ui, id_salt: &str, values: &mut [String], units: &[&
     let n = units.len().max(1);
     let part_w = rect.width() / n as f32;
     let font = Type::Mono.font();
-    let mut focused = false;
+    let mut out = Vec::new();
     for (i, unit) in units.iter().enumerate() {
         let Some(value) = values.get_mut(i) else { break };
         let part = egui::Rect::from_min_size(egui::pos2(rect.left() + part_w * i as f32, rect.top()), egui::vec2(part_w, rect.height()));
@@ -45,7 +46,7 @@ pub fn boxed(ui: &mut egui::Ui, id_salt: &str, values: &mut [String], units: &[&
         let wrong = bad.get(i).copied().unwrap_or(false);
         let mut cu = child.new_child(egui::UiBuilder::new().max_rect(num).layout(egui::Layout::left_to_right(egui::Align::Center)));
         let painter = child.painter().clone();
-        focused |= crate::compose::around(&mut cu, cell_id, value, |cu, value| {
+        let r = crate::compose::around(&mut cu, cell_id, value, |cu, value| {
             let edit = egui::TextEdit::singleline(value)
                 .id(cell_id)
                 .font(font.clone())
@@ -59,8 +60,8 @@ pub fn boxed(ui: &mut egui::Ui, id_salt: &str, values: &mut [String], units: &[&
                 painter.text(egui::pos2(num.right() - 2.0, num.center().y), egui::Align2::RIGHT_CENTER, hint, font.clone(), c(C::Ink3));
             }
             resp
-        })
-        .has_focus();
+        });
+        out.push(r);
         child.painter().galley(egui::pos2(num.right() + GAP, part.center().y - g.size().y / 2.0), g, c(C::Ink2));
     }
     for value in values.iter_mut() {
@@ -68,7 +69,7 @@ pub fn boxed(ui: &mut egui::Ui, id_salt: &str, values: &mut [String], units: &[&
     }
     let edge = if bad.iter().any(|b| *b) {
         crate::input::Edge::Bad
-    } else if focused {
+    } else if out.iter().any(|r| r.has_focus()) {
         crate::input::Edge::Focus
     } else if enabled && ui.rect_contains_pointer(rect) {
         crate::input::Edge::Hover
@@ -77,6 +78,7 @@ pub fn boxed(ui: &mut egui::Ui, id_salt: &str, values: &mut [String], units: &[&
     };
     let frame = crate::input::frame_shape(ui.ctx(), rect, id, edge);
     ui.painter().set(slot, if enabled { frame } else { faint(frame) });
+    out
 }
 
 /// A frame shape at the faint strength of a control that is off.

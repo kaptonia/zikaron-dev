@@ -1044,7 +1044,7 @@ pub fn probe_wizard_pin_typed(ctx: &egui::Context, shell: Shell, pin: &str, widt
     for _ in 0..6 {
         out = run(&mut win, Vec::new());
     }
-    reading.vault = win.shell.vault.as_str().to_string();
+    reading.vault = Some(win.shell.vault.clone());
     let next = texts_of(&out).iter().find(|d| d.text == t(Key::WizardNext)).map(|d| d.rect.center());
     reading.next_drawn = next.is_some();
     if let Some(at) = next {
@@ -1054,7 +1054,17 @@ pub fn probe_wizard_pin_typed(ctx: &egui::Context, shell: Shell, pin: &str, widt
             let _ = run(&mut win, Vec::new());
         }
     }
-    reading.after = win.ux.wizard.map(|s| format!("{s:?}")).unwrap_or_default();
+    reading.after = win.ux.wizard;
+    // The cover's column beside the card: the other language's cell pressed where it is drawn.
+    let before = crate::lang::lang();
+    let other = crate::lang::Lang::ALL.into_iter().find(|l| *l != before).unwrap_or(before);
+    let out = run(&mut win, Vec::new());
+    if let Some(at) = texts_of(&out).iter().find(|d| d.text == other.label()).map(|d| d.rect.center()) {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(at), press(true), press(false)]);
+        let _ = run(&mut win, vec![egui::Event::PointerGone]);
+        reading.cover_lang = Some((before, crate::lang::lang()));
+    }
     (win.shell, reading)
 }
 
@@ -1141,9 +1151,43 @@ pub fn probe_gate_aside(ctx: &egui::Context, shell: Shell, press: bool, confirm:
             }
         }
     }
-    reading.vault = win.shell.vault.as_str().to_string();
-    reading.wizard = win.ux.wizard.map(|s| format!("{s:?}")).unwrap_or_default();
-    reading.trouble = win.ux.gate_aside_trouble.clone().unwrap_or_default();
+    reading.vault = Some(win.shell.vault.clone());
+    reading.wizard = win.ux.wizard;
+    reading.trouble = win.ux.gate_aside_trouble.clone();
+    (win.shell, reading)
+}
+
+/// The gate over an empty store that is locked out, in a session the gate came up in after it was unlocked once:
+/// its reset key pressed where it is drawn, then the store's state and the wizard step read.
+pub fn probe_gate_reset_empty(ctx: &egui::Context, shell: Shell, width: f32, height: f32) -> (Shell, GateReset) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Home, role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run_ui(input, |ui| win.draw(ui))
+    };
+    let mut out = run(&mut win, Vec::new());
+    for _ in 0..6 {
+        out = run(&mut win, Vec::new());
+    }
+    let key = texts_of(&out).iter().find(|d| d.text == t(Key::PinDoReset)).map(|d| d.rect.center());
+    let mut reading = GateReset { pressed: key.is_some(), ..Default::default() };
+    if let Some(at) = key {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(at), press(true), press(false)]);
+        for _ in 0..8 {
+            let _ = run(&mut win, Vec::new());
+        }
+    }
+    reading.vault = Some(win.shell.vault.clone());
+    reading.wizard = win.ux.wizard;
     (win.shell, reading)
 }
 
