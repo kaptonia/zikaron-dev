@@ -1003,6 +1003,150 @@ pub fn probe_typed_under(ctx: &egui::Context, shell: Shell, width: f32, height: 
     (win.shell, reading)
 }
 
+/// The first-run wizard on its passcode step, `pin` typed in by real key events one character a frame, twice;
+/// the second entry's task waited for; then the step's "next" key pressed where it is drawn.
+pub fn probe_wizard_pin_typed(ctx: &egui::Context, shell: Shell, pin: &str, width: f32, height: f32) -> (Shell, WizPinTyped) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Home, role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run_ui(input, |ui| win.draw(ui))
+    };
+    win.wizard_open(crate::nav::Step::Pin);
+    for _ in 0..8 {
+        let _ = run(&mut win, Vec::new());
+    }
+    let mut reading = WizPinTyped::default();
+    for ch in pin.chars() {
+        let _ = run(&mut win, vec![egui::Event::Text(ch.to_string())]);
+        reading.first.push(win.ux.pin.chars());
+    }
+    let _ = run(&mut win, Vec::new());
+    reading.asked_again = !win.ux.pin_again.is_empty();
+    for ch in pin.chars() {
+        let _ = run(&mut win, vec![egui::Event::Text(ch.to_string())]);
+        reading.second.push(win.ux.pin.chars());
+    }
+    // The second entry starts the store's task; the window takes its landing in a frame, as it always does.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while win.shell.tasks.in_flight(crate::task::Kind::Vault) && std::time::Instant::now() < until {
+        let _ = run(&mut win, Vec::new());
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let mut out = run(&mut win, Vec::new());
+    for _ in 0..6 {
+        out = run(&mut win, Vec::new());
+    }
+    reading.vault = win.shell.vault.as_str().to_string();
+    let next = texts_of(&out).iter().find(|d| d.text == t(Key::WizardNext)).map(|d| d.rect.center());
+    reading.next_drawn = next.is_some();
+    if let Some(at) = next {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(at), press(true), press(false)]);
+        for _ in 0..4 {
+            let _ = run(&mut win, Vec::new());
+        }
+    }
+    reading.after = win.ux.wizard.map(|s| format!("{s:?}")).unwrap_or_default();
+    (win.shell, reading)
+}
+
+/// The identity menu opened from the identity chip and the identity named `name` pressed in it, where the menu
+/// draws it, over the shell as handed (a switch the caller has in flight stays in flight).
+pub fn probe_id_menu_press(ctx: &egui::Context, shell: Shell, name: &str, width: f32, height: f32) -> (Shell, IdMenuPress) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Home, role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run_ui(input, |ui| win.draw(ui))
+    };
+    for _ in 0..6 {
+        let _ = run(&mut win, Vec::new());
+    }
+    let menu = egui::Id::new("zikaron-id-menu");
+    zikaron_ui::menu::set(ctx, menu, true);
+    let mut out = run(&mut win, Vec::new());
+    for _ in 0..6 {
+        out = run(&mut win, Vec::new());
+    }
+    // The menu opens under the chip, which says the current identity's name too: the row is the lower of the two.
+    let at = texts_of(&out).into_iter().filter(|d| d.text == name).max_by(|a, b| a.rect.center().y.total_cmp(&b.rect.center().y)).map(|d| d.rect.center());
+    let mut reading = IdMenuPress { pressed: at.is_some(), ..Default::default() };
+    if let Some(at) = at {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(at), press(true), press(false)]);
+        let _ = run(&mut win, Vec::new());
+    }
+    reading.wish = win.shell.identity_wish.clone();
+    reading.flying = win.shell.tasks.flying().iter().map(|k| k.as_str().to_string()).collect();
+    reading.flying.sort();
+    zikaron_ui::menu::set(ctx, menu, false);
+    (win.shell, reading)
+}
+
+/// The gate over the shell's key store as it stands: whether it draws the key that sets the machine directory
+/// aside; with `press`, that key pressed and every text of the confirming sheet read; with `confirm` too, the
+/// sheet's confirming key pressed, then the store's state, the wizard step and the sheet's refusal read.
+pub fn probe_gate_aside(ctx: &egui::Context, shell: Shell, press: bool, confirm: bool, width: f32, height: f32) -> (Shell, GateAside) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Home, role));
+    // As in a session the gate came up in after it was unlocked once.
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run_ui(input, |ui| win.draw(ui))
+    };
+    let tap = |at: egui::Pos2| {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        vec![egui::Event::PointerMoved(at), press(true), press(false)]
+    };
+    let mut out = run(&mut win, Vec::new());
+    for _ in 0..6 {
+        out = run(&mut win, Vec::new());
+    }
+    let key = texts_of(&out).iter().find(|d| d.text == t(Key::GateAside)).map(|d| d.rect.center());
+    let mut reading = GateAside { key_drawn: key.is_some(), ..Default::default() };
+    if let (true, Some(at)) = (press, key) {
+        let _ = run(&mut win, tap(at));
+        for _ in 0..8 {
+            out = run(&mut win, Vec::new());
+        }
+        reading.sheet = texts_of(&out).into_iter().map(|d| d.text).collect();
+        let go = texts_of(&out).iter().find(|d| d.text == t(Key::GateAsideGo)).map(|d| d.rect.center());
+        if let (true, Some(at)) = (confirm, go) {
+            reading.confirmed = true;
+            let _ = run(&mut win, tap(at));
+            for _ in 0..8 {
+                let _ = run(&mut win, Vec::new());
+            }
+        }
+    }
+    reading.vault = win.shell.vault.as_str().to_string();
+    reading.wizard = win.ux.wizard.map(|s| format!("{s:?}")).unwrap_or_default();
+    reading.trouble = win.ux.gate_aside_trouble.clone().unwrap_or_default();
+    (win.shell, reading)
+}
+
 /// The passcode gate (the vault locked) at rest, with `trouble` said under its cells when given: where its title's
 /// strokes end, its cells, the refusal's box and the "forgot passcode" key lie.
 pub fn probe_gate_column(ctx: &egui::Context, shell: Shell, trouble: Option<&str>, width: f32, height: f32) -> (Shell, GateColumn) {
@@ -1720,6 +1864,10 @@ pub enum GateScene {
     RestoreLocked,
     /// Restoring a backup at the gate, at its new passcode.
     RestoreNewPin,
+    /// A key store file that cannot be read: its refusal and the one way on.
+    Damaged,
+    /// The same, with the sheet confirming the machine directory set aside.
+    Aside,
 }
 
 impl Scene {
@@ -1806,7 +1954,7 @@ pub fn scenes(role: crate::roles::Role) -> Vec<Scene> {
         ]),
     }
     out.extend(sheets.into_iter().map(|(p, s)| Scene::Sheet(p, s)));
-    out.extend([GateScene::Unlock, GateScene::RecoverWords, GateScene::RecoverFile, GateScene::RecoverNone, GateScene::LockedOut, GateScene::RestoreLocked, GateScene::RestoreNewPin].map(Scene::Gate));
+    out.extend([GateScene::Unlock, GateScene::RecoverWords, GateScene::RecoverFile, GateScene::RecoverNone, GateScene::LockedOut, GateScene::RestoreLocked, GateScene::RestoreNewPin, GateScene::Damaged, GateScene::Aside].map(Scene::Gate));
     out.push(Scene::IdMenu);
     let check = Place::View(View::Verify, crate::nav::tab::VERIFY_CHECK);
     out.extend([Scene::Data(check, DataScene::CheckNoNode), Scene::Data(check, DataScene::CheckSourceOpen)]);
@@ -2215,6 +2363,13 @@ fn stage(win: &mut Win, scene: Scene) {
             win.shell.vault = Vault::Read(if g == GateScene::LockedOut { State::LockedOut } else { State::Locked { wrong: 0 } });
             match g {
                 GateScene::Unlock | GateScene::LockedOut => {}
+                GateScene::Damaged | GateScene::Aside => {
+                    let file = crate::home::machine_dir().map(|m| m.join(crate::places::keybox_file()).display().to_string()).unwrap_or_default();
+                    win.shell.vault = Vault::Damaged(crate::fault::Fault::known(crate::fault::Known::KeyboxShape, file));
+                    if g == GateScene::Aside {
+                        win.ux.gate_aside = crate::home::aside_plan().ok();
+                    }
+                }
                 GateScene::RecoverWords => {
                     win.ux.gate_recover = true;
                     win.shell.primary = id.clone().map(|i| (i, PrimaryKind::Words));
@@ -2285,7 +2440,7 @@ fn stage(win: &mut Win, scene: Scene) {
                     win.u3_form_open(U3Form::Succeed);
                     win.ux.u3.succeed_confirm = true;
                 }
-                SheetScene::Annotate => win.u3_form_open(U3Form::Annotate),
+                SheetScene::Annotate => win.annotate_open(String::new()),
                 SheetScene::Attest => win.u3_form_open(U3Form::Attest),
                 SheetScene::GrantConfirm => {
                     win.sheets_clear();
@@ -2408,6 +2563,30 @@ pub struct Picture {
     pub ppp: f32,
 }
 
+/// The textures a frame set or patched, kept for painting a later frame.
+fn take_textures(textures: &mut std::collections::HashMap<egui::TextureId, egui::ColorImage>, out: &egui::FullOutput) {
+    for (id, delta) in &out.textures_delta.set {
+        let egui::epaint::ImageData::Color(img) = &delta.image;
+        match delta.pos {
+            None => {
+                textures.insert(*id, (**img).clone());
+            }
+            Some([x, y]) => {
+                if let Some(t) = textures.get_mut(id) {
+                    for row in 0..img.size[1] {
+                        for col in 0..img.size[0] {
+                            let (tx, ty) = (x + col, y + row);
+                            if tx < t.size[0] && ty < t.size[1] {
+                                t.pixels[ty * t.size[0] + tx] = img.pixels[row * img.size[0] + col];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Draw `scene` the way [`probe_geometry`] does (windowless frames until still, background tasks landed) and keep
 /// what a painter would need for its last frame.
 pub fn probe_picture(ctx: &egui::Context, shell: Shell, scene: Scene, width: f32, height: f32, ppp: f32) -> (Shell, Picture) {
@@ -2429,28 +2608,7 @@ pub fn probe_picture(ctx: &egui::Context, shell: Shell, scene: Scene, width: f32
     ctx.set_pixels_per_point(ppp);
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
     let mut textures: std::collections::HashMap<egui::TextureId, egui::ColorImage> = std::collections::HashMap::new();
-    let mut take = |out: &egui::FullOutput| {
-        for (id, delta) in &out.textures_delta.set {
-            let egui::epaint::ImageData::Color(img) = &delta.image;
-            match delta.pos {
-                None => {
-                    textures.insert(*id, (**img).clone());
-                }
-                Some([x, y]) => {
-                    if let Some(t) = textures.get_mut(id) {
-                        for row in 0..img.size[1] {
-                            for col in 0..img.size[0] {
-                                let (tx, ty) = (x + col, y + row);
-                                if tx < t.size[0] && ty < t.size[1] {
-                                    t.pixels[ty * t.size[0] + tx] = img.pixels[row * img.size[0] + col];
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
+    let mut take = |out: &egui::FullOutput| take_textures(&mut textures, out);
     let mut t = 0.0;
     let mut out = None;
     for i in 0..20 {
@@ -2477,4 +2635,167 @@ pub fn probe_picture(ctx: &egui::Context, shell: Shell, scene: Scene, width: f32
     (shell.vault, shell.anchor, shell.rooted, shell.machine.backup, shell.primary, shell.backup_peek, shell.gas, shell.vault_recoverable) = kept;
     (shell.checked, shell.key_anchors, shell.held, shell.verified, shell.book, shell.diligence) = kept_data;
     (shell, Picture { prims, textures, ppp: out.pixels_per_point })
+}
+
+/// The whole-machine backup's export sheet, filled and pressed: every frame while the passcode check and the export
+/// run (equal frames counted together), Esc and a press on its back key while the export runs, then the sheet after
+/// it landed. With `picture`, the last frame drawn while the export is at that stage is kept.
+pub fn probe_backup_export(ctx: &egui::Context, shell: Shell, pin: &str, password: &str, dir: &str, picture: Option<u8>, width: f32, height: f32) -> (Shell, BackupRun) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::Settings(crate::nav::Section::Data), role));
+    ux.wizard_asked = true;
+    ux.lang_applied = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut textures = std::collections::HashMap::new();
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run_ui(input, |ui| win.draw(ui))
+    };
+    let tap = |at: egui::Pos2| {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        vec![egui::Event::PointerMoved(at), press(true), press(false)]
+    };
+    let at = |out: &egui::FullOutput, s: &str| texts_of(out).iter().rev().find(|d| d.text == s).map(|d| d.rect.center());
+    win.bk_open(Bk::Export);
+    win.ux.bk_pin = pin.into();
+    win.ux.bk_pw = password.into();
+    win.ux.bk_pw2 = password.into();
+    win.ux.bk_dir = dir.to_string();
+    let mut out = run(&mut win, Vec::new());
+    for _ in 0..8 {
+        take_textures(&mut textures, &out);
+        out = run(&mut win, Vec::new());
+    }
+    let mut reading = BackupRun::default();
+    let Some(go) = at(&out, t(Key::IdExportGroup)) else { return (win.shell, reading) };
+    reading.pressed = true;
+    let words: Vec<&str> = stage_words(crate::task::Kind::Backup).iter().map(|k| t(*k)).collect();
+    let mut events = tap(go);
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    loop {
+        let out = run(&mut win, std::mem::take(&mut events));
+        take_textures(&mut textures, &out);
+        let running = win.shell.tasks.in_flight(crate::task::Kind::Backup);
+        let busy = running || win.shell.tasks.in_flight(crate::task::Kind::Vault);
+        let stage = if running { crate::task::stage(crate::task::Kind::Backup).map(|s| s.at) } else { None };
+        let drawn = texts_of(&out);
+        let frame = BackupFrame {
+            open: win.ux.bk == Some(Bk::Export),
+            running,
+            stage,
+            words: words.iter().filter(|w| drawn.iter().any(|d| d.text == **w)).map(|w| w.to_string()).collect(),
+            n: 1,
+        };
+        if picture.is_some() && stage == picture {
+            reading.picture = Some(Picture { prims: ctx.tessellate(out.shapes.clone(), out.pixels_per_point), textures: textures.clone(), ppp: out.pixels_per_point });
+        }
+        match reading.frames.last_mut() {
+            Some(last) if BackupFrame { n: last.n, ..frame.clone() } == *last => last.n += 1,
+            _ => reading.frames.push(frame),
+        }
+        // While the export runs: Esc, then a press on the back key.
+        if running && stage.is_some() {
+            if reading.open_after_esc.is_none() {
+                let _ = run(&mut win, vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }]);
+                let o = run(&mut win, Vec::new());
+                reading.open_after_esc = Some(win.ux.bk == Some(Bk::Export));
+                if let Some(back) = at(&o, t(Key::CfBack)) {
+                    let _ = run(&mut win, tap(back));
+                    let _ = run(&mut win, Vec::new());
+                    reading.open_after_back = Some(win.ux.bk == Some(Bk::Export));
+                }
+            }
+        }
+        if !busy || std::time::Instant::now() > until {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    for _ in 0..8 {
+        let _ = run(&mut win, Vec::new());
+    }
+    reading.open_after = win.ux.bk == Some(Bk::Export);
+    reading.trouble = win.ux.bk_trouble.clone().or_else(|| win.shell.failed.get(&crate::task::Kind::Backup).cloned());
+    (win.shell, reading)
+}
+
+/// The ledger's "add a note" sheet: opened with an entry chosen (as the entry's own page opens it) and cancelled;
+/// opened from the ledger's "more" menu and cancelled; opened with the entry again and written; then opened from the
+/// menu, an entry picked in its picker, then the picker's first item, and written. The entry the sheet names at each
+/// point, and whether "no entry" stood in its field when it opened from the menu.
+pub fn probe_annotate_target(ctx: &egui::Context, shell: Shell, entry: &str, seq: u64, width: f32, height: f32) -> (Shell, AnnotateTarget) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::View(crate::nav::View::Log, 0), role));
+    ux.wizard_asked = true;
+    ux.lang_applied = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>| -> egui::FullOutput {
+        clock += 0.1;
+        let input = egui::RawInput { screen_rect: Some(screen), time: Some(clock), events, ..Default::default() };
+        ctx.run_ui(input, |ui| win.draw(ui))
+    };
+    let tap = |at: egui::Pos2| {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        vec![egui::Event::PointerMoved(at), press(true), press(false)]
+    };
+    let settle = |win: &mut Win, run: &mut dyn FnMut(&mut Win, Vec<egui::Event>) -> egui::FullOutput| {
+        let mut out = run(win, Vec::new());
+        for _ in 0..8 {
+            out = run(win, Vec::new());
+        }
+        texts_of(&out)
+    };
+    let at = |texts: &[Drawn], s: &str| texts.iter().rev().find(|d| d.text == s).map(|d| d.rect.center());
+    let press_on = |win: &mut Win, run: &mut dyn FnMut(&mut Win, Vec<egui::Event>) -> egui::FullOutput, s: &str| -> bool {
+        let texts = settle(win, run);
+        match at(&texts, s) {
+            Some(p) => {
+                let _ = run(win, tap(p));
+                true
+            }
+            None => false,
+        }
+    };
+    let mut reading = AnnotateTarget::default();
+    // From the entry's page (the entry chosen there), cancelled; then from the ledger's "more" menu.
+    win.annotate_open(entry.to_string());
+    reading.from_detail = win.typed.annotate_subject.clone();
+    reading.cancelled = press_on(&mut win, &mut run, t(Key::CfBack));
+    let _ = settle(&mut win, &mut run);
+    let menu = press_on(&mut win, &mut run, t(Key::NavMore)) && press_on(&mut win, &mut run, t(Key::U3AnnotateGo));
+    let texts = settle(&mut win, &mut run);
+    reading.reopened = menu && matches!(win.ux.u3.form, Some(U3Form::Annotate));
+    reading.reopened_names = win.typed.annotate_subject.clone();
+    reading.none_shown = texts.iter().any(|d| d.text == t(Key::LedgerAnnotateNone));
+    let _ = press_on(&mut win, &mut run, t(Key::CfBack));
+    // From the entry's page again, written.
+    win.annotate_open(entry.to_string());
+    win.typed.annotate_note = "one".to_string();
+    reading.wrote_first = press_on(&mut win, &mut run, t(Key::U3AnnotateGo));
+    let _ = settle(&mut win, &mut run);
+    reading.after_write = win.typed.annotate_subject.clone();
+    reading.closed = win.ux.u3.form.is_none();
+    let _ = press_on(&mut win, &mut run, t(Key::NavMore)) && press_on(&mut win, &mut run, t(Key::U3AnnotateGo));
+    // The picker: an entry, then the first item.
+    if press_on(&mut win, &mut run, t(Key::KitPickOpen)) && press_on(&mut win, &mut run, &format!("#{seq}")) {
+        let _ = settle(&mut win, &mut run);
+        reading.after_pick = win.typed.annotate_subject.clone();
+    }
+    if press_on(&mut win, &mut run, t(Key::KitPickOpen)) && press_on(&mut win, &mut run, t(Key::LedgerAnnotateNone)) {
+        let _ = settle(&mut win, &mut run);
+        reading.after_none = win.typed.annotate_subject.clone();
+    }
+    win.typed.annotate_note = "two".to_string();
+    reading.wrote_second = press_on(&mut win, &mut run, t(Key::U3AnnotateGo));
+    let _ = settle(&mut win, &mut run);
+    (win.shell, reading)
 }

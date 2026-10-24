@@ -622,6 +622,7 @@ impl Win {
             // The reset closes the gate and the wizard returns to step 1; a sentence is still shown because a file
             // was deleted, and that must leave a visible trace.
             Applied::KeyboxReset => (t(Key::SaidKeyboxReset).to_string(), Tone::Note),
+            Applied::MachineAside { to, .. } => (fill1(Key::SaidMachineAside, &to), Tone::Note),
             Applied::Recovered => (t(Key::SaidRecovered).to_string(), Tone::Note),
             Applied::FreshDropped => {
                 self.ux.id_confirming = false;
@@ -655,6 +656,7 @@ impl Win {
                 }
             }
             Applied::IdentitySwitched { id } => (fill1(Key::SaidIdentitySwitched, &self.id_name(&id)), Tone::Note),
+            Applied::IdentityKept { .. } => (String::new(), Tone::Note),
             Applied::IdentityDeleted { .. } => (fill1(Key::SaidIdentityDeleted, &self.ux.id_deleting.take().unwrap_or_else(|| t(Key::Unnamed).to_string())), Tone::Note),
             Applied::KeyBackedUp { path, .. } => (fill1(Key::SaidKeyBackedUp, &folder_of(&path)), Tone::Note),
             Applied::FactsForgotten { .. } => (t(Key::SaidRecheckAll).to_string(), Tone::Note),
@@ -903,8 +905,11 @@ impl Win {
                 _ => {}
             },
             VaultSite::Gate => match r {
-                Applied::Unlocked | Applied::Recovered | Applied::KeyboxReset => {
+                Applied::Unlocked | Applied::Recovered | Applied::KeyboxReset => self.ux.gate_clear(),
+                Applied::MachineAside { .. } => {
                     self.ux.gate_clear();
+                    // A machine started over asks again whether the first-run wizard opens.
+                    self.ux.wizard_asked = false;
                 }
                 Applied::Trouble(f) => {
                     // One failure: shake the row and show the sentence under the cells.
@@ -1340,6 +1345,10 @@ struct Ux {
     gate_site: Option<VaultSite>,
     /// The gate is on the reseal path.
     gate_reseal: bool,
+    /// What setting the machine directory aside would move and keep (the confirming sheet is up while held).
+    gate_aside: Option<crate::home::AsidePlan>,
+    /// Why setting it aside was refused.
+    gate_aside_trouble: Option<String>,
     /// The last human input (interface clock, seconds; the idle lock reads it).
     last_input: f64,
     /// When the "enable command line" row was last drawn; when drawn again after a pause, its location is
@@ -1423,6 +1432,8 @@ impl Ux {
         self.gate_trouble = None;
         self.gate_words_ready = false;
         self.gate_file_ready = false;
+        self.gate_aside = None;
+        self.gate_aside_trouble = None;
     }
 
     /// Whether a recovery passcode row's own turn goes on: it waits for its second entry, or its entry was just

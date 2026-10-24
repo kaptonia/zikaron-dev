@@ -44,18 +44,23 @@ pub fn boxed(ui: &mut egui::Ui, id_salt: &str, values: &mut [String], units: &[&
         }
         let wrong = bad.get(i).copied().unwrap_or(false);
         let mut cu = child.new_child(egui::UiBuilder::new().max_rect(num).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        let edit = egui::TextEdit::singleline(value)
-            .id(cell_id)
-            .font(font.clone())
-            .text_color(if wrong { c(C::Bad) } else { c(C::Ink) })
-            .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(2, 2)))
-            .desired_width(NUM_W - 4.0)
-            .horizontal_align(egui::Align::Max)
-            .vertical_align(egui::Align::Center);
-        focused |= cu.add(edit).has_focus();
-        if value.is_empty() {
-            child.painter().text(egui::pos2(num.right() - 2.0, num.center().y), egui::Align2::RIGHT_CENTER, hint, font.clone(), c(C::Ink3));
-        }
+        let painter = child.painter().clone();
+        focused |= crate::compose::around(&mut cu, cell_id, value, |cu, value| {
+            let edit = egui::TextEdit::singleline(value)
+                .id(cell_id)
+                .font(font.clone())
+                .text_color(if wrong { c(C::Bad) } else { c(C::Ink) })
+                .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(2, 2)))
+                .desired_width(NUM_W - 4.0)
+                .horizontal_align(egui::Align::Max)
+                .vertical_align(egui::Align::Center);
+            let resp = cu.add(edit);
+            if value.is_empty() {
+                painter.text(egui::pos2(num.right() - 2.0, num.center().y), egui::Align2::RIGHT_CENTER, hint, font.clone(), c(C::Ink3));
+            }
+            resp
+        })
+        .has_focus();
         child.painter().galley(egui::pos2(num.right() + GAP, part.center().y - g.size().y / 2.0), g, c(C::Ink2));
     }
     for value in values.iter_mut() {

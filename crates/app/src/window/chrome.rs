@@ -256,9 +256,9 @@ impl Win {
         if let Some(i) = menu::show(ctx, id, anchor, true, min_w, &items) {
             let n = rows.len();
             if i >= 1 && i <= n {
+                // Whether the press moves anything is the action's to say; only one that moved goes home.
                 let r = &rows[i - 1];
-                if current.as_deref() != Some(r.id.as_str()) {
-                    self.act(Action::SwitchIdentity { id: r.id.clone() }, now);
+                if !matches!(self.act(Action::SwitchIdentity { id: r.id.clone() }, now), Applied::IdentityKept { .. }) {
                     shell_nav::home(self, motion::Entry::Fade, now);
                 }
             } else if i == n + 2 {

@@ -381,7 +381,7 @@ Three other cases:
 
 - If the key store's encryption settings are below this machine's standard (for example, someone lowered them), the gate says "Encryption settings are below this machine's standard." and "Enter your passcode to re-encrypt at this machine's standard." That try is not counted as wrong; the correct passcode re-encrypts the store at this machine's standard.
 - If the key store file turns out to be damaged when unlocking or setting a passcode, the app says "The key store file is damaged." and does not touch the file.
-- If the key store file cannot be read at start, the passcode side shows "The key store cannot be read" with the reason and the file's path; the first-run wizard does not open and no new key store is made (the keys are still in that file). Repair or move the file, then reopen the app.
+- If the key store file cannot be read at start, the passcode side shows "The key store cannot be read" with the reason and the file's path; the first-run wizard does not open and no new key store is made (the keys are still in that file). "Move this machine's data aside and start over" below it sets the whole machine folder aside and opens the first-run wizard, to restore from a whole-machine backup or the recovery words.
 
 #### 5.2 Locking and auto-lock
 

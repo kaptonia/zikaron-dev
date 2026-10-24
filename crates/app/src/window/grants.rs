@@ -255,13 +255,10 @@ impl Win {
         let inq = self.shell.queue.items.iter().filter(|q| !q.step.in_flight()).position(|q| q.id == row.id);
         let export_phase = self.phase_of(crate::task::Kind::Gate);
         let (mut copied, mut copy, mut export, mut story, mut send, mut revoke) = (None, false, false, false, false, false);
+        let mut pills = vec![lamp_hero(row.lamp, at)];
+        pills.extend(badge.map(|b| card::HeroPill { words: t(badge_key(b)).to_string(), tone: badge_tone(b), live: false }));
         stagger(ui, 0, |ui| {
-            card::hero(ui, &record, &format!("#{} \u{b7} {}", row.seq, t(Key::KindGrant)), false, |ui| {
-                lamp_pill_ui(ui, row.lamp, at);
-                if let Some(b) = badge {
-                    mark::pill(ui, t(badge_key(b)), badge_tone(b));
-                }
-            });
+            card::hero(ui, &record, &format!("#{} \u{b7} {}", row.seq, t(Key::KindGrant)), false, &pills);
         });
         stagger(ui, 1, |ui| {
             card::section(ui, t(Key::BasicInfo), "", |ui| {

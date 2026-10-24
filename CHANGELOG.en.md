@@ -2,6 +2,19 @@
 
 [中文](CHANGELOG.md) | English
 
+## Next release
+
+### Fixes
+
+- **Setting the passcode on first start**: the passcode cells on the wizard's first step take what is typed; before, nothing went in, and a new machine could not pass the first step.
+- **State pills at the head of detail pages**: the pill on the right of a detail page's head (grants, ledger entries, others' pages and more) is drawn again.
+- **Input methods**: letters a Chinese, Japanese or other input method is still composing no longer go into a field; only the chosen characters do, also when Return is pressed or the focus moves mid-composition.
+- **Whole-machine backup export**: the dialog shows "Collecting", "Encryption", "Writing" and "Reading back" in turn and closes only once the export has landed; Cancel and Esc wait meanwhile. Before, it closed at the start, looking done.
+- **A note's entry**: once a note is written its entry is cleared, so the next one is not hung on the same entry; the picker's first item, "No entry", takes the entry back.
+- **A command waiting as the desktop quits**: locking, closing the data folder or quitting answers a command waiting through the desktop with `CLOSED` before the connection ends; before, under load, it could read as a broken connection.
+- **The last press of an identity switch stands**: pressing the identity you started from while a switch runs lands on it; before, it landed on the one pressed before.
+- **A way on when the key store cannot be read**: the lock screen has "Move this machine's data aside and start over": the whole machine folder is set aside beside it, not a byte deleted, and the first-run wizard opens, where a whole-machine backup restores it.
+
 ## 0.1.4
 
 This version lays out and draws the whole app anew, with motion that flows and no flash on refresh; alerts list only what needs attention; AI apps can call the command line through MCP, by the same two ways as before, "Through the desktop app" and "With a credential". A record package's originals can be taken out once it is verified, and a record package can be encrypted to one recipient, so that only they can open it.
