@@ -41,10 +41,10 @@ impl Win {
         shell_nav::fwd(self, now);
     }
 
-    /// A tab of the view's own page (the segmented control in the toolbar): the page is replaced in place and
-    /// fades.
-    pub(super) fn set_tab(&mut self, place: P, now: f64) {
-        shell_nav::set_tab(self, place, now);
+    /// A segment of the view's own page picked on it: the page stays, the segment's thumb slides and what is under
+    /// it swaps.
+    pub(super) fn seg_tab(&mut self, place: P, now: f64) {
+        shell_nav::seg_tab(self, place, now);
     }
 
     /// A rail item: the same view goes back to its own page; another view shows where that view was left.
@@ -514,6 +514,18 @@ impl Win {
 pub(super) fn stagger<Out>(ui: &mut egui::Ui, i: usize, add: impl FnOnce(&mut egui::Ui) -> Out) -> Out {
     let key = shell_nav::entry_key(ui.ctx());
     motion::stagger(ui, egui::Id::new(("zikaron-stagger", i)), key, i, add)
+}
+
+/// What is under a segment of a view's own page: swapped in when the segment changes on the page, and on the page's
+/// own entrance coming with the page rather than swapping in over it.
+pub(super) fn tab_body<Out>(ui: &mut egui::Ui, salt: &str, key: u64, add: impl FnOnce(&mut egui::Ui) -> Out) -> Out {
+    let id = egui::Id::new(("zikaron-tab-body", salt));
+    let entry = shell_nav::entry_key(ui.ctx());
+    if ui.ctx().data(|d| d.get_temp::<u64>(id.with("entry"))) != Some(entry) {
+        ui.ctx().data_mut(|d| d.insert_temp(id.with("entry"), entry));
+        motion::set_age(ui.ctx(), id, key, 3600.0);
+    }
+    motion::swap(ui, id, key, add)
 }
 
 /// Tasks that run long enough to show on a button and on the rail.

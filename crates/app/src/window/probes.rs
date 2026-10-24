@@ -1300,6 +1300,113 @@ pub fn probe_grant_start(ctx: &egui::Context, shell: Shell, frames: usize, width
     (win.shell, from, texts)
 }
 
+/// A view's own page at `from`, scrolled down by `scroll`, and the segment drawn as `words` pressed by the window's
+/// own input.
+pub fn probe_seg_tab(ctx: &egui::Context, shell: Shell, from: Place, words: &str, scroll: f32, width: f32, height: f32) -> (Shell, SegTab) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(from, role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, events: Vec<egui::Event>, frames: usize| -> egui::FullOutput {
+        let mut out = egui::FullOutput::default();
+        for k in 0..frames {
+            clock += 0.1;
+            let ev = if k == 0 { events.clone() } else { Vec::new() };
+            out = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), time: Some(clock), events: ev, ..Default::default() }, |ui| win.draw(ui));
+        }
+        out
+    };
+    let mut r = SegTab::default();
+    let _ = run(&mut win, Vec::new(), 10);
+    let mid = egui::pos2(width * 0.6, height * 0.6);
+    let wheel = vec![egui::Event::PointerMoved(mid), egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: egui::vec2(0.0, -scroll), phase: egui::TouchPhase::Move, modifiers: egui::Modifiers::NONE }];
+    let out = run(&mut win, wheel, 10);
+    r.scroll_before = win.ux.nav.scroll_y;
+    r.entry_before = win.ux.nav.entry_key;
+    let at = texts_of(&out).into_iter().find(|d| d.text == words).map(|d| d.rect.center());
+    if let Some(at) = at {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        let _ = run(&mut win, vec![egui::Event::PointerMoved(at), press(true), press(false)], 10);
+        r.pressed = true;
+    }
+    r.entry_after = win.ux.nav.entry_key;
+    r.scroll_after = win.ux.nav.scroll_y;
+    r.route = win.route().name();
+    r.page = format!("{:?}", win.shell.page);
+    let h = win.hist();
+    r.history_empty = h.back.is_empty() && h.fwd.is_empty();
+    (win.shell, r)
+}
+
+/// The new-grant form on custom validity (its start `start_day` at `start_at`, its length `lasts`), driven by the
+/// window's own input: the end block pressed, the start's own day pressed on the calendar it opens, then the day `end`
+/// (on the page the calendar opened on); then the length's days part set to `days_then`. With `picture`, the frame
+/// with the calendar open is kept.
+#[allow(clippy::too_many_arguments)]
+pub fn probe_grant_end_day(ctx: &egui::Context, shell: Shell, start_day: &str, start_at: [&str; 2], lasts: [&str; 3], end: &str, days_then: &str, picture: bool, width: f32, height: f32) -> (Shell, GrantEnd) {
+    let role = shell.settings.role;
+    let mut ux = Ux::default();
+    ux.nav.land(crate::nav::history_of(Place::View(crate::nav::View::Grants, 0), role));
+    ux.wizard_asked = true;
+    let mut win = fresh_win(shell, Typed::default(), ux);
+    win.faults_told = usize::MAX;
+    win.grant_form_fresh();
+    win.push(Route::NewGrant, 0.0);
+    win.ux.u3.grant_days = 0;
+    win.typed.g_start_day = start_day.to_string();
+    win.typed.g_start_at = start_at.map(str::to_string);
+    win.typed.g_lasts = lasts.map(str::to_string);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+    let mut textures: std::collections::HashMap<egui::TextureId, egui::ColorImage> = std::collections::HashMap::new();
+    let mut clock = 0.0;
+    let mut run = |win: &mut Win, textures: &mut std::collections::HashMap<egui::TextureId, egui::ColorImage>, events: Vec<egui::Event>, frames: usize| -> egui::FullOutput {
+        let mut out = egui::FullOutput::default();
+        for k in 0..frames {
+            clock += 0.1;
+            let ev = if k == 0 { events.clone() } else { Vec::new() };
+            out = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), time: Some(clock), events: ev, ..Default::default() }, |ui| win.draw(ui));
+            take_textures(textures, &out);
+        }
+        out
+    };
+    let click = |at: egui::Pos2| {
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        vec![egui::Event::PointerMoved(at), press(true), press(false)]
+    };
+    let spot = |name: &str| zikaron_ui::probe::spots(ctx).into_iter().find(|(n, _)| n == name).map(|(_, r)| r.center());
+    let days = || zikaron_ui::probe::spots(ctx).into_iter().map(|(n, _)| n).filter(|n| n.as_bytes().first().is_some_and(u8::is_ascii_digit)).collect::<Vec<String>>();
+    let mut r = GrantEnd::default();
+    let _ = run(&mut win, &mut textures, Vec::new(), 8);
+    r.live = zikaron_ui::probe::spots(ctx).into_iter().map(|(n, _)| n).collect();
+    let Some(block) = spot(&datepick::block_salt("grant-span", 1)) else { return (win.shell, r) };
+    let out = run(&mut win, &mut textures, click(block), 6);
+    r.days = days();
+    if picture {
+        r.picture = Some(Picture { prims: ctx.tessellate(out.shapes.clone(), out.pixels_per_point), textures: textures.clone(), ppp: out.pixels_per_point });
+    }
+    let start_off = r.days.iter().find(|d| d.starts_with(start_day) && d.ends_with(" off")).cloned();
+    if let Some(at) = start_off.and_then(|d| spot(&d)) {
+        let _ = run(&mut win, &mut textures, click(at), 4);
+    }
+    r.off_lasts = win.typed.g_lasts.clone();
+    r.off_open = !days().is_empty();
+    if let Some(at) = spot(end) {
+        let _ = run(&mut win, &mut textures, click(at), 6);
+    }
+    r.lasts = win.typed.g_lasts.clone();
+    r.from = win.typed.g_from.clone();
+    r.to = win.typed.g_to.clone();
+    r.open_after = !days().is_empty();
+    win.typed.g_lasts[0] = days_then.to_string();
+    let _ = run(&mut win, &mut textures, Vec::new(), 2);
+    r.to_then = win.typed.g_to.clone();
+    (win.shell, r)
+}
+
 /// The "with a credential" sheet opened over the command line's page and driven by the window's own input: the days cell
 /// clicked and "400" typed, then cleared and "2" typed; the "does not expire" switch's title clicked, and "9"
 /// typed into the days cell while it is on. Read after each: the cell, and the line under the switch.

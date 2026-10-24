@@ -607,6 +607,47 @@ pub struct WorkPick {
     pub after_open: (String, bool),
 }
 
+/// What picking a segment of a view's own page did (`probe_seg_tab`).
+#[derive(Clone, Debug, Default)]
+pub struct SegTab {
+    /// Whether the segment's words were drawn and pressed.
+    pub pressed: bool,
+    /// The page entrance counter before and after the press.
+    pub entry_before: u64,
+    pub entry_after: u64,
+    /// The route drawn after the press, the shell's page then, and whether back and forward were both empty.
+    pub route: String,
+    pub page: String,
+    pub history_empty: bool,
+    /// The page's scroll offset before and after the press.
+    pub scroll_before: f32,
+    pub scroll_after: f32,
+}
+
+/// What a new grant's custom validity did when its end block was pressed and a day picked on its calendar
+/// (`probe_grant_end_day`), read off the form's own cells and the calendar's days as drawn.
+#[derive(Default)]
+pub struct GrantEnd {
+    /// The date blocks drawn as controls (their calendars' salts), before any press.
+    pub live: Vec<String>,
+    /// The days of the end's calendar as it opened: `YYYY-MM-DD`, followed by ` off` for a day that takes no press.
+    pub days: Vec<String>,
+    /// After the start's own day was pressed on that calendar: the length's three parts, and whether the calendar
+    /// still drew its days.
+    pub off_lasts: [String; 3],
+    pub off_open: bool,
+    /// After the end day was picked: the length's three parts, the window's two seconds as the signing reads them
+    /// (empty when there is none), and whether the calendar still drew its days.
+    pub lasts: [String; 3],
+    pub from: String,
+    pub to: String,
+    pub open_after: bool,
+    /// After the length's days part was then set to `days_then`: the window's end second.
+    pub to_then: String,
+    /// The frame with the end's calendar open, when asked for.
+    pub picture: Option<Picture>,
+}
+
 /// What the "write alone" sheet did when its validity cells were typed into and its switch clicked
 /// (`probe_cli_sheet`).
 #[derive(Clone, Debug, Default)]

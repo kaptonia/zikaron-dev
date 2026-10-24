@@ -1692,7 +1692,7 @@ mod works;
 pub use self::faces::*;
 pub use self::probes::*;
 use self::pages::*;
-use self::chrome::stagger;
+use self::chrome::{stagger, tab_body};
 use self::common::*;
 use self::others::*;
 use self::shared::*;

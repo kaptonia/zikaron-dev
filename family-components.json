@@ -4614,6 +4614,7 @@
     "crates/app/tests/checks_more/gaps.rs",
     "crates/app/tests/checks_more/gaps_r20b2.rs",
     "crates/app/tests/checks_more/motion_in_place.rs",
+    "crates/app/tests/checks_more/segments_in_place.rs",
     "crates/app/tests/checks_more/window_b10_layout.rs",
     "crates/app/tests/checks_more/window_habits.rs",
     "crates/app/tests/sync_clock.rs",
@@ -4866,6 +4867,14 @@
      "name": "switching_the_language_cross_fades_in_place"
     },
     {
+     "path": "crates/app/tests/checks_more/segments_in_place.rs",
+     "name": "the_records_pages_segment_keeps_the_page_and_shows_the_queue"
+    },
+    {
+     "path": "crates/app/tests/checks_more/segments_in_place.rs",
+     "name": "the_verify_pages_segment_keeps_the_page"
+    },
+    {
      "path": "crates/app/tests/checks_more/window_b10_layout.rs",
      "name": "a_double_click_on_the_handle_of_a_maximized_window_puts_it_back"
     },
@@ -4956,6 +4965,10 @@
     {
      "path": "crates/zikaron-ui/src/covers.rs",
      "name": "the_glide_runs_from_nothing_to_whole"
+    },
+    {
+     "path": "crates/zikaron-ui/src/datepick.rs",
+     "name": "a_bound_takes_the_days_up_to_it"
     },
     {
      "path": "crates/zikaron-ui/src/datepick.rs",
@@ -5460,6 +5473,10 @@
     {
      "path": "crates/zikaron-ui/tests/motion_frames.rs",
      "name": "under_reduced_motion_the_thumb_arrives_at_once"
+    },
+    {
+     "path": "crates/zikaron-ui/tests/outside_pages.rs",
+     "name": "a_segment_picked_on_its_page_keeps_the_page"
     },
     {
      "path": "crates/zikaron-ui/tests/outside_pages.rs",
